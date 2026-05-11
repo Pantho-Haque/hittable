@@ -58,14 +58,14 @@ export default function JsonNode({
   const indent = depth * 16;
 
   return (
-    <div className="font-mono text-[11px] leading-[1.7]">
+    <div className="font-mono text-[9px] md:text-[11px] leading-[1.7]">
       <div
         className="flex items-start group hover:bg-white/3 rounded transition-colors"
         style={{ paddingLeft: indent }}
       >
         <button
           onClick={() => isExpandable && setOpen((o) => !o)}
-          className={`w-4 h-5 flex items-center justify-center shrink-0 transition-colors ${
+          className={`w-3.5 h-4 md:w-4 md:h-5 flex items-center justify-center shrink-0 transition-colors ${
             isExpandable
               ? "cursor-pointer text-white/30 hover:text-white/60"
               : "cursor-default text-transparent"
@@ -73,9 +73,9 @@ export default function JsonNode({
         >
           {isExpandable ? (
             open ? (
-              <ChevronDown className="w-3 h-3" />
+              <ChevronDown className="w-2.5 h-2.5 md:w-3 md:h-3" />
             ) : (
-              <ChevronRight className="w-3 h-3" />
+              <ChevronRight className="w-2.5 h-2.5 md:w-3 md:h-3" />
             )
           ) : null}
         </button>
@@ -94,7 +94,7 @@ export default function JsonNode({
             {type === "array" ? "[" : "{"}
             {!open && (
               <>
-                <span className="text-white/25 mx-1 text-[10px] italic">
+                <span className="text-white/25 mx-1 text-[8px] md:text-[10px] italic">
                   {childCount} {type === "array" ? "items" : "keys"}
                 </span>
                 {type === "array" ? "]" : "}"}
@@ -135,7 +135,7 @@ export default function JsonNode({
                 ),
               )}
           <div
-            className="font-mono text-[11px] text-white/40 leading-[1.7]"
+            className="font-mono text-[8px] md:text-[11px] text-white/40 leading-[1.7]"
             style={{ paddingLeft: indent + 4 }}
           >
             {type === "array" ? "]" : "}"}

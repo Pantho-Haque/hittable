@@ -27,7 +27,7 @@ export default function TabEditor({
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className="relative px-4 py-2 text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors cursor-pointer"
+            className="relative px-2 py-1 md:px-4 md:py-2 text-[8px] md:text-[10px] font-semibold tracking-[0.2em] uppercase transition-colors cursor-pointer"
             style={{
               color: activeTab === tab ? "#00e5cc" : "rgba(255,255,255,0.25)",
             }}
@@ -42,7 +42,7 @@ export default function TabEditor({
 
       <textarea
         key={activeTab}
-        className="flex-1 w-full resize-none bg-transparent p-4 text-[12px] text-white/70 outline-none placeholder-white/15 leading-relaxed"
+        className="flex-1 w-full resize-none bg-transparent p-2 md:p-4 text-[10px] md:text-[12px] text-white/70 outline-none placeholder-white/15 leading-relaxed"
         style={{ minHeight: 200 }}
         spellCheck={false}
         value={formInput[activeTab]}

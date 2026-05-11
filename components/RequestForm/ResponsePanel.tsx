@@ -101,14 +101,14 @@ export default function ResponsePanel() {
     <MatchCtx.Provider value={matchCtxValue}>
       <div className="relative flex flex-col rounded-lg border border-white/8 bg-[#0a1628]/60 overflow-hidden h-full">
         {/* ── Header ── */}
-        <div className="flex items-center gap-3 border-b border-white/5 bg-[#0e1f35]/50 px-4 py-2 shrink-0">
-          <span className="text-[9px] tracking-[0.25em] uppercase text-white/25">
+        <div className="flex items-center gap-3 border-b border-white/5 bg-[#0e1f35]/50 px-2 md:px-4 py-1 md:py-2 shrink-0">
+          <span className="text-[7px] md:text-[9px] tracking-[0.25em] uppercase text-white/25">
             Response
           </span>
 
           {proxyResponse?.status != null && (
             <span
-              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold border"
+              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[8px] md:text-[10px] font-bold border"
               style={{
                 background: statusOk
                   ? "rgba(74,222,128,0.08)"
@@ -128,9 +128,9 @@ export default function ResponsePanel() {
               }}
             >
               {statusOk ? (
-                <CheckCircle2 className="h-3 w-3" />
+                <CheckCircle2 className="h-2.5 w-2.5 md:h-3 md:w-3" />
               ) : (
-                <AlertCircle className="h-3 w-3" />
+                <AlertCircle className="h-2.5 w-2.5 md:h-3 md:w-3" />
               )}
               {proxyResponse.status} {proxyResponse.statusText}
             </span>
@@ -141,13 +141,13 @@ export default function ResponsePanel() {
               <button
                 onClick={() => setSearchOpen((o) => !o)}
                 title="Search (⌘F)"
-                className={`p-1 rounded transition-colors ${
+                className={`p-0.5 md:p-1 rounded transition-colors ${
                   searchOpen
                     ? "text-yellow-300/90 bg-yellow-400/10 ring-1 ring-yellow-400/20"
                     : "text-white/25 hover:text-white/60 hover:bg-white/5"
                 }`}
               >
-                <Search className="h-3 w-3" />
+                <Search className="h-2.5 w-2.5 md:h-3 md:w-3" />
               </button>
             )}
             {parsedData && <CopyButton data={parsedData} />}
@@ -169,9 +169,9 @@ export default function ResponsePanel() {
 
         {/* ── Body ── */}
         {proxyResponse ? (
-          <div className="flex-1 overflow-auto p-3">
+          <div className="flex-1 overflow-auto p-2 md:p-3">
             {proxyResponse.error ? (
-              <span className="font-mono text-[11px] text-red-400 whitespace-pre-wrap">
+              <span className="font-mono text-[8px] md:text-[11px] text-red-400 whitespace-pre-wrap">
                 {proxyResponse.error}
               </span>
             ) : parsedData ? (
@@ -182,7 +182,7 @@ export default function ResponsePanel() {
                 defaultOpen={true}
               />
             ) : (
-              <pre className="text-xs text-white/60 leading-relaxed whitespace-pre-wrap wrap-words">
+              <pre className="text-[8px] md:text-[11px] text-white/60 leading-relaxed whitespace-pre-wrap wrap-words">
                 {String(proxyResponse.data || '')}
               </pre>
             )}
@@ -190,7 +190,7 @@ export default function ResponsePanel() {
         ) : (
           <div className="flex flex-1 items-center justify-center py-8 gap-2 text-white/15">
             <Send size={14} />
-            <span className="text-[10px] tracking-[0.2em] uppercase">
+            <span className="text-[8px] md:text-[10px] tracking-[0.2em] uppercase">
               Send a request to see the response
             </span>
           </div>

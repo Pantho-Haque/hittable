@@ -50,12 +50,12 @@ export default function FloatingSearch({
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Search keys & values…"
-        className="w-40 bg-transparent text-[11px] text-white/75 placeholder:text-white/20 outline-none"
+        className="w-40 bg-transparent text-[9px] md:text-[11px] text-white/75 placeholder:text-white/20 outline-none"
       />
       {value && (
         <>
           <span
-            className="text-[10px] tabular-nums shrink-0 px-1"
+            className="text-[8px] md:text-[10px] tabular-nums shrink-0 px-1"
             style={{
               color: total === 0 ? "rgba(248,113,113,0.7)" : "rgba(255,255,255,0.3)",
             }}
@@ -69,7 +69,7 @@ export default function FloatingSearch({
               className="p-0.5 rounded text-white/30 hover:text-white/70 hover:bg-white/8 transition-colors disabled:opacity-30"
               disabled={total === 0}
             >
-              <ArrowUp className="h-3 w-3" />
+              <ArrowUp className="h-2.5 w-2.5 md:h-3 md:w-3" />
             </button>
             <button
               onClick={onNext}
@@ -77,7 +77,7 @@ export default function FloatingSearch({
               className="p-0.5 rounded text-white/30 hover:text-white/70 hover:bg-white/8 transition-colors disabled:opacity-30"
               disabled={total === 0}
             >
-              <ArrowDown className="h-3 w-3" />
+              <ArrowDown className="h-2.5 w-2.5 md:h-3 md:w-3" />
             </button>
           </div>
         </>
@@ -86,7 +86,7 @@ export default function FloatingSearch({
         onClick={onClose}
         className="p-0.5 rounded text-white/20 hover:text-white/60 hover:bg-white/8 transition-colors ml-0.5"
       >
-        <X className="h-3 w-3" />
+        <X className="h-2.5 w-2.5 md:h-3 md:w-3" />
       </button>
     </div>
   );

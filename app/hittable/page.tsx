@@ -21,7 +21,7 @@ export default function Hittable() {
           <Selector />
         </Suspense>
         <div className="flex-1 h-full overflow-auto">
-          <div className="h-full w-full flex flex-col p-6">
+          <div className="h-full w-full flex flex-col p-2 md:p-6">
             <RequestForm/>
           </div>
         </div>

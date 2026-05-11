@@ -6,25 +6,34 @@ import { curlConverter, jsonToCurl } from "@/utils/curlConverter";
 import { hittableProxy } from "@/utils/hittableProxy";
 import { getParamsfromUrl } from "@/utils/responsePanelUtils";
 import { CheckCircle2, Code2, Loader2, Save, Send } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 import { useDataContext } from "@/context/dataContext";
 
-export default function UrlBar({
-  handleSaveCollection,
-  isUnsaved,
-  error,
-}: {
-  handleSaveCollection: () => void;
-  isUnsaved: () => boolean;
-  error: string | null;
-}) {
-  const { formInput, setFormInput, extensionAvailable, setProxyResponse , selectorResponse } = useDataContext();
+export default function UrlBar({ error }: { error: string | null }) {
+  const {
+    formInput,
+    setFormInput,
+    extensionAvailable,
+    setProxyResponse,
+    selectorResponse,
+    isUnsaved,
+    handleSaveCollection,
+  } = useDataContext();
 
-  const {env} = selectorResponse!;
+  const { env } = selectorResponse!;
   const mc = METHOD_COLORS[formInput.method] ?? "#94a3b8";
 
   const [curlCopied, setCurlCopied] = useState(false);
   const [proxyLoading, setProxyLoading] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const autoResize = () => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  };
 
   const handleCopyCurl = () => {
     navigator.clipboard.writeText(jsonToCurl(formInput));
@@ -36,25 +45,16 @@ export default function UrlBar({
     setProxyLoading(true);
     setProxyResponse(null);
     try {
-      const res = await hittableProxy(
-        formInput,
-        env,
-        extensionAvailable,
-      );
+      const res = await hittableProxy(formInput, env, extensionAvailable);
       setProxyResponse(res);
     } catch (err) {
       setProxyResponse({ error: String(err) });
     } finally {
       setProxyLoading(false);
     }
-  }, [
-    setProxyResponse,
-    formInput,
-    env,
-    extensionAvailable,
-  ]);
+  }, [setProxyResponse, formInput, env, extensionAvailable]);
 
-  function handleUrlPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+  function handleUrlPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const pasted = e.clipboardData.getData("text").trim();
 
     if (!pasted.startsWith("curl ")) return;
@@ -82,7 +82,7 @@ export default function UrlBar({
 
   return (
     <div
-      className="relative flex items-center gap-2 rounded-lg border bg-[#0a1628] px-2 py-1.5 transition-all"
+      className="relative flex items-center gap-2 rounded-lg flex-wrap border bg-[#0a1628] px-2 py-1.5 transition-all"
       style={{ borderColor: `${mc}33`, boxShadow: `0 0 20px ${mc}0d` }}
     >
       {/* Corner brackets */}
@@ -104,7 +104,7 @@ export default function UrlBar({
       />
 
       <select
-        className="shrink-0 rounded-md border-0 bg-[#0e1f35] px-2 py-1.5 text-xs font-bold tracking-widest outline-none cursor-pointer"
+        className="w-full md:w-auto shrink-0 rounded-md border-0 bg-[#0e1f35] px-2 py-1.5 text-xs font-bold tracking-widest outline-none cursor-pointer"
         style={{ color: mc }}
         value={formInput.method}
         onChange={(e) => setFormInput({ ...formInput, method: e.target.value })}
@@ -118,24 +118,32 @@ export default function UrlBar({
 
       <div className="h-4 w-px bg-white/10" />
 
-      <input
-        className="min-w-0 flex-1 bg-transparent py-1 text-sm text-white/80 placeholder-white/20 outline-none"
-        type="text"
+      <textarea
+        ref={textareaRef}
+        className="w-full flex-1 bg-transparent py-1 text-[10px] md:text-xs text-white/80 placeholder-white/20 outline-none resize-none overflow-hidden"
         placeholder="https://api.example.com/endpoint"
         value={formInput.url}
-        onChange={(e) => setFormInput({ ...formInput, url: e.target.value, params : getParamsfromUrl(e.target.value) })}
+        onChange={(e) => {
+          setFormInput({
+            ...formInput,
+            url: e.target.value,
+            params: getParamsfromUrl(e.target.value),
+          });
+          autoResize();
+        }}
         onPaste={handleUrlPaste}
         spellCheck={false}
+        rows={1}
       />
 
-      <div className="flex items-center gap-1.5">
+      <div className="w-full flex justify-end items-center gap-1.5">
         <button
           title="Save (Ctrl/Cmd+S)"
           disabled={!isUnsaved()}
           onClick={handleSaveCollection}
-          className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/40 transition-all cursor-pointer hover:border-cyan-500/30 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-20"
+          className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-[8px] md:text-xs font-semibold text-white/40 transition-all cursor-pointer hover:border-cyan-500/30 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-20"
         >
-          <Save className="h-3 w-3" />
+          <Save className="h-2.5 w-2.5 md:h-3 md:w-3" />
           Save
         </button>
 
@@ -143,11 +151,11 @@ export default function UrlBar({
           title="Send (Ctrl/Cmd+Enter)"
           disabled={proxyLoading || !!error}
           onClick={sendProxyRequest}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold text-black transition-all  cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[8px] md:text-xs font-bold text-black transition-all  cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
           style={{ background: mc, boxShadow: `0 0 12px ${mc}44` }}
         >
           {proxyLoading ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
+            <Loader2 className="h-2.5 w-2.5 md:h-3 md:w-3 animate-spin" />
           ) : (
             <Send className="h-3 w-3" />
           )}
@@ -158,11 +166,11 @@ export default function UrlBar({
           title="Copy as CURL"
           disabled={curlCopied}
           onClick={handleCopyCurl}
-          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold text-black transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[8px] md:text-xs font-bold text-black transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
           style={{ background: mc, boxShadow: `0 0 12px ${mc}44` }}
         >
           {curlCopied ? (
-            <CheckCircle2 className="h-3 w-3" />
+            <CheckCircle2 className="h-2.5 w-2.5 md:h-3 md:w-3" />
           ) : (
             <Code2 className="h-3 w-3" />
           )}
