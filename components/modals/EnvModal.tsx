@@ -17,7 +17,7 @@ export default function EnvModal() {
   const [open, setOpen] = useState(false);
   const [localEnv, setLocalEnv] = useState<[string, string][]>([]);
   const {selectorResponse, setSelectorResponse, setCollections} = useDataContext()
-  const {collectionName, env} = selectorResponse || {}
+  const {collectionName, env} = selectorResponse || { collectionName :"", env:{}}
 
   const openModal = () => {
     setLocalEnv(Object.entries(env ?? {}) as [string, string][]);
