@@ -1,8 +1,13 @@
 "use client";
 import { Suspense } from "react";
 import { RequestForm, Selector, ImportModal, InfoModal, NoteModal } from "@/components";
+import { useShortcuts } from "@/context/ShortcutKeypressProvider";
 
 export default function Hittable() {
+
+  const {
+    shortcuts: { toggleSidebar },
+  } = useShortcuts();
   return (
     <div className="h-[calc(100vh-44px)] w-full flex bg-[#080f1a] overflow-hidden font-mono">
       {/* Ambient background glow */}
@@ -21,11 +26,11 @@ export default function Hittable() {
           </div>
         </div>
 
-        <div className="w-12 h-full flex flex-col border-l border-white/5 bg-[#0a1628]/80 items-center justify-start">
+        {!toggleSidebar && (<div className="w-12 h-full flex flex-col border-l border-white/5 bg-[#0a1628]/80 items-center justify-start">
           <ImportModal />
           <NoteModal />
           <InfoModal />
-        </div>
+        </div>)}
       </div>
     </div>
   );

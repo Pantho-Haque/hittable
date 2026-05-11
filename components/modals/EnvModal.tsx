@@ -2,36 +2,25 @@
 
 import { Plus, Settings2, Trash2 } from "lucide-react";
 import {
-  Dispatch,
-  SetStateAction,
   useCallback,
   useEffect,
   useState,
 } from "react";
 import {
-  THittableCollections,
   THittableEnv,
-  THittableSelectorResponse,
 } from "@/types";
 import { createPortal } from "react-dom";
 import { updateEnv } from "@/utils/hittableCollectionModifier";
+import { useDataContext } from "@/context/dataContext";
 
-export default function EnvModal({
-  envs,
-  collectionName,
-  setSelectorResponse,
-  setCollections,
-}: {
-  envs: THittableEnv;
-  collectionName: string;
-  setSelectorResponse: Dispatch<SetStateAction<THittableSelectorResponse | null>>;
-  setCollections: Dispatch<SetStateAction<THittableCollections>>;
-}) {
+export default function EnvModal() {
   const [open, setOpen] = useState(false);
   const [localEnv, setLocalEnv] = useState<[string, string][]>([]);
+  const {selectorResponse, setSelectorResponse, setCollections} = useDataContext()
+  const {collectionName, env} = selectorResponse!
 
   const openModal = () => {
-    setLocalEnv(Object.entries(envs ?? {}) as [string, string][]);
+    setLocalEnv(Object.entries(env ?? {}) as [string, string][]);
     setOpen(true);
   };
 

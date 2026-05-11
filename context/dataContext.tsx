@@ -48,7 +48,19 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     GetHittableCollections(),
   );
   const [selectorResponse, setSelectorResponse] =
-    useState<THittableSelectorResponse | null>(null);
+    useState<THittableSelectorResponse | null>({
+      collectionName: "",
+      curlName: "",
+      env: {},
+      curlJson: {
+        url: "",
+        method: "GET",
+        headers: "",
+        body: "",
+        params: "",
+      },
+      responseJson: null,
+    });
 
   const [formInput, setFormInput] = useState<THittableCurlJson>({
     url: selectorResponse?.curlJson?.url ?? "",

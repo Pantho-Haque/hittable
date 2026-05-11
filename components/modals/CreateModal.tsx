@@ -1,10 +1,8 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { Dispatch, SetStateAction, useState } from "react";
+import { useState } from "react";
 import {
-  THittableCollections,
-  THittableSelectorResponse,
   THittableSelectorSelection,
 } from "@/types";
 import {
@@ -13,27 +11,26 @@ import {
   isAlreadyExists,
 } from "@/utils/hittableCollectionModifier";
 import { ModalInput, ModalShell, ModalActions } from "@/components";
+import { useDataContext } from "@/context/dataContext";
 
 
 export default function CreateModal({
   type,
   selection,
   setSelection,
-  setCollections,
-  setSelectorResponse,
   collectionCurlList,
 }: {
   type: "collection" | "route";
   selection: THittableSelectorSelection;
   setSelection: (value: THittableSelectorSelection) => void;
-  setCollections: Dispatch<SetStateAction<THittableCollections>>;
-  setSelectorResponse: Dispatch<SetStateAction<THittableSelectorResponse | null>>;
   collectionCurlList: { [key: string]: string[] };
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [curlString, setCurlString] = useState("");
   const [error, setError] = useState("");
+  const { setSelectorResponse, setCollections} = useDataContext()
+
 
   const handleCreate = () => {
     if (!value.trim()) return setOpen(false);

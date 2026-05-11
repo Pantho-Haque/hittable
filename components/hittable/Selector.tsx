@@ -8,16 +8,24 @@ import {
   useMemo,
 } from "react";
 import { Package2, Route, ChevronLeft, ChevronRight } from "lucide-react";
-import { CreateModal, EnvModal, Menu } from "@/components";
-import { curlConverter } from "@/utils/curlConverter";
 import {
-  THittableSelectorSelection,
-} from "@/types";
+  CreateModal,
+  EnvModal,
+  ImportModal,
+  InfoModal,
+  Menu,
+  NoteModal,
+} from "@/components";
+import { curlConverter } from "@/utils/curlConverter";
+import { THittableSelectorSelection } from "@/types";
 import { parseStringToJson } from "@/utils/JsonStringParsing";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useShortcuts } from "@/context/ShortcutKeypressProvider";
 import useKeypress from "@/hooks/useKeypress";
-import { createCurlName, isAlreadyExists } from "@/utils/hittableCollectionModifier";
+import {
+  createCurlName,
+  isAlreadyExists,
+} from "@/utils/hittableCollectionModifier";
 import { useDataContext } from "@/context/dataContext";
 
 function EmptyState({
@@ -50,9 +58,10 @@ function PanelItem({
     <div
       title={name}
       className={`group/menu relative flex items-center justify-between mx-2 mb-0.5 rounded-md overflow-visible transition-all cursor-pointer
-        ${isActive
-          ? "bg-cyan-500/10 border border-cyan-500/20"
-          : "border border-transparent hover:bg-white/4 hover:border-white/5"
+        ${
+          isActive
+            ? "bg-cyan-500/10 border border-cyan-500/20"
+            : "border border-transparent hover:bg-white/4 hover:border-white/5"
         }`}
     >
       {isActive && (
@@ -71,7 +80,6 @@ function PanelItem({
 }
 
 export default function Selector() {
-
   const { collections, setCollections, setSelectorResponse } = useDataContext();
 
   const router = useRouter();
@@ -89,7 +97,10 @@ export default function Selector() {
     [collections],
   );
 
-  const { shortcuts: { toggleSidebar }, toggle } = useShortcuts();
+  const {
+    shortcuts: { toggleSidebar },
+    toggle,
+  } = useShortcuts();
 
   const selection = useMemo<THittableSelectorSelection>(() => {
     const c = searchParams.get("c") ?? "";
@@ -134,15 +145,30 @@ export default function Selector() {
     if (!selection.collectionName) return;
 
     let newName = "Untitled";
-    while (isAlreadyExists(collectionCurlList, "route", newName, selection.collectionName)) {
+    while (
+      isAlreadyExists(
+        collectionCurlList,
+        "route",
+        newName,
+        selection.collectionName,
+      )
+    ) {
       newName += " - New";
     }
 
     setCollections((prev) =>
       createCurlName(prev, selection.collectionName, newName, ""),
     );
-    setSelection({ collectionName: selection.collectionName, curlName: newName });
-  }, [selection.collectionName, collectionCurlList, setCollections, setSelection]);
+    setSelection({
+      collectionName: selection.collectionName,
+      curlName: newName,
+    });
+  }, [
+    selection.collectionName,
+    collectionCurlList,
+    setCollections,
+    setSelection,
+  ]);
 
   useKeypress({
     key: "t",
@@ -167,25 +193,38 @@ export default function Selector() {
     });
   }, [selection, collections, setSelectorResponse]);
 
-
-
   const collectionsPanel = (
     <div
-      className={`h-full flex flex-col bg-[#0a1628]/80 border-r border-white/5 overflow-visible transition-all duration-200 ${toggleSidebar ? "w-[40px]" : "w-[160px]"}`}
+      className={`min-w-[75px] h-full flex flex-col bg-[#0a1628]/80 border-r border-white/5 overflow-visible transition-all duration-200 ${toggleSidebar ? "w-[40px]" : "w-[160px]"}`}
     >
       {/* Header */}
-      <div className="px-3 pt-4 pb-3 border-b border-white/5 flex items-center justify-between gap-2">
-        {!toggleSidebar && (
+      <div className={`w-full ${toggleSidebar ? "h-full" : ""} px-3 pt-4 pb-3 border-b border-white/5 flex items-center justify-between gap-2 transition-all duration-100`}>
+        {!toggleSidebar ? (
+          <>
           <p className="text-[9px] tracking-[0.25em] uppercase text-cyan-500/50">
             Collections
           </p>
-        )}
-        <button
-          onClick={() => toggle("toggleSidebar")}
-          className="ml-auto text-white/30 hover:text-cyan-400 transition-colors"
-        >
-          {toggleSidebar ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
+          <button
+            onClick={() => toggle("toggleSidebar")}
+            className="text-white/30 hover:text-cyan-400 transition-colors cursor-pointer"
+          >
+              <ChevronLeft size={14} />
+           </button>
+          </>
+        ) : (
+        <div className="w-full h-full flex flex-col justify-start items-center gap-3">
+          <button
+            onClick={() => toggle("toggleSidebar")}
+            className="text-white/30 hover:text-cyan-400 transition-colors cursor-pointer"
+          >
+              <ChevronRight size={14} />
+           </button>
+          <ImportModal />
+          <NoteModal />
+          <EnvModal />
+          <InfoModal />
+        </div>
+      )}
       </div>
 
       {/* Body — hidden when collapsed */}
@@ -196,8 +235,6 @@ export default function Selector() {
               type="collection"
               selection={selection}
               setSelection={setSelection}
-              setCollections={setCollections}
-              setSelectorResponse={setSelectorResponse}
               collectionCurlList={collectionCurlList}
             />
           </div>
@@ -220,7 +257,11 @@ export default function Selector() {
                         type="collection"
                         collectionCurlList={collectionCurlList}
                         currentName={collectionName}
-                        exportString={JSON.stringify(collections.find((el) => el.collectionName === collectionName))}
+                        exportString={JSON.stringify(
+                          collections.find(
+                            (el) => el.collectionName === collectionName,
+                          ),
+                        )}
                         setCollections={setCollections}
                         setSelection={setSelection}
                       />
@@ -243,22 +284,11 @@ export default function Selector() {
           Routes
         </p>
         <div className="flex flex-col gap-1.5">
-          <EnvModal
-            envs={
-              collections.find(
-                (el) => el.collectionName === selection.collectionName,
-              )?.env ?? {}
-            }
-            collectionName={selection.collectionName}
-            setCollections={setCollections}
-            setSelectorResponse={setSelectorResponse}
-          />
+          <EnvModal />
           <CreateModal
             type="route"
             selection={selection}
             setSelection={setSelection}
-            setCollections={setCollections}
-            setSelectorResponse={setSelectorResponse}
             collectionCurlList={collectionCurlList}
           />
         </div>
