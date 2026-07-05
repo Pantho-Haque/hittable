@@ -1,7 +1,23 @@
 import { NextResponse, NextRequest } from "next/server";
 
 export async function POST(req: NextRequest) {
-  const { url, method, headers: clientHeaders, body } = await req.json();
+  let url: string;
+  let method: string;
+  let clientHeaders: string | Record<string, string> | undefined;
+  let body: unknown;
+
+  try {
+    const parsed = await req.json();
+    url = parsed.url;
+    method = parsed.method;
+    clientHeaders = parsed.headers;
+    body = parsed.body;
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid request body" },
+      { status: 400 }
+    );
+  }
 
   let parsedHeaders: Record<string, string> = {};
   try {
@@ -26,11 +42,27 @@ export async function POST(req: NextRequest) {
       ? body
       : JSON.stringify(body);
 
-  const upstream = await fetch(url, {
-    method: method.toUpperCase(),
-    headers: parsedHeaders,
-    body: bodyToSend,
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(url, {
+      method: method.toUpperCase(),
+      headers: parsedHeaders,
+      body: bodyToSend,
+    });
+  } catch (err) {
+    return NextResponse.json(
+      {
+        data: null,
+        status: 0,
+        statusText: "Network Error",
+        ok: false,
+        headers: {},
+        cookies: {},
+        error: err instanceof Error ? err.message : "Failed to connect to target URL",
+      },
+      { status: 200 }
+    );
+  }
 
   const isHead = method.toUpperCase() === "HEAD";
   const isNoBody =
@@ -51,12 +83,6 @@ export async function POST(req: NextRequest) {
       } catch {
         data = raw;
       }
-    } else if (
-      contentType.includes("text/") ||
-      contentType.includes("application/xml") ||
-      contentType.includes("application/javascript")
-    ) {
-      data = raw;
     } else {
       data = raw;
     }

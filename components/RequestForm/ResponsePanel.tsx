@@ -1,7 +1,7 @@
 "use client";
 
 import { JsonValue } from "@/types";
-import { CheckCircle2, AlertCircle, Send, Search } from "lucide-react";
+import { CheckCircle2, AlertCircle, Send, Search, Copy, Check, Code2, Braces } from "lucide-react";
 import { useState, useCallback, useMemo, useRef } from "react";
 import {
   MatchCtx,
@@ -15,11 +15,61 @@ import useKeypress from "@/hooks/useKeypress";
 import { useDataContext } from "@/context/dataContext";
 
 
+function HeadersTable({ headers }: { headers: Record<string, string> }) {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyHeader = (key: string, value: string) => {
+    navigator.clipboard.writeText(`${key}: ${value}`);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 1500);
+  };
+
+  const entries = Object.entries(headers);
+  if (entries.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-8 text-white/20 text-[10px]">
+        No response headers
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      {entries.map(([key, value]) => (
+        <div
+          key={key}
+          className="flex items-start gap-3 px-3 py-1.5 border-b border-white/5 hover:bg-white/2 transition-colors group"
+        >
+          <span className="text-[9px] md:text-[11px] text-cyan-400/70 font-mono shrink-0 min-w-[140px]">
+            {key}
+          </span>
+          <span className="text-[9px] md:text-[11px] text-white/60 font-mono break-all flex-1">
+            {value}
+          </span>
+          <button
+            onClick={() => copyHeader(key, value)}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 shrink-0"
+            title={`Copy ${key}`}
+          >
+            {copiedKey === key ? (
+              <Check className="h-2.5 w-2.5 text-emerald-400" />
+            ) : (
+              <Copy className="h-2.5 w-2.5 text-white/30 hover:text-white/60" />
+            )}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ResponsePanel() {
   const {proxyResponse} = useDataContext();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [activeTab, setActiveTab] = useState<"body" | "headers">("body");
+  const [rawView, setRawView] = useState(false);
 
   const matchEls = useRef<HTMLElement[]>([]);
 
@@ -42,7 +92,6 @@ export default function ResponsePanel() {
   }, []);
 
   const goNext = useCallback(() => {
-    console.log(matchEls.current.length)
     const total = matchEls.current.length;
     if (!total) return;
     scrollToMatch((activeIndex + 1) % total);
@@ -89,6 +138,16 @@ export default function ResponsePanel() {
     }
   }, [proxyResponse?.data]);
 
+  const responseHeaders = useMemo(() => {
+    if (!proxyResponse?.headers) return {};
+    if (typeof proxyResponse.headers === "object" && proxyResponse.headers !== null) {
+      return proxyResponse.headers as Record<string, string>;
+    }
+    return {};
+  }, [proxyResponse?.headers]);
+
+  const headerCount = Object.keys(responseHeaders).length;
+
   const totalMatches = useMemo(
     () =>
       parsedData && searchQuery ? countMatches(parsedData, searchQuery) : 0,
@@ -96,6 +155,17 @@ export default function ResponsePanel() {
   );
 
   const hasJson = parsedData !== null && !proxyResponse?.error;
+
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   return (
     <MatchCtx.Provider value={matchCtxValue}>
@@ -108,6 +178,7 @@ export default function ResponsePanel() {
 
           {proxyResponse?.status != null && (
             <span
+              aria-live="polite"
               className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[8px] md:text-[10px] font-bold border"
               style={{
                 background: statusOk
@@ -136,6 +207,18 @@ export default function ResponsePanel() {
             </span>
           )}
 
+          {proxyResponse?.durationMs != null && (
+            <span className="text-[8px] md:text-[10px] text-white/30 font-mono">
+              {formatDuration(proxyResponse.durationMs)}
+            </span>
+          )}
+
+          {proxyResponse?.sizeBytes != null && proxyResponse.sizeBytes > 0 && (
+            <span className="text-[8px] md:text-[10px] text-white/30 font-mono">
+              {formatSize(proxyResponse.sizeBytes)}
+            </span>
+          )}
+
           <div className="ml-auto flex items-center gap-1">
             {hasJson && (
               <button
@@ -151,11 +234,52 @@ export default function ResponsePanel() {
               </button>
             )}
             {parsedData && <CopyButton data={parsedData} />}
+            {hasJson && (
+              <button
+                onClick={() => setRawView((o) => !o)}
+                title={rawView ? "Tree view" : "Raw view"}
+                className={`p-0.5 md:p-1 rounded transition-colors ${
+                  rawView
+                    ? "text-cyan-300/90 bg-cyan-400/10 ring-1 ring-cyan-400/20"
+                    : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                }`}
+              >
+                {rawView ? (
+                  <Braces className="h-2.5 w-2.5 md:h-3 md:w-3" />
+                ) : (
+                  <Code2 className="h-2.5 w-2.5 md:h-3 md:w-3" />
+                )}
+              </button>
+            )}
           </div>
         </div>
 
+        {/* ── Tabs ── */}
+        {proxyResponse && !proxyResponse.error && (
+          <div className="flex items-center border-b border-white/5 bg-[#0e1f35]/30 shrink-0">
+            {(["body", "headers"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className="relative px-3 py-2 md:py-1.5 text-[9px] md:text-[10px] font-semibold tracking-[0.15em] uppercase transition-colors cursor-pointer min-h-[44px] md:min-h-0"
+                style={{
+                  color: activeTab === tab ? "#00e5cc" : "rgba(255,255,255,0.25)",
+                }}
+              >
+                {tab}
+                {tab === "headers" && headerCount > 0 && (
+                  <span className="ml-1 text-[7px] text-white/20">({headerCount})</span>
+                )}
+                {activeTab === tab && (
+                  <span className="absolute bottom-0 left-2 right-2 h-px bg-cyan-400" />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Floating Search ── */}
-        {searchOpen && hasJson && (
+        {searchOpen && hasJson && activeTab === "body" && (
           <FloatingSearch
             value={searchQuery}
             onChange={setSearchQuery}
@@ -170,10 +294,18 @@ export default function ResponsePanel() {
         {/* ── Body ── */}
         {proxyResponse ? (
           <div className="flex-1 overflow-auto p-2 md:p-3">
-            {proxyResponse.error ? (
+            {activeTab === "headers" ? (
+              <HeadersTable headers={responseHeaders} />
+            ) : proxyResponse.error ? (
               <span className="font-mono text-[8px] md:text-[11px] text-red-400 whitespace-pre-wrap">
                 {proxyResponse.error}
               </span>
+            ) : parsedData && rawView ? (
+              <pre className="font-mono text-[9px] md:text-[11px] text-white/60 leading-relaxed whitespace-pre-wrap break-all">
+                {typeof proxyResponse.data === "string"
+                  ? proxyResponse.data
+                  : JSON.stringify(proxyResponse.data, null, 2)}
+              </pre>
             ) : parsedData ? (
               <JsonNode
                 value={parsedData}

@@ -15,7 +15,9 @@ import {
   InfoModal,
   Menu,
   NoteModal,
+  AuthModal,
 } from "@/components";
+import HistoryPanel from "./HistoryPanel";
 import { curlConverter } from "@/utils/curlConverter";
 import { THittableSelectorSelection } from "@/types";
 import { parseStringToJson } from "@/utils/JsonStringParsing";
@@ -101,6 +103,13 @@ export default function Selector() {
     shortcuts: { toggleSidebar },
     toggle,
   } = useShortcuts();
+
+  // Auto-collapse sidebar on mobile
+  useEffect(() => {
+    if (window.innerWidth < 768 && !toggleSidebar) {
+      toggle("toggleSidebar");
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selection = useMemo<THittableSelectorSelection>(() => {
     const c = searchParams.get("c") ?? "";
@@ -217,9 +226,11 @@ export default function Selector() {
             onClick={() => toggle("toggleSidebar")}
             className="text-white/30 hover:text-cyan-400 transition-colors cursor-pointer"
           >
-              <ChevronRight size={14} />
+            <ChevronRight size={14} />
            </button>
           <ImportModal />
+          <AuthModal />
+          <HistoryPanel />
           <NoteModal />
           <EnvModal />
           <InfoModal />
@@ -323,7 +334,7 @@ export default function Selector() {
   );
 
   return (
-    <div className="h-full flex shrink-0 border-r border-white/5">
+    <div className={`h-full flex shrink-0 border-r border-white/5 ${!toggleSidebar ? "max-md:absolute max-md:z-40 max-md:inset-y-0 max-md:left-0 max-md:shadow-2xl max-md:shadow-black/50" : ""}`}>
       {collectionsPanel}
       {routesPanel}
     </div>

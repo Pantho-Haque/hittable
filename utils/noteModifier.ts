@@ -17,7 +17,11 @@ export function loadStore(): NotesStore {
 }
 
 export function saveStore(store: NotesStore): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  } catch {
+    // Storage quota exceeded - data will not persist across sessions
+  }
 }
 
 export function createNote(store: NotesStore): { id: NoteId; updated: NotesStore } {

@@ -13,12 +13,14 @@ import {
   THittableCurlJson,
   THittableSelectorResponse,
   TResponseJson,
+  THistory,
 } from "@/types";
 import { GetHittableCollections } from "@/services";
 import { useExtension } from "@/hooks/useExtension";
 import { formatJson } from "@/utils/formatJson";
 import { jsonToCurl } from "@/utils/curlConverter";
 import { updateCurl } from "@/utils/hittableCollectionModifier";
+import { loadHistory } from "@/utils/historyModifier";
 
 const DataContext = createContext<{
   collections: THittableCollections;
@@ -39,6 +41,9 @@ const DataContext = createContext<{
   extensionChecked: boolean;
 
   handleSaveCollection: () => void;
+
+  history: THistory;
+  setHistory: Dispatch<SetStateAction<THistory>>;
 } | null>(null);
 
 export const DataProvider = ({ children }: { children: ReactNode }) => {
@@ -74,6 +79,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     selectorResponse?.responseJson ?? null,
   );
 
+  const [history, setHistory] = useState<THistory>(() => loadHistory());
+
   const handleSaveCollection = useCallback(() => {
       setSelectorResponse({
         ...selectorResponse!,
@@ -92,7 +99,11 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }, [selectorResponse, formInput, proxyResponse]);
 
   useEffect(() => {
-    localStorage.setItem("hittable", JSON.stringify(collections));
+    try {
+      localStorage.setItem("hittable", JSON.stringify(collections));
+    } catch {
+      // Storage quota exceeded - data will not persist across sessions
+    }
   }, [collections]);
 
   const hasCollections = collections.length > 0;
@@ -100,6 +111,17 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     if (!selectorResponse || !formInput) return false;
     return jsonToCurl(selectorResponse.curlJson) !== jsonToCurl(formInput);
   }, [selectorResponse, formInput]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isUnsaved()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isUnsaved]);
 
   return (
     <DataContext.Provider
@@ -120,6 +142,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         extensionChecked,
 
         handleSaveCollection,
+
+        history,
+        setHistory,
       }}
     >
       {children}

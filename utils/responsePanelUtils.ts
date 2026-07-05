@@ -25,14 +25,14 @@ export function valueMatchesSearch(value: JsonValue, query: string): boolean {
 export function countMatches(value: JsonValue, query: string): number {
   if (!query) return 0;
   const q = query.toLowerCase();
-  
+
   const countInStr = (str: string) => str.toLowerCase().split(q).length - 1;
 
   if (value === null) return countInStr("null");
   if (typeof value === "string") return countInStr(value);
   if (typeof value === "number" || typeof value === "boolean")
     return countInStr(String(value));
-    
+
   let count = 0;
   if (Array.isArray(value)) {
     for (const v of value) count += countMatches(v, q);
@@ -47,29 +47,36 @@ export function countMatches(value: JsonValue, query: string): number {
   return count;
 }
 
-export function getParamsfromUrl(url:string):string{
-  const params = url.split("?")[1];
-  if(!params) return "{}";
-  const paramsObj:Record<string,string> = {};
+export function getParamsfromUrl(url: string): string {
+  // Strip fragment identifier before parsing
+  const urlWithoutFragment = url.split("#")[0];
+  const params = urlWithoutFragment.split("?")[1];
+  if (!params) return "{}";
+  const paramsObj: Record<string, string> = {};
   params.split("&").forEach((param) => {
     const [key, ...valueParts] = param.split("=");
-    paramsObj[decodeURIComponent(key)] = decodeURIComponent(valueParts.join("="));
+    const decodedKey = decodeURIComponent(key);
+    const decodedValue = decodeURIComponent(valueParts.join("="));
+    paramsObj[decodedKey] = decodedValue;
   });
-  return JSON.stringify(paramsObj,null,2);
+  return JSON.stringify(paramsObj, null, 2);
 }
 
-export function modifyUrlForNewParams(url:string , newParams:string) : string{
-   try {
-    const parsedParams = JSON.parse(newParams) as Record<string,string>;
+export function modifyUrlForNewParams(url: string, newParams: string): string {
+  try {
+    const parsedParams = JSON.parse(newParams) as Record<string, string>;
     const host = url.split("?")[0];
-   let modifiedUrl = host + "?";
-    Object.entries(parsedParams).forEach(([key, value]) => {
-         modifiedUrl += `${key}=${value}&`;
+
+    const entries = Object.entries(parsedParams);
+    if (entries.length === 0) return host;
+
+    let modifiedUrl = host + "?";
+    entries.forEach(([key, value]) => {
+      modifiedUrl += `${encodeURIComponent(key)}=${encodeURIComponent(value)}&`;
     });
     modifiedUrl = modifiedUrl.slice(0, -1);
-    return decodeURIComponent(modifiedUrl);
-   }catch{
+    return modifiedUrl;
+  } catch {
     return url;
-   }
+  }
 }
-

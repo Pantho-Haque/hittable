@@ -39,6 +39,8 @@ export type TResponseJson = {
     headers?: unknown;
     error?: string;
     cookies?: unknown;
+    durationMs?: number;
+    sizeBytes?: number;
 } | null;
 
 export type THittableSelectorResponse = {
@@ -56,3 +58,18 @@ export type JsonValue =
   | null
   | JsonValue[]
   | { [k: string]: JsonValue };
+
+export type THistoryEntry = {
+  id: string;
+  timestamp: number;
+  method: string;
+  url: string;
+  status?: number;
+  statusText?: string;
+  durationMs?: number;
+  sizeBytes?: number;
+  curlJson: THittableCurlJson;
+  responseJson?: TResponseJson;
+};
+
+export type THistory = THistoryEntry[];

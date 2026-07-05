@@ -54,7 +54,18 @@ async function fetchViaProxy(
     body: JSON.stringify({ url, method, headers, body }),
   });
 
-  const responseData = await response.json();
+  let responseData;
+  try {
+    responseData = await response.json();
+  } catch {
+    return {
+      data: null,
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      error: "Failed to parse proxy response",
+    };
+  }
   return responseData;
 }
 
@@ -64,10 +75,17 @@ export async function hittableProxy(
   extensionAvailable: boolean,
 ) {
   const {url, method, headers, body} = resolveEnv(formInput, env);
-  
+
+  let parsedHeaders: Record<string, string>;
+  try {
+    parsedHeaders = JSON.parse(headers || "{}");
+  } catch {
+    parsedHeaders = {};
+  }
+
   const isLocal = isLocalUrl(url);
   if (isLocal && extensionAvailable) {
-    return fetchViaExtension(url, method, JSON.parse(headers), body);
+    return fetchViaExtension(url, method, parsedHeaders, body);
   }
 
   if (isLocal && !extensionAvailable) {
@@ -76,4 +94,3 @@ export async function hittableProxy(
 
   return fetchViaProxy(url, method, headers, body);
 }
-

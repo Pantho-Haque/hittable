@@ -56,8 +56,6 @@ export default async function HomePage() {
   const hero = res.hero;
   const skills = res.experience[0].stack;
 
-  console.log(res);
-
   return (
     <main className="min-h-full bg-[#09090b] text-zinc-100 overflow-x-hidden font-sans selection:bg-zinc-800">
       {/* Subtle Background Pattern */}

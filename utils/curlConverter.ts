@@ -5,10 +5,13 @@ import { formatJson } from "./formatJson";
 export function curlConverter(curlString: string): THittableCurlJson {
   if (!curlString) return { method: "GET", url: "", params: "{}", headers: "{}", body: "{}" };
 
-  const urlRegex = /(?:https?:\/\/|<<)[^\s"']+/;
-  const rawUrlFromCurl = curlString.match(urlRegex)?.[0] || "";
+  // Normalize line endings (Windows \r\n → Unix \n)
+  const normalizedCurl = curlString.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-  const shieldedCurl = curlString.replace(/<<(\w+)>>/g, 'PH_$1_PH');
+  const urlRegex = /(?:https?:\/\/|<<)[^\s"']+/;
+  const rawUrlFromCurl = normalizedCurl.match(urlRegex)?.[0] || "";
+
+  const shieldedCurl = normalizedCurl.replace(/<<(\w+)>>/g, 'PH_$1_PH');
 
   let parsed: ResultJSON;
   try {
@@ -24,7 +27,7 @@ export function curlConverter(curlString: string): THittableCurlJson {
   const extractParams = (url: string) => {
     const queryPart = url.split('?')[1];
     if (!queryPart) return {};
-    
+
     return queryPart.split('&').reduce((acc: Record<string, string>, pair: string) => {
       const [k, v] = pair.split('=');
       if (k) acc[unshield(k)] = unshield(v || "");
@@ -32,27 +35,28 @@ export function curlConverter(curlString: string): THittableCurlJson {
     }, {});
   };
 
-  const cleanObj = (obj: Record<string, string>) => {
+  const cleanObj = (obj: Record<string, unknown>) => {
     const newObj: Record<string, string> = {};
     Object.entries(obj || {}).forEach(([k, v]) => {
-      newObj[unshield(k)] = unshield(v);
+      const value = typeof v === "string" ? v : (typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? ""));
+      newObj[unshield(k)] = unshield(value);
     });
     return newObj;
   };
 
   return {
     method: parsed.method || "GET",
-    url: rawUrlFromCurl, // Use the raw one we grabbed at the start
+    url: rawUrlFromCurl,
     params: formatJson(extractParams(rawUrlFromCurl)).output,
-    headers: formatJson(cleanObj(parsed.header as Record<string, string>)).output,
-    body: formatJson(cleanObj(parsed.data)).output,
+    headers: formatJson(cleanObj(parsed.header as Record<string, unknown>)).output,
+    body: formatJson(cleanObj(parsed.data as Record<string, unknown>)).output,
   };
 }
 
 
 export function jsonToCurl(json: THittableCurlJson): string {
   let methodPart = `-X ${json.method}`;
-  
+
   // Use the standard curl shorthand for HEAD
   if (json.method === "HEAD") {
     methodPart = "-I";
@@ -64,7 +68,8 @@ export function jsonToCurl(json: THittableCurlJson): string {
     try {
       const headersObj = JSON.parse(json.headers);
       for (const [key, value] of Object.entries(headersObj)) {
-        curl += ` -H "${key}: ${value}"`;
+        const escapedValue = String(value).replace(/"/g, '\\"');
+        curl += ` -H "${key}: ${escapedValue}"`;
       }
     } catch {
       // fallback
@@ -74,7 +79,8 @@ export function jsonToCurl(json: THittableCurlJson): string {
   // Only add body if it exists and isn't a GET/HEAD/DELETE
   const noBodyMethods = ["GET", "HEAD", "DELETE"];
   if (json.body && !noBodyMethods.includes(json.method.toUpperCase())) {
-    curl += ` -d '${json.body}'`;
+    const escapedBody = json.body.replace(/'/g, "'\\''");
+    curl += ` -d '${escapedBody}'`;
   }
 
   return curl;

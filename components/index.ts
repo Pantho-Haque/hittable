@@ -6,6 +6,7 @@ import ImportModal from "./modals/ImportModal";
 import ExportModal from "./modals/ExportModal";
 import InfoModal from "./modals/InfoModal";
 import NoteModal from "./modals/NoteModal";
+import AuthModal from "./modals/AuthModal";
 
 import NotePills from "./notes/NotePills";
 import NoteEditor from "./notes/NoteEditor";
@@ -32,6 +33,7 @@ import NoExtensionModal from "./modals/NoExtensionModal";
 import SyntaxHighlighter from "./hittable/SyntaxHighlighter";
 import Menu from "./hittable/Menu";
 import Topbar from "./homepage/TopBar";
+import HistoryPanel from "./hittable/HistoryPanel";
 
 export * from "./ui/SharedModal";
 
@@ -47,6 +49,7 @@ export {
   ExportModal,
   InfoModal,
   NoteModal,
+  AuthModal,
   NotePills,
   NoteEditor,
   ResponsePanel,
@@ -66,5 +69,6 @@ export {
   NoExtensionModal,
   PortfolioSection,
   TerminalDemo,
+  HistoryPanel,
 };
 export type { MatchRegistry };

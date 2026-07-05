@@ -1,12 +1,13 @@
 "use client";
 import { Suspense } from "react";
-import { RequestForm, Selector, ImportModal, InfoModal, NoteModal } from "@/components";
+import { RequestForm, Selector, ImportModal, InfoModal, NoteModal, AuthModal, HistoryPanel } from "@/components";
 import { useShortcuts } from "@/context/ShortcutKeypressProvider";
 
 export default function Hittable() {
 
   const {
     shortcuts: { toggleSidebar },
+    toggle,
   } = useShortcuts();
   return (
     <div className="h-[calc(100vh-44px)] w-full flex bg-[#080f1a] overflow-hidden font-mono">
@@ -15,6 +16,14 @@ export default function Hittable() {
         <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-cyan-500/5 blur-[120px]" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] rounded-full bg-cyan-400/4 blur-[100px]" />
       </div>
+
+      {/* Mobile backdrop when sidebar is expanded */}
+      {!toggleSidebar && (
+        <div
+          className="md:hidden fixed inset-0 z-30 bg-black/40"
+          onClick={() => toggle("toggleSidebar")}
+        />
+      )}
 
       <div className="flex h-full w-full">
         <Suspense fallback={null}>
@@ -26,8 +35,10 @@ export default function Hittable() {
           </div>
         </div>
 
-        {!toggleSidebar && (<div className="w-12 h-full flex flex-col border-l border-white/5 bg-[#0a1628]/80 items-center justify-start">
+        {!toggleSidebar && (<div className="hidden md:flex w-12 h-full flex-col border-l border-white/5 bg-[#0a1628]/80 items-center justify-start">
           <ImportModal />
+          <AuthModal />
+          <HistoryPanel />
           <NoteModal />
           <InfoModal />
         </div>)}

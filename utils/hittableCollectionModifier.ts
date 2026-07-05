@@ -48,7 +48,7 @@ export const renameCurlName = (
   newName: string,
 ) => {
   return prev.map((collection) => {
-    if (collection.collectionName == collectionName) {
+    if (collection.collectionName === collectionName) {
       return {
         ...collection,
         curls: collection.curls.map((curl) =>
@@ -64,12 +64,13 @@ export const isAlreadyExists = (
   type: string,
   newName: string,
   collectionName?: string,
-) => {
+): boolean => {
   if (type === "collection") {
     return Object.keys(collectionCurlList).includes(newName);
   } else if (collectionCurlList && !!collectionName) {
-    return collectionCurlList[collectionName].includes(newName);
+    return collectionCurlList[collectionName]?.includes(newName) ?? false;
   }
+  return false;
 };
 
 export const updateCurl = (
@@ -106,7 +107,7 @@ export const deleteCurlName = (
   currentName: string,
 ) => {
   return prev.map((collection) => {
-    if (collection.collectionName == collectionName) {
+    if (collection.collectionName === collectionName) {
       return {
         ...collection,
         curls: collection.curls.filter((curl) => curl.name !== currentName),
