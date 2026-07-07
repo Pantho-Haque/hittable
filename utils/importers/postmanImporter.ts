@@ -1,4 +1,4 @@
-import { THittableCollection } from "@/types";
+import { THittableCollection, THittableItem } from "@/types";
 
 interface PostmanCollection {
   info?: { name?: string; schema?: string };
@@ -109,39 +109,54 @@ function bodyToJSON(body: PostmanRequest["body"]): string {
   }
 }
 
-function flattenItems(items: (PostmanItem | PostmanFolder)[], parentPath: string[] = []): { name: string; curl: string; response: string }[] {
-  const result: { name: string; curl: string; response: string }[] = [];
+function buildCurlFromRequest(req: PostmanRequest): string {
+  const method = req.method ?? "GET";
+  const url = resolveUrl(req.url);
+  const headers = headersToJSON(req.header);
+  const body = bodyToJSON(req.body);
+
+  let curl = `curl -X ${method} ${url}`;
+  try {
+    const parsed = JSON.parse(headers);
+    for (const [k, v] of Object.entries(parsed)) {
+      curl += ` -H "${k}: ${v}"`;
+    }
+  } catch { /* skip */ }
+  const noBody = ["GET", "HEAD", "DELETE"].includes(method.toUpperCase());
+  if (body && body !== "{}" && !noBody) {
+    curl += ` -d '${body.replace(/'/g, "'\\''")}'`;
+  }
+  return curl;
+}
+
+function convertPostmanItems(
+  items: (PostmanItem | PostmanFolder)[],
+): THittableItem[] {
+  const result: THittableItem[] = [];
   for (const item of items) {
     if ("item" in item && Array.isArray(item.item)) {
-      result.push(...flattenItems(item.item, [...parentPath, item.name ?? "Unnamed"]));
+      // This is a folder — create real nested folder
+      result.push({
+        type: "folder",
+        name: item.name ?? "Unnamed Folder",
+        items: convertPostmanItems(item.item),
+      });
     } else if ("request" in item) {
       const req = item.request;
       if (typeof req === "string") {
-        const name = parentPath.length > 0
-          ? [...parentPath, item.name ?? "Unnamed"].join(" / ")
-          : (item.name ?? "Unnamed");
-        result.push({ name, curl: `curl ${req}`, response: "" });
+        result.push({
+          type: "route",
+          name: item.name ?? "Unnamed",
+          curl: `curl ${req}`,
+          response: "",
+        });
       } else if (req) {
-        const method = req.method ?? "GET";
-        const url = resolveUrl(req.url);
-        const headers = headersToJSON(req.header);
-        const body = bodyToJSON(req.body);
-        const name = parentPath.length > 0
-          ? [...parentPath, item.name ?? "Unnamed"].join(" / ")
-          : (item.name ?? "Unnamed");
-
-        let curl = `curl -X ${method} ${url}`;
-        try {
-          const parsed = JSON.parse(headers);
-          for (const [k, v] of Object.entries(parsed)) {
-            curl += ` -H "${k}: ${v}"`;
-          }
-        } catch { /* skip */ }
-        const noBody = ["GET", "HEAD", "DELETE"].includes(method.toUpperCase());
-        if (body && body !== "{}" && !noBody) {
-          curl += ` -d '${body.replace(/'/g, "'\\''")}'`;
-        }
-        result.push({ name, curl, response: "" });
+        result.push({
+          type: "route",
+          name: item.name ?? "Unnamed",
+          curl: buildCurlFromRequest(req),
+          response: "",
+        });
       }
     }
   }
@@ -173,7 +188,6 @@ export function parsePostmanCollection(json: unknown): THittableCollection[] {
   function processCollection(col: PostmanCollection): THittableCollection {
     const collectionName = col.info?.name ?? "Imported Collection";
     const items = col.item ?? [];
-    const routes = flattenItems(items);
     const envVars: Record<string, string> = {};
 
     // Collection-level variables
@@ -191,11 +205,7 @@ export function parsePostmanCollection(json: unknown): THittableCollection[] {
 
     return {
       collectionName,
-      curls: routes.map((r) => ({
-        name: r.name,
-        curl: r.curl,
-        response: "",
-      })),
+      items: convertPostmanItems(items),
       env: envVars,
     };
   }

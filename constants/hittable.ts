@@ -23,14 +23,16 @@ export const METHOD_COLORS: Record<string, string> = {
 export const collections: THittableCollections = [
   {
     collectionName: "JSONPlaceholder Lab",
-    curls: [
+    items: [
       {
+        type: "route",
         name: "List Resources (GET)",
         curl: `curl -X GET https://jsonplaceholder.typicode.com/posts?_limit=5 \\
   -H "Accept: application/json"`,
         response: "",
       },
       {
+        type: "route",
         name: "Create Resource (POST)",
         curl: `curl -X POST https://jsonplaceholder.typicode.com/posts \\
   -H "Content-Type: application/json" \\
@@ -38,6 +40,7 @@ export const collections: THittableCollections = [
         response: "",
       },
       {
+        type: "route",
         name: "Replace Resource (PUT)",
         curl: `curl -X PUT https://jsonplaceholder.typicode.com/posts/1 \\
   -H "Content-Type: application/json" \\
@@ -45,6 +48,7 @@ export const collections: THittableCollections = [
         response: "",
       },
       {
+        type: "route",
         name: "Update Resource (PATCH)",
         curl: `curl -X PATCH https://jsonplaceholder.typicode.com/posts/1 \\
   -H "Content-Type: application/json" \\
@@ -52,11 +56,13 @@ export const collections: THittableCollections = [
         response: "",
       },
       {
+        type: "route",
         name: "Remove Resource (DELETE)",
         curl: `curl -X DELETE https://jsonplaceholder.typicode.com/posts/1`,
         response: "",
       },
       {
+        type: "route",
         name: "Check Headers (HEAD)",
         curl: `curl -I -X HEAD https://jsonplaceholder.typicode.com/posts`,
         response: "",

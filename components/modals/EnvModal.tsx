@@ -13,11 +13,13 @@ import { createPortal } from "react-dom";
 import { updateEnv } from "@/utils/hittableCollectionModifier";
 import { useDataContext } from "@/context/dataContext";
 
-export default function EnvModal() {
+export default function EnvModal({ collectionName: propCollectionName }: { collectionName?: string } = {}) {
   const [open, setOpen] = useState(false);
   const [localEnv, setLocalEnv] = useState<[string, string][]>([]);
-  const {selectorResponse, setSelectorResponse, setCollections} = useDataContext()
-  const {collectionName, env} = selectorResponse || { collectionName :"", env:{}}
+  const {selectorResponse, setSelectorResponse, setCollections, collections} = useDataContext()
+  const effectiveCollectionName = propCollectionName ?? selectorResponse?.collectionName ?? "";
+  const collection = collections.find((c) => c.collectionName === effectiveCollectionName);
+  const env = collection?.env ?? selectorResponse?.env ?? {};
 
   const openModal = () => {
     setLocalEnv(Object.entries(env ?? {}) as [string, string][]);
@@ -34,13 +36,13 @@ export default function EnvModal() {
 
   const handleSave = useCallback(() => {
     const updatedEnv = Object.fromEntries(localEnv.filter(([k]) => k.trim())) as THittableEnv;
-    setCollections((prev) => updateEnv(prev, collectionName, updatedEnv));
+    setCollections((prev) => updateEnv(prev, effectiveCollectionName, updatedEnv));
     setSelectorResponse((prev) => {
-      if (!prev || prev.collectionName !== collectionName) return prev;
+      if (!prev || prev.collectionName !== effectiveCollectionName) return prev;
       return { ...prev, env: updatedEnv };
     });
     setOpen(false);
-  }, [localEnv, collectionName, setCollections, setSelectorResponse]);
+  }, [localEnv, effectiveCollectionName, setCollections, setSelectorResponse]);
 
   useEffect(() => {
     if (!open) return;
@@ -56,10 +58,10 @@ export default function EnvModal() {
     <>
       <button
         onClick={openModal}
-        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-semibold tracking-wider rounded-md border border-white/10 bg-white/5 text-white/40 hover:bg-white/8 hover:text-white/60 hover:border-white/20 transition-all cursor-pointer"
+        title="Environment Variables"
+        className="modal-button-mini"
       >
         <Settings2 size={14} />
-        Env Vars
       </button>
 
       {open &&
@@ -82,7 +84,7 @@ export default function EnvModal() {
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-[9px] tracking-[0.3em] uppercase text-cyan-500/60 mb-1">Environment</p>
-                  <h2 className="text-sm font-bold text-white/90 capitalize">{collectionName}</h2>
+                  <h2 className="text-sm font-bold text-white/90 capitalize">{effectiveCollectionName}</h2>
                   <p className="text-[10px] text-white/25 mt-1">
                     Reference with <span className="text-cyan-400/60 font-mono">&lt;&lt;KEY&gt;&gt;</span> in your requests
                   </p>

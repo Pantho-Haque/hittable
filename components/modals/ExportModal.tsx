@@ -4,7 +4,7 @@ import { Upload } from "lucide-react";
 import { useCallback, useState } from "react";
 import { ModalShell, ModalActions } from "@/components";
 import { compressString } from "@/utils/compressString";
-import { THittableCurl, THittableCollection } from "@/types";
+import { THittableCollection } from "@/types";
 import { exportToPostmanCollection } from "@/utils/importers/postmanExporter";
 import { exportToInsomniaCollection } from "@/utils/importers/insomniaExporter";
 
@@ -30,9 +30,11 @@ export default function ExportModal({
   const generateExport = useCallback(() => {
     try {
       const parsed = JSON.parse(exportString) as THittableCollection;
-      const stripped = {
+      const stripped: THittableCollection = {
         ...parsed,
-        curls: parsed.curls?.map((c: THittableCurl) => ({ ...c, response: "" })),
+        items: parsed.items?.map((item) =>
+          item.type === "route" ? { ...item, response: "" } : item
+        ) ?? [],
       };
 
       switch (format) {

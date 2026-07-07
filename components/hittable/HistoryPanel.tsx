@@ -21,6 +21,7 @@ export default function HistoryPanel() {
     setProxyResponse(entry.responseJson ?? null);
     setSelectorResponse({
       collectionName: "",
+      folderPath: [],
       curlName: `History: ${entry.method} ${new URL(entry.url).pathname}`,
       curlJson: entry.curlJson,
       responseJson: entry.responseJson,

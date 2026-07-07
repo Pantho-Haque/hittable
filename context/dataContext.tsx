@@ -56,6 +56,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const [selectorResponse, setSelectorResponse] =
     useState<THittableSelectorResponse | null>({
       collectionName: "",
+      folderPath: [],
       curlName: "",
       env: {},
       curlJson: {
@@ -83,18 +84,20 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const [history, setHistory] = useState<THistory>(() => loadHistory());
 
   const handleSaveCollection = useCallback(() => {
+      if (!selectorResponse) return;
       setSelectorResponse({
-        ...selectorResponse!,
+        ...selectorResponse,
         curlJson: formInput,
         responseJson: proxyResponse,
       });
       setCollections((prev) =>
         updateCurl(
           prev,
-          selectorResponse!.collectionName,
-          selectorResponse!.curlName,
+          selectorResponse.collectionName,
+          selectorResponse.curlName,
           jsonToCurl(formInput),
           JSON.stringify(proxyResponse),
+          selectorResponse.folderPath,
         ),
       );
     }, [selectorResponse, formInput, proxyResponse]);

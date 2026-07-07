@@ -4,19 +4,35 @@ export type THittableEnv = {
   [key: string]: string;
 };
 
-export type THittableCurl = {
+export type THittableRoute = {
+  type: "route";
   name: string;
   curl: string;
   response: string;
 };
 
+export type THittableFolder = {
+  type: "folder";
+  name: string;
+  items: THittableItem[];
+};
+
+export type THittableItem = THittableRoute | THittableFolder;
+
 export type THittableCollection = {
   collectionName: string;
-  curls: THittableCurl[];
+  items: THittableItem[];
   env: THittableEnv;
 };
 
 export type THittableCollections = THittableCollection[];
+
+// Legacy type for migration detection
+export type THittableCollectionLegacy = {
+  collectionName: string;
+  curls: { name: string; curl: string; response: string }[];
+  env: THittableEnv;
+};
 
 export type THittableCurlJson = {
   method: string;
@@ -27,28 +43,30 @@ export type THittableCurlJson = {
 };
 
 export type THittableSelectorSelection = {
-    collectionName: string;
-    curlName: string;
-}
+  collectionName: string;
+  folderPath: string[];
+  curlName: string;
+};
 
 export type TResponseJson = {
-    data?: unknown;
-    status?: number;
-    statusText?: string;
-    ok?: boolean;
-    headers?: unknown;
-    error?: string;
-    cookies?: unknown;
-    durationMs?: number;
-    sizeBytes?: number;
+  data?: unknown;
+  status?: number;
+  statusText?: string;
+  ok?: boolean;
+  headers?: unknown;
+  error?: string;
+  cookies?: unknown;
+  durationMs?: number;
+  sizeBytes?: number;
 } | null;
 
 export type THittableSelectorResponse = {
-    collectionName: string;
-    curlName: string;
-    env?: THittableEnv;
-    curlJson: THittableCurlJson;
-    responseJson?: TResponseJson;
+  collectionName: string;
+  folderPath: string[];
+  curlName: string;
+  env?: THittableEnv;
+  curlJson: THittableCurlJson;
+  responseJson?: TResponseJson;
 };
 
 export type JsonValue =

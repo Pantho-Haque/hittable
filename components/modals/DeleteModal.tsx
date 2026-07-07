@@ -11,7 +11,7 @@ import {
 import { THittableCollections, THittableSelectorSelection } from "@/types";
 import {
   deleteCollectionName,
-  deleteCurlName,
+  deleteItem,
 } from "@/utils/hittableCollectionModifier";
 import { ModalActions, ModalShell } from "@/components";
 
@@ -19,12 +19,14 @@ export default function DeleteModal({
   currentName,
   type,
   collectionName,
+  folderPath,
   setCollections,
   setSelection,
 }: {
   currentName: string;
   type: "collection" | "route";
   collectionName?: string;
+  folderPath?: string[];
   setCollections: Dispatch<SetStateAction<THittableCollections>>;
   setSelection: Dispatch<SetStateAction<THittableSelectorSelection>>;
 }) {
@@ -33,15 +35,15 @@ export default function DeleteModal({
   const handleDelete = useCallback(() => {
     if (type === "collection") {
       setCollections((prev) => deleteCollectionName(prev, currentName));
-      setSelection({ collectionName: "", curlName: "" });
+      setSelection({ collectionName: "", folderPath: [], curlName: "" });
     } else {
       setCollections((prev) =>
-        deleteCurlName(prev, collectionName ?? "", currentName),
+        deleteItem(prev, collectionName ?? "", currentName, folderPath),
       );
       setSelection((prev) => ({ ...prev, curlName: "" }));
     }
     setOpen(false);
-  }, [type, currentName, collectionName, setCollections, setSelection]);
+  }, [type, currentName, collectionName, folderPath, setCollections, setSelection]);
 
   useEffect(() => {
     if (!open) return;

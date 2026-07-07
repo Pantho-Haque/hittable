@@ -1,4 +1,4 @@
-import { THittableCollection } from "@/types";
+import { THittableCollection, THittableItem } from "@/types";
 
 function resolveEnvSyntax(text: string): string {
   return text.replace(/<<(\w+)>>/g, "{{ _.${1} }}");
@@ -33,12 +33,53 @@ function parseCurlString(curlStr: string): {
   return { method, url, headers, body };
 }
 
+function itemsToInsomniaResources(
+  items: THittableItem[],
+  parentId: string,
+  resources: Record<string, unknown>[],
+): void {
+  for (const item of items) {
+    if (item.type === "folder") {
+      const groupId = generateId("fld");
+      resources.push({
+        _type: "request_group",
+        _id: groupId,
+        parentId,
+        name: item.name,
+      });
+      itemsToInsomniaResources(item.items, groupId, resources);
+    } else {
+      const parsed = parseCurlString(item.curl);
+      const requestId = generateId("req");
+
+      const insomniaHeaders: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed.headers)) {
+        insomniaHeaders[resolveEnvSyntax(k)] = resolveEnvSyntax(v);
+      }
+
+      resources.push({
+        _type: "request",
+        _id: requestId,
+        parentId,
+        name: item.name,
+        method: parsed.method,
+        url: resolveEnvSyntax(parsed.url),
+        headers: insomniaHeaders,
+        body: {
+          mimeType: "application/json",
+          text: parsed.body ? resolveEnvSyntax(parsed.body) : "",
+        },
+      });
+    }
+  }
+}
+
 export function exportToInsomniaCollection(
   collection: THittableCollection,
 ): string {
   const workspaceId = generateId("wrk");
   const envId = generateId("env");
-  const groupId = generateId("fld");
+  const rootGroupId = generateId("fld");
 
   const resources: Record<string, unknown>[] = [];
 
@@ -61,38 +102,16 @@ export function exportToInsomniaCollection(
     data: collection.env,
   });
 
-  // Request group (folder)
+  // Root request group
   resources.push({
     _type: "request_group",
-    _id: groupId,
+    _id: rootGroupId,
     parentId: workspaceId,
     name: collection.collectionName,
   });
 
-  // Requests
-  for (const curl of collection.curls) {
-    const parsed = parseCurlString(curl.curl);
-    const requestId = generateId("req");
-
-    const insomniaHeaders: Record<string, string> = {};
-    for (const [k, v] of Object.entries(parsed.headers)) {
-      insomniaHeaders[resolveEnvSyntax(k)] = resolveEnvSyntax(v);
-    }
-
-    resources.push({
-      _type: "request",
-      _id: requestId,
-      parentId: groupId,
-      name: curl.name,
-      method: parsed.method,
-      url: resolveEnvSyntax(parsed.url),
-      headers: insomniaHeaders,
-      body: {
-        mimeType: "application/json",
-        text: parsed.body ? resolveEnvSyntax(parsed.body) : "",
-      },
-    });
-  }
+  // Items (folders and requests)
+  itemsToInsomniaResources(collection.items, rootGroupId, resources);
 
   return JSON.stringify({ resources }, null, 2);
 }

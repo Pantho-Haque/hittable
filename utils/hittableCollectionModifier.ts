@@ -1,10 +1,25 @@
-import { THittableCollections, THittableCurlJson, THittableEnv } from "@/types";
+import {
+  THittableCollections,
+  THittableCurlJson,
+  THittableEnv,
+  THittableItem,
+  THittableCollection,
+} from "@/types";
+import {
+  insertItem,
+  removeItem,
+  renameItem,
+  updateRoute,
+  nameExistsInPath,
+  getItemsAtPath,
+  collectAllRouteNames,
+} from "@/utils/treeHelpers";
 
 export const createCollectionName = (
   prev: THittableCollections,
   currentName: string,
-) => {
-  return [...prev, { collectionName: currentName, curls: [], env: {} }];
+): THittableCollections => {
+  return [...prev, { collectionName: currentName, items: [], env: {} }];
 };
 
 export const createCurlName = (
@@ -12,15 +27,43 @@ export const createCurlName = (
   selectedCollection: string,
   currentName: string,
   curlString: string,
-) => {
+  folderPath: string[] = [],
+): THittableCollections => {
+  const newItem: THittableItem = {
+    type: "route",
+    name: currentName,
+    curl: curlString,
+    response: "",
+  };
   return prev.map((collection) => {
     if (collection.collectionName === selectedCollection) {
       return {
         ...collection,
-        curls: [...collection.curls, { name: currentName, curl: curlString, response: "" }],
+        items: insertItem(collection.items, folderPath, newItem),
       };
     }
-    
+    return collection;
+  });
+};
+
+export const createFolderName = (
+  prev: THittableCollections,
+  selectedCollection: string,
+  folderName: string,
+  folderPath: string[] = [],
+): THittableCollections => {
+  const newFolder: THittableItem = {
+    type: "folder",
+    name: folderName,
+    items: [],
+  };
+  return prev.map((collection) => {
+    if (collection.collectionName === selectedCollection) {
+      return {
+        ...collection,
+        items: insertItem(collection.items, folderPath, newFolder),
+      };
+    }
     return collection;
   });
 };
@@ -29,13 +72,10 @@ export const renameCollectionName = (
   prev: THittableCollections,
   currentName: string,
   newName: string,
-) => {
+): THittableCollections => {
   return prev.map((collection) => {
     if (collection.collectionName === currentName) {
-      return {
-        ...collection,
-        collectionName: newName,
-      };
+      return { ...collection, collectionName: newName };
     }
     return collection;
   });
@@ -46,16 +86,34 @@ export const renameCurlName = (
   currentName: string,
   collectionName: string,
   newName: string,
-) => {
+  folderPath: string[] = [],
+): THittableCollections => {
   return prev.map((collection) => {
     if (collection.collectionName === collectionName) {
       return {
         ...collection,
-        curls: collection.curls.map((curl) =>
-          curl.name === currentName ? { ...curl, name: newName } : curl,
-        ),
+        items: renameItem(collection.items, folderPath, currentName, newName),
       };
-    } else return collection;
+    }
+    return collection;
+  });
+};
+
+export const renameFolderName = (
+  prev: THittableCollections,
+  currentName: string,
+  collectionName: string,
+  newName: string,
+  folderPath: string[] = [],
+): THittableCollections => {
+  return prev.map((collection) => {
+    if (collection.collectionName === collectionName) {
+      return {
+        ...collection,
+        items: renameItem(collection.items, folderPath, currentName, newName),
+      };
+    }
+    return collection;
   });
 };
 
@@ -73,21 +131,28 @@ export const isAlreadyExists = (
   return false;
 };
 
+export const isAlreadyExistsInPath = (
+  collection: THittableCollection | undefined,
+  folderPath: string[],
+  name: string,
+): boolean => {
+  if (!collection) return false;
+  return nameExistsInPath(collection.items, folderPath, name);
+};
+
 export const updateCurl = (
   prev: THittableCollections,
   collectionName: string,
   curlName: string,
   curl: string,
   response: string,
-) => {
+  folderPath: string[] = [],
+): THittableCollections => {
   return prev.map((collection) => {
     if (collection.collectionName === collectionName) {
       return {
         ...collection,
-        curls: collection.curls.map((c) =>
-          c.name === curlName ? { ...c, curl, response } : c,
-        ),
-
+        items: updateRoute(collection.items, folderPath, curlName, curl, response),
       };
     }
     return collection;
@@ -97,41 +162,42 @@ export const updateCurl = (
 export const deleteCollectionName = (
   prev: THittableCollections,
   currentName: string,
-) => {
+): THittableCollections => {
   return prev.filter((collection) => collection.collectionName !== currentName);
 };
 
-export const deleteCurlName = (
+export const deleteItem = (
   prev: THittableCollections,
   collectionName: string,
-  currentName: string,
-) => {
+  itemName: string,
+  folderPath: string[] = [],
+): THittableCollections => {
   return prev.map((collection) => {
     if (collection.collectionName === collectionName) {
       return {
         ...collection,
-        curls: collection.curls.filter((curl) => curl.name !== currentName),
-      };
-    }else return collection;
-  });
-};
-
-export const updateEnv = (
-  prev: THittableCollections,
-  collectionName: string,
-  env: Record<string, string>,
-) => {
-  return prev.map((collection) => {
-    if (collection.collectionName === collectionName) {
-      return {
-        ...collection,
-        env,
+        items: removeItem(collection.items, folderPath, itemName),
       };
     }
     return collection;
   });
 };
 
+export const deleteCurlName = deleteItem;
+export const deleteFolderName = deleteItem;
+
+export const updateEnv = (
+  prev: THittableCollections,
+  collectionName: string,
+  env: Record<string, string>,
+): THittableCollections => {
+  return prev.map((collection) => {
+    if (collection.collectionName === collectionName) {
+      return { ...collection, env };
+    }
+    return collection;
+  });
+};
 
 export function resolveEnv(formInput: THittableCurlJson, env?: THittableEnv): THittableCurlJson {
   if (!env) return formInput;
@@ -139,7 +205,7 @@ export function resolveEnv(formInput: THittableCurlJson, env?: THittableEnv): TH
   (Object.entries(newFormInput) as [string, unknown][]).forEach(([key, val]) => {
     if (typeof val === 'string') {
       (newFormInput as Record<string, unknown>)[key] = val.replace(
-        /<<(\w+)>>/g, 
+        /<<(\w+)>>/g,
         (_, envKey: string) => env[envKey] ?? `<<${envKey}>>`
       );
     }

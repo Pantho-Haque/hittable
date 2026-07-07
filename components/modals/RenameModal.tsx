@@ -7,11 +7,12 @@ import {
   THittableSelectorSelection,
 } from "@/types";
 import {
-  isAlreadyExists,
+  isAlreadyExistsInPath,
   renameCollectionName,
   renameCurlName,
 } from "@/utils/hittableCollectionModifier";
 import { ModalInput, ModalShell, ModalActions } from "@/components";
+import { useDataContext } from "@/context/dataContext";
 
 
 export default function RenameModal({
@@ -19,6 +20,7 @@ export default function RenameModal({
   type,
   collectionCurlList,
   collectionName,
+  folderPath,
   setCollections,
   setSelection,
 }: {
@@ -26,23 +28,40 @@ export default function RenameModal({
   type: "collection" | "route";
   collectionCurlList: { [key: string]: string[] };
   collectionName?: string;
+  folderPath?: string[];
   setCollections: Dispatch<SetStateAction<THittableCollections>>;
   setSelection: Dispatch<SetStateAction<THittableSelectorSelection>>;
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(currentName);
   const [error, setError] = useState("");
+  const { collections } = useDataContext();
 
   const handleRename = () => {
     if (!value.trim() || value === currentName) return setOpen(false);
-    if (isAlreadyExists(collectionCurlList, type, value, collectionName))
-      return setError(`"${value}" already exists`);
 
     if (type === "collection") {
+      if (collectionCurlList[value.trim()]) {
+        return setError(`"${value.trim()}" already exists`);
+      }
       setCollections((prev) => renameCollectionName(prev, currentName, value.trim()));
       setSelection((prev) => ({ ...prev, collectionName: value.trim() }));
     } else {
-      setCollections((prev) => renameCurlName(prev, currentName, collectionName ?? "", value.trim()));
+      const col = collections.find(
+        (c) => c.collectionName === collectionName,
+      );
+      if (isAlreadyExistsInPath(col, folderPath ?? [], value.trim())) {
+        return setError(`"${value.trim()}" already exists`);
+      }
+      setCollections((prev) =>
+        renameCurlName(
+          prev,
+          currentName,
+          collectionName ?? "",
+          value.trim(),
+          folderPath,
+        ),
+      );
       setSelection((prev) => ({ ...prev, curlName: value.trim() }));
     }
     setOpen(false);

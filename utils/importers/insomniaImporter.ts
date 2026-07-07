@@ -1,4 +1,4 @@
-import { THittableCollection } from "@/types";
+import { THittableCollection, THittableItem } from "@/types";
 
 interface InsomniaExport {
   _type?: string;
@@ -16,7 +16,7 @@ interface InsomniaResource {
   body?: { mimeType?: string; text?: string };
   data?: Record<string, string>;
   environment?: Record<string, string>;
- _kvPairData?: { name: string; value: string; enabled: boolean }[];
+  _kvPairData?: { name: string; value: string; enabled: boolean }[];
 }
 
 function resolveVariableSyntax(text: string): string {
@@ -41,6 +41,41 @@ function parseInsomniaRequest(req: InsomniaResource): { name: string; curl: stri
   }
 
   return { name: req.name ?? "Unnamed", curl, response: "" };
+}
+
+function buildNestedItems(
+  groupId: string,
+  byId: Map<string, InsomniaResource>,
+): THittableItem[] {
+  const items: THittableItem[] = [];
+
+  // Find child request groups (sub-folders)
+  const childGroups = Array.from(byId.values()).filter(
+    (r) => r._type === "request_group" && r.parentId === groupId,
+  );
+  for (const group of childGroups) {
+    items.push({
+      type: "folder",
+      name: group.name ?? "Unnamed Folder",
+      items: buildNestedItems(group._id ?? "", byId),
+    });
+  }
+
+  // Find child requests
+  const childRequests = Array.from(byId.values()).filter(
+    (r) => r._type === "request" && r.parentId === groupId,
+  );
+  for (const req of childRequests) {
+    const parsed = parseInsomniaRequest(req);
+    items.push({
+      type: "route",
+      name: parsed.name,
+      curl: parsed.curl,
+      response: parsed.response,
+    });
+  }
+
+  return items;
 }
 
 export function parseInsomniaExport(json: unknown): THittableCollection[] {
@@ -68,27 +103,32 @@ export function parseInsomniaExport(json: unknown): THittableCollection[] {
     return !parent || parent._type === "workspace" || parent._type === "export_type";
   });
 
+  const envVars = extractEnvironmentVars(resources);
+
   if (topLevelGroups.length === 0) {
     // No folders — all requests go into one collection
     const requests = resources.filter((r) => r._type === "request");
     if (requests.length > 0) {
-      const envVars = extractEnvironmentVars(resources);
       collections.push({
         collectionName: workspaces[0]?.name ?? "Imported Collection",
-        curls: requests.map((r) => parseInsomniaRequest(r)),
+        items: requests.map((r) => {
+          const parsed = parseInsomniaRequest(r);
+          return {
+            type: "route" as const,
+            name: parsed.name,
+            curl: parsed.curl,
+            response: parsed.response,
+          };
+        }),
         env: envVars,
       });
     }
   } else {
     for (const group of topLevelGroups) {
       const groupName = group.name ?? "Imported";
-      const requests = resources.filter(
-        (r) => r._type === "request" && r.parentId === group._id,
-      );
-      const envVars = extractEnvironmentVars(resources);
       collections.push({
         collectionName: groupName,
-        curls: requests.map((r) => parseInsomniaRequest(r)),
+        items: buildNestedItems(group._id ?? "", byId),
         env: envVars,
       });
     }

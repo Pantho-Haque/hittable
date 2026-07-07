@@ -9,6 +9,7 @@ import { useDataContext } from "@/context/dataContext";
 import { useNotification } from "@/hooks";
 import { parsePostmanCollection, isPostmanCollection } from "@/utils/importers/postmanImporter";
 import { parseInsomniaExport, isInsomniaExport } from "@/utils/importers/insomniaImporter";
+import { collectAllRouteNames } from "@/utils/treeHelpers";
 
 type ImportFormat = "hittable" | "postman" | "insomnia" | "unknown";
 
@@ -31,7 +32,7 @@ function detectFormat(input: string): { format: ImportFormat; data: unknown } {
   }
 
   // Check if it looks like a Hittable collection
-  if (parsed && typeof parsed === "object" && "collectionName" in parsed && "curls" in parsed) {
+  if (parsed && typeof parsed === "object" && "collectionName" in parsed && ("items" in parsed || "curls" in parsed)) {
     return { format: "hittable", data: parsed };
   }
 
@@ -40,11 +41,27 @@ function detectFormat(input: string): { format: ImportFormat; data: unknown } {
 
 function decompressHittable(code: string): THittableCollection {
   const decompressed = decompressString(code);
-  const parsed = JSON.parse(decompressed) as THittableCollection;
-  if (!parsed || typeof parsed.collectionName !== "string" || !Array.isArray(parsed.curls)) {
+  const parsed = JSON.parse(decompressed);
+  if (!parsed || typeof parsed.collectionName !== "string") {
     throw new Error("Invalid collection structure");
   }
-  return parsed;
+  // Handle both old format (curls) and new format (items)
+  if (Array.isArray(parsed.items)) {
+    return parsed as THittableCollection;
+  }
+  if (Array.isArray(parsed.curls)) {
+    // Convert old format to new format
+    return {
+      ...parsed,
+      items: parsed.curls.map((c: { name: string; curl: string; response: string }) => ({
+        type: "route" as const,
+        name: c.name,
+        curl: c.curl,
+        response: c.response,
+      })),
+    };
+  }
+  throw new Error("Invalid collection structure");
 }
 
 export default function ImportModal() {
@@ -90,7 +107,7 @@ export default function ImportModal() {
             const uniqueName = getUniqueName(col.collectionName);
             setCollections((prev) => [...prev, { ...col, collectionName: uniqueName }]);
           }
-          const totalRoutes = collectionsToImport.reduce((sum, c) => sum + c.curls.length, 0);
+          const totalRoutes = collectionsToImport.reduce((sum, c) => sum + collectAllRouteNames(c).length, 0);
           // Note: Postman scripts, pre-request scripts, tests, and advanced auth types
           // are not supported and silently dropped
           const summary = `Imported ${collectionsToImport.length} collection(s), ${totalRoutes} route(s) from Postman`;
@@ -115,7 +132,7 @@ export default function ImportModal() {
             const uniqueName = getUniqueName(col.collectionName);
             setCollections((prev) => [...prev, { ...col, collectionName: uniqueName }]);
           }
-          const totalRoutes = collectionsToImport.reduce((sum, c) => sum + c.curls.length, 0);
+          const totalRoutes = collectionsToImport.reduce((sum, c) => sum + collectAllRouteNames(c).length, 0);
           toast.success({
             title: "Imported from Insomnia",
             desc: `Imported ${collectionsToImport.length} collection(s), ${totalRoutes} route(s). Insomnia plugins, certificate configs, and cookie jars were not imported.`,

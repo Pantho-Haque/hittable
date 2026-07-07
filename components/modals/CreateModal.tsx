@@ -8,7 +8,7 @@ import {
 import {
   createCollectionName,
   createCurlName,
-  isAlreadyExists,
+  isAlreadyExistsInPath,
 } from "@/utils/hittableCollectionModifier";
 import { ModalInput, ModalShell, ModalActions } from "@/components";
 import { useDataContext } from "@/context/dataContext";
@@ -19,35 +19,54 @@ export default function CreateModal({
   selection,
   setSelection,
   collectionCurlList,
+  folderPath,
 }: {
   type: "collection" | "route";
   selection: THittableSelectorSelection;
   setSelection: (value: THittableSelectorSelection) => void;
   collectionCurlList: { [key: string]: string[] };
+  folderPath?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [curlString, setCurlString] = useState("");
   const [error, setError] = useState("");
-  const { setSelectorResponse, setCollections} = useDataContext()
-
+  const { setSelectorResponse, setCollections, collections } = useDataContext();
 
   const handleCreate = () => {
     if (!value.trim()) return setOpen(false);
-    let newName = value.trim()
-    if (isAlreadyExists(collectionCurlList, type, newName, selection.collectionName))
-      newName += " - New";
+    let newName = value.trim();
+
+    if (type === "route") {
+      const col = collections.find(
+        (c) => c.collectionName === selection.collectionName,
+      );
+      if (isAlreadyExistsInPath(col, folderPath ?? [], newName)) {
+        newName += " - New";
+      }
+    } else {
+      if (collectionCurlList[newName]) {
+        newName += " - New";
+      }
+    }
 
     if (type === "collection") {
       setCollections((prev) => createCollectionName(prev, newName));
-      setSelection({ collectionName: newName, curlName: "" });
+      setSelection({ collectionName: newName, folderPath: [], curlName: "" });
       setSelectorResponse(null);
     } else {
       setCollections((prev) =>
-        createCurlName(prev, selection.collectionName, newName, curlString),
+        createCurlName(
+          prev,
+          selection.collectionName,
+          newName,
+          curlString,
+          folderPath,
+        ),
       );
       setSelection({
         collectionName: selection.collectionName,
+        folderPath: folderPath ?? [],
         curlName: newName,
       });
     }
@@ -64,10 +83,10 @@ export default function CreateModal({
           e.stopPropagation();
           setOpen(true);
         }}
-        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-semibold tracking-wider rounded-md border border-cyan-500/20 bg-cyan-500/8 text-cyan-400 hover:bg-cyan-500/15 hover:border-cyan-500/40 transition-all cursor-pointer"
+        title={type === "collection" ? "New Collection" : "New Route"}
+        className="modal-button-mini"
       >
-        <Plus size={12} />
-        New {type === "collection" ? "Collection" : "Route"}
+        <Plus size={14} />
       </button>
 
       {open && (
@@ -75,7 +94,7 @@ export default function CreateModal({
           title={`Create ${type}`}
           subtitle={
             type === "route"
-              ? `Adding to ${selection.collectionName}`
+              ? `Adding to ${selection.collectionName}${folderPath?.length ? " / " + folderPath.join(" / ") : ""}`
               : "Start a new collection of routes"
           }
           onClose={() => setOpen(false)}

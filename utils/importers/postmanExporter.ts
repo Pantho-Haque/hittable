@@ -1,4 +1,4 @@
-import { THittableCollection, THittableCurlJson } from "@/types";
+import { THittableCollection, THittableItem, THittableCurlJson } from "@/types";
 
 function resolveEnvSyntax(text: string): string {
   return text.replace(/<<(\w+)>>/g, "{{$1}}");
@@ -20,67 +20,6 @@ function headersToPostmanArray(headers: string): { key: string; value: string }[
   } catch {
     return [];
   }
-}
-
-function hittableToPostmanItem(
-  curl: { name: string; curlJson: THittableCurlJson },
-): Record<string, unknown> {
-  const { curlJson, name } = curl;
-  const url = resolveEnvSyntax(curlJson.url);
-  const headers = headersToPostmanArray(curlJson.headers);
-  const body = jsonToPostmanBody(curlJson.body);
-
-  const item: Record<string, unknown> = {
-    name,
-    request: {
-      method: curlJson.method,
-      header: headers.map((h) => ({
-        key: h.key,
-        value: resolveEnvSyntax(h.value),
-      })),
-      url,
-    },
-  };
-
-  if (body) {
-    (item.request as Record<string, unknown>).body = body;
-  }
-
-  return item;
-}
-
-export function exportToPostmanCollection(
-  collection: THittableCollection,
-): string {
-  const postmanCollection: Record<string, unknown> = {
-    info: {
-      name: collection.collectionName,
-      schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    },
-    item: collection.curls.map((curl) => {
-      let parsed: THittableCurlJson;
-      try {
-        // Try to parse the curl string using a basic approach
-        parsed = parseCurlString(curl.curl);
-      } catch {
-        parsed = {
-          method: "GET",
-          url: "",
-          headers: "{}",
-          body: "{}",
-          params: "{}",
-        };
-      }
-      return hittableToPostmanItem({ name: curl.name, curlJson: parsed });
-    }),
-    variable: Object.entries(collection.env).map(([key, value]) => ({
-      key,
-      value,
-      type: "string",
-    })),
-  };
-
-  return JSON.stringify(postmanCollection, null, 2);
 }
 
 function parseCurlString(curlStr: string): THittableCurlJson {
@@ -107,4 +46,64 @@ function parseCurlString(curlStr: string): THittableCurlJson {
     body,
     params: "{}",
   };
+}
+
+function itemsToPostmanItems(items: THittableItem[]): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = [];
+  for (const item of items) {
+    if (item.type === "folder") {
+      result.push({
+        name: item.name,
+        item: itemsToPostmanItems(item.items),
+      });
+    } else {
+      let parsed: THittableCurlJson;
+      try {
+        parsed = parseCurlString(item.curl);
+      } catch {
+        parsed = { method: "GET", url: "", headers: "{}", body: "{}", params: "{}" };
+      }
+      const url = resolveEnvSyntax(parsed.url);
+      const headers = headersToPostmanArray(parsed.headers);
+      const body = jsonToPostmanBody(parsed.body);
+
+      const postmanItem: Record<string, unknown> = {
+        name: item.name,
+        request: {
+          method: parsed.method,
+          header: headers.map((h) => ({
+            key: h.key,
+            value: resolveEnvSyntax(h.value),
+          })),
+          url,
+        },
+      };
+
+      if (body) {
+        (postmanItem.request as Record<string, unknown>).body = body;
+      }
+
+      result.push(postmanItem);
+    }
+  }
+  return result;
+}
+
+export function exportToPostmanCollection(
+  collection: THittableCollection,
+): string {
+  const postmanCollection: Record<string, unknown> = {
+    info: {
+      name: collection.collectionName,
+      schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    },
+    item: itemsToPostmanItems(collection.items),
+    variable: Object.entries(collection.env).map(([key, value]) => ({
+      key,
+      value,
+      type: "string",
+    })),
+  };
+
+  return JSON.stringify(postmanCollection, null, 2);
 }

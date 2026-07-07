@@ -1,15 +1,24 @@
 import { collections } from "@/constants";
 import { THittableCollections } from "@/types";
+import { migrateCollections } from "@/utils/treeHelpers";
 
 
-export function GetHittableCollections() {
+export function GetHittableCollections(): THittableCollections {
     if (typeof window === "undefined") return [];
     const storedCollections = localStorage.getItem("hittable");
-    if (!storedCollections) return collections;
+    if (!storedCollections) return collections as unknown as THittableCollections;
     try {
-        return JSON.parse(storedCollections) as THittableCollections;
+        const parsed = JSON.parse(storedCollections);
+        const migrated = migrateCollections(parsed);
+        // Persist migrated data back so migration only runs once
+        if (JSON.stringify(migrated) !== JSON.stringify(parsed)) {
+            try {
+                localStorage.setItem("hittable", JSON.stringify(migrated));
+            } catch { /* quota exceeded */ }
+        }
+        return migrated;
     } catch {
-        return collections;
+        return collections as unknown as THittableCollections;
     }
 }
 

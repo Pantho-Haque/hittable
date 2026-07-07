@@ -10,6 +10,7 @@ export default function Menu({
   collectionCurlList,
   currentName,
   collectionName,
+  folderPath,
   exportString,
   setCollections,
   setSelection,
@@ -18,6 +19,7 @@ export default function Menu({
   collectionCurlList: { [key: string]: string[] };
   currentName: string;
   collectionName?: string;
+  folderPath?: string[];
   exportString?: string;
   setCollections: Dispatch<SetStateAction<THittableCollections>>;
   setSelection: Dispatch<SetStateAction<THittableSelectorSelection>>;
@@ -75,6 +77,7 @@ export default function Menu({
               type={type}
               collectionCurlList={collectionCurlList}
               collectionName={collectionName}
+              folderPath={folderPath}
               setCollections={setCollections}
               setSelection={setSelection}
             />
@@ -83,6 +86,7 @@ export default function Menu({
               currentName={currentName}
               type={type}
               collectionName={collectionName}
+              folderPath={folderPath}
               setCollections={setCollections}
               setSelection={setSelection}
             />

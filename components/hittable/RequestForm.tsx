@@ -10,6 +10,8 @@ import {
   UrlBar,
 } from "@/components";
 import { useDataContext } from "@/context/dataContext";
+import { THittableItem } from "@/types";
+import { getItemsAtPath } from "@/utils/treeHelpers";
 
 export default function RequestForm() {
   const { selectorResponse } = useDataContext();
@@ -33,11 +35,13 @@ function InputForm() {
   } = useDataContext();
 
   const router = useRouter();
-  const { collectionName, curlName, curlJson, responseJson } =
+  const { collectionName, folderPath, curlName, curlJson, responseJson } =
     selectorResponse!;
 
   const [error, setError] = useState<string | null>(null);
-  const [openDropdown, setOpenDropdown] = useState<"collection" | "route" | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<
+    "collection" | "route" | null
+  >(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const lastSyncedRouteRef = useRef<string | null>(null);
   const curlJsonRef = useRef(curlJson);
@@ -47,9 +51,7 @@ function InputForm() {
   });
 
   useEffect(() => {
-    const routeKey = `${collectionName}::${curlName}`;
-    // Only sync form inputs when the route ACTUALLY changes.
-    // Avoids overwriting in-progress user edits when collections/responseJson update.
+    const routeKey = `${collectionName}::${folderPath.join("/")}::${curlName}`;
     if (lastSyncedRouteRef.current === routeKey) return;
     lastSyncedRouteRef.current = routeKey;
 
@@ -62,15 +64,18 @@ function InputForm() {
     });
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync form state on route change
     setError(null);
-     
+
     setProxyResponse(responseJson ?? null);
-  }, [collectionName, curlName, responseJson, setFormInput, setProxyResponse]);
+  }, [collectionName, folderPath, curlName, responseJson, setFormInput, setProxyResponse]);
 
   // Close dropdown on outside click
   useEffect(() => {
     if (!openDropdown) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setOpenDropdown(null);
       }
     };
@@ -78,20 +83,42 @@ function InputForm() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openDropdown]);
 
-  const handleCollectionSelect = useCallback((name: string) => {
-    const col = collections.find((c) => c.collectionName === name);
-    const firstRoute = col?.curls[0]?.name ?? "";
-    const url = `/hittable?c=${encodeURIComponent(name)}${firstRoute ? `&r=${encodeURIComponent(firstRoute)}` : ""}`;
-    router.push(url);
-    setOpenDropdown(null);
-  }, [collections, router]);
+  const handleCollectionSelect = useCallback(
+    (name: string) => {
+      const col = collections.find((c) => c.collectionName === name);
+      const firstItem = col?.items?.[0];
+      const firstRoute =
+        firstItem?.type === "route" ? firstItem.name : "";
+      const url = `/hittable?c=${encodeURIComponent(name)}${firstRoute ? `&r=${encodeURIComponent(firstRoute)}` : ""}`;
+      router.push(url);
+      setOpenDropdown(null);
+    },
+    [collections, router],
+  );
 
-  const handleRouteSelect = useCallback((name: string) => {
-    router.push(`/hittable?c=${encodeURIComponent(collectionName)}&r=${encodeURIComponent(name)}`);
-    setOpenDropdown(null);
-  }, [collectionName, router]);
+  const handleRouteSelect = useCallback(
+    (name: string) => {
+      const pathParam =
+        folderPath.length > 0
+          ? `&p=${encodeURIComponent(folderPath.join("/"))}`
+          : "";
+      router.push(
+        `/hittable?c=${encodeURIComponent(collectionName)}&r=${encodeURIComponent(name)}${pathParam}`,
+      );
+      setOpenDropdown(null);
+    },
+    [collectionName, folderPath, router],
+  );
 
-  const currentRoutes = collections.find((c) => c.collectionName === collectionName)?.curls.map((c) => c.name) ?? [];
+  const currentCollection = collections.find(
+    (c) => c.collectionName === collectionName,
+  );
+  const currentItems = currentCollection
+    ? getItemsAtPath(currentCollection.items, folderPath)
+    : [];
+  const currentRoutes = currentItems
+    .filter((i): i is THittableItem & { type: "route" } => i.type === "route")
+    .map((r) => r.name);
   const collectionNames = collections.map((c) => c.collectionName);
 
   return (
@@ -102,15 +129,25 @@ function InputForm() {
       />
 
       <div className="flex flex-col md:flex-row justify-between items-center">
-        <div className="flex justify-start items-center gap-2 h-3 w-full relative" ref={dropdownRef}>
+        <div
+          className="flex justify-start items-center gap-2 h-3 w-full relative"
+          ref={dropdownRef}
+        >
           {/* Collection breadcrumb */}
           <div className="relative">
             <button
-              onClick={() => setOpenDropdown(openDropdown === "collection" ? null : "collection")}
+              onClick={() =>
+                setOpenDropdown(
+                  openDropdown === "collection" ? null : "collection",
+                )
+              }
               className="flex items-center gap-1 text-[8px] md:text-[9px] uppercase text-cyan-500/40 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               {collectionName || "No collection"}
-              <ChevronDown size={8} className={`transition-transform ${openDropdown === "collection" ? "rotate-180" : ""}`} />
+              <ChevronDown
+                size={8}
+                className={`transition-transform ${openDropdown === "collection" ? "rotate-180" : ""}`}
+              />
             </button>
             {openDropdown === "collection" && collectionNames.length > 0 && (
               <div className="absolute top-full left-0 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[200px] overflow-y-auto">
@@ -131,16 +168,33 @@ function InputForm() {
             )}
           </div>
 
+          {/* Folder path segments */}
+          {folderPath.map((segment, i) => (
+            <span key={i} className="flex items-center gap-1">
+              <span className="text-white/10 text-xs">/</span>
+              <span className="text-[8px] md:text-[9px] uppercase text-cyan-500/30">
+                {segment}
+              </span>
+            </span>
+          ))}
+
           <span className="text-white/10 text-xs">/</span>
 
           {/* Route breadcrumb */}
           <div className="relative">
             <button
-              onClick={() => setOpenDropdown(openDropdown === "route" ? null : "route")}
+              onClick={() =>
+                setOpenDropdown(
+                  openDropdown === "route" ? null : "route",
+                )
+              }
               className="flex items-center gap-1 text-[8px] md:text-[9px] uppercase text-cyan-500/70 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               {curlName || "No route"}
-              <ChevronDown size={8} className={`transition-transform ${openDropdown === "route" ? "rotate-180" : ""}`} />
+              <ChevronDown
+                size={8}
+                className={`transition-transform ${openDropdown === "route" ? "rotate-180" : ""}`}
+              />
             </button>
             {openDropdown === "route" && currentRoutes.length > 0 && (
               <div className="absolute top-full left-0 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[200px] overflow-y-auto">
@@ -173,7 +227,10 @@ function InputForm() {
                   <RotateCcw className="h-3 w-3" />
                 </button>
                 <span className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1 text-[8px] md:text-[10px] font-semibold text-amber-400 border border-amber-500/20">
-                  <MessageCircleWarning className="h-3 w-3" strokeWidth={2.5} />
+                  <MessageCircleWarning
+                    className="h-3 w-3"
+                    strokeWidth={2.5}
+                  />
                   Unsaved · Ctrl/Cmd+S
                 </span>
               </>
