@@ -15,7 +15,7 @@ import useKeypress from "@/hooks/useKeypress";
 import { useDataContext } from "@/context/dataContext";
 
 
-function HeadersTable({ headers }: { headers: Record<string, string> }) {
+function HeadersTable({ headers, searchQuery }: { headers: Record<string, string>; searchQuery?: string }) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const copyHeader = (key: string, value: string) => {
@@ -33,9 +33,17 @@ function HeadersTable({ headers }: { headers: Record<string, string> }) {
     );
   }
 
+  // Filter entries by search query if provided
+  const filtered = searchQuery
+    ? entries.filter(([k, v]) =>
+        k.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        v.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : entries;
+
   return (
     <div className="flex flex-col">
-      {entries.map(([key, value]) => (
+      {filtered.map(([key, value]) => (
         <div
           key={key}
           className="flex items-start gap-3 px-3 py-1.5 border-b border-white/5 hover:bg-white/2 transition-colors group"
@@ -59,6 +67,11 @@ function HeadersTable({ headers }: { headers: Record<string, string> }) {
           </button>
         </div>
       ))}
+      {searchQuery && filtered.length === 0 && (
+        <div className="flex items-center justify-center py-6 text-white/20 text-[10px]">
+          No headers matching &quot;{searchQuery}&quot;
+        </div>
+      )}
     </div>
   );
 }
@@ -70,6 +83,7 @@ export default function ResponsePanel() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<"body" | "headers">("body");
   const [rawView, setRawView] = useState(false);
+  const [headersCopied, setHeadersCopied] = useState(false);
 
   const matchEls = useRef<HTMLElement[]>([]);
 
@@ -148,11 +162,17 @@ export default function ResponsePanel() {
 
   const headerCount = Object.keys(responseHeaders).length;
 
-  const totalMatches = useMemo(
-    () =>
-      parsedData && searchQuery ? countMatches(parsedData, searchQuery) : 0,
-    [parsedData, searchQuery],
-  );
+  const totalMatches = useMemo(() => {
+    if (activeTab === "headers") {
+      // For headers tab, count matches across all key:value pairs
+      if (!searchQuery) return 0;
+      const q = searchQuery.toLowerCase();
+      return Object.entries(responseHeaders).filter(
+        ([k, v]) => k.toLowerCase().includes(q) || v.toLowerCase().includes(q)
+      ).length;
+    }
+    return parsedData && searchQuery ? countMatches(parsedData, searchQuery) : 0;
+  }, [parsedData, searchQuery, activeTab, responseHeaders]);
 
   const hasJson = parsedData !== null && !proxyResponse?.error;
 
@@ -165,6 +185,12 @@ export default function ResponsePanel() {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleCopyHeaders = () => {
+    navigator.clipboard.writeText(JSON.stringify(responseHeaders, null, 2));
+    setHeadersCopied(true);
+    setTimeout(() => setHeadersCopied(false), 1500);
   };
 
   return (
@@ -220,7 +246,8 @@ export default function ResponsePanel() {
           )}
 
           <div className="ml-auto flex items-center gap-1">
-            {hasJson && (
+            {/* Search: works for both body and headers */}
+            {(hasJson || activeTab === "headers") && (
               <button
                 onClick={() => setSearchOpen((o) => !o)}
                 title="Search (⌘F)"
@@ -233,8 +260,23 @@ export default function ResponsePanel() {
                 <Search className="h-2.5 w-2.5 md:h-3 md:w-3" />
               </button>
             )}
-            {parsedData && <CopyButton data={parsedData} />}
-            {hasJson && (
+            {/* Copy: body tab copies JSON, headers tab copies headers as JSON */}
+            {activeTab === "body" && parsedData && <CopyButton data={parsedData} />}
+            {activeTab === "headers" && headerCount > 0 && (
+              <button
+                onClick={handleCopyHeaders}
+                title="Copy all headers"
+                className="p-0.5 md:p-1 rounded transition-colors text-white/25 hover:text-white/60 hover:bg-white/5"
+              >
+                {headersCopied ? (
+                  <Check className="h-2.5 w-2.5 md:h-3 md:w-3 text-emerald-400" />
+                ) : (
+                  <Copy className="h-2.5 w-2.5 md:h-3 md:w-3" />
+                )}
+              </button>
+            )}
+            {/* Raw view toggle: only for body tab with JSON data */}
+            {hasJson && activeTab === "body" && (
               <button
                 onClick={() => setRawView((o) => !o)}
                 title={rawView ? "Tree view" : "Raw view"}
@@ -279,7 +321,7 @@ export default function ResponsePanel() {
         )}
 
         {/* ── Floating Search ── */}
-        {searchOpen && hasJson && activeTab === "body" && (
+        {searchOpen && (hasJson || activeTab === "headers") && (
           <FloatingSearch
             value={searchQuery}
             onChange={setSearchQuery}
@@ -295,7 +337,7 @@ export default function ResponsePanel() {
         {proxyResponse ? (
           <div className="flex-1 overflow-auto p-2 md:p-3">
             {activeTab === "headers" ? (
-              <HeadersTable headers={responseHeaders} />
+              <HeadersTable headers={responseHeaders} searchQuery={searchQuery} />
             ) : proxyResponse.error ? (
               <span className="font-mono text-[8px] md:text-[11px] text-red-400 whitespace-pre-wrap">
                 {proxyResponse.error}

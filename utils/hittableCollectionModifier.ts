@@ -78,14 +78,14 @@ export const updateCurl = (
   collectionName: string,
   curlName: string,
   curl: string,
-  response:string,
+  response: string,
 ) => {
   return prev.map((collection) => {
     if (collection.collectionName === collectionName) {
       return {
         ...collection,
         curls: collection.curls.map((c) =>
-          c.name === curlName ? { ...c, curl,response} : c,
+          c.name === curlName ? { ...c, curl, response } : c,
         ),
 
       };
@@ -136,11 +136,11 @@ export const updateEnv = (
 export function resolveEnv(formInput: THittableCurlJson, env?: THittableEnv): THittableCurlJson {
   if (!env) return formInput;
   const newFormInput: THittableCurlJson = { ...formInput };
-  Object.entries(newFormInput).forEach(([key, val]) => {
+  (Object.entries(newFormInput) as [string, unknown][]).forEach(([key, val]) => {
     if (typeof val === 'string') {
-      newFormInput[key as keyof THittableCurlJson] = val.replace(
+      (newFormInput as Record<string, unknown>)[key] = val.replace(
         /<<(\w+)>>/g, 
-        (_, envKey) => env[envKey] ?? `<<${envKey}>>`
+        (_, envKey: string) => env[envKey] ?? `<<${envKey}>>`
       );
     }
   });

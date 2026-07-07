@@ -2,7 +2,7 @@
 
 import { Shield } from "lucide-react";
 import { useState } from "react";
-import { ModalShell, ModalActions } from "@/components";
+import { ModalShell } from "@/components";
 import { useDataContext } from "@/context/dataContext";
 
 type AuthPreset = "none" | "bearer" | "basic" | "apikey";
@@ -89,7 +89,7 @@ export default function AuthModal() {
         title="Auth"
         className="modal-button-mini"
       >
-        <Shield size={12} />
+        <Shield size={14} />
       </button>
 
       {open && (

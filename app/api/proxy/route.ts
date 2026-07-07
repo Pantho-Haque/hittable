@@ -19,6 +19,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  if (!url || !method) {
+    return NextResponse.json(
+      { error: "Missing required fields: url, method" },
+      { status: 400 }
+    );
+  }
+
   let parsedHeaders: Record<string, string> = {};
   try {
     parsedHeaders =
@@ -35,17 +42,25 @@ export async function POST(req: NextRequest) {
     delete parsedHeaders[h.toLowerCase()];
   });
 
-  const noBody = ["GET", "HEAD"].includes(method.toUpperCase());
-  const bodyToSend = noBody
-    ? undefined
-    : typeof body === "string"
-      ? body
-      : JSON.stringify(body);
+  const upperMethod = method.toUpperCase();
+  const noBody = ["GET", "HEAD"].includes(upperMethod);
+
+  let bodyToSend: string | undefined;
+
+  if (noBody) {
+    bodyToSend = undefined;
+  } else if (typeof body === "string") {
+    bodyToSend = body;
+  } else if (typeof body === "object" && body !== null) {
+    bodyToSend = JSON.stringify(body);
+  } else {
+    bodyToSend = String(body ?? "");
+  }
 
   let upstream: Response;
   try {
     upstream = await fetch(url, {
-      method: method.toUpperCase(),
+      method: upperMethod,
       headers: parsedHeaders,
       body: bodyToSend,
     });
@@ -64,9 +79,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const isHead = method.toUpperCase() === "HEAD";
+  const isHead = upperMethod === "HEAD";
   const isNoBody =
-    method.toUpperCase() === "HEAD" ||
+    isHead ||
     [100, 101, 102, 103, 204, 205, 304].includes(upstream.status);
 
   let data = null;

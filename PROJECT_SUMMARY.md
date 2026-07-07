@@ -2,431 +2,421 @@
 
 ## 1. Project Overview
 
-**What it does:** Hittable is a browser-based API testing client (alternative to Postman/Insomnia). It lets developers organize API endpoints into collections, send HTTP requests through a CORS-free server-side proxy, import/export curl commands, manage environment variables, and view responses with a JSON tree viewer — all driven by keyboard shortcuts.
+**What it does:** Hittable is a lightweight, open-source HTTP API client that runs entirely in the browser. It's designed as a developer-first alternative to Postman/Insomnia, focusing on speed, transparency, and DX (developer experience). Users can create collections of API routes, send HTTP requests via a CORS-bypassing proxy or browser extension, and view responses in real-time.
 
-**Target user:** Backend and full-stack developers who want a lightweight, browser-only API testing tool without installing desktop software.
+**Target user:** Software developers and API developers who want a fast, keyboard-driven API testing tool without desktop app overhead.
 
 **Tech stack:**
-- **Framework:** Next.js 16.1.6 (App Router, Turbopack for dev)
-- **Language:** TypeScript 5.x (strict mode)
-- **UI:** React 19.2.0, Tailwind CSS 4.1.11, Framer Motion 12.23.0
-- **State management:** React Context (no Redux/Zustand)
-- **Data fetching:** TanStack React Query 5.81.5 (configured, lightly used)
-- **HTTP:** Axios 1.13.3 (dep, not actively used in main flow), native `fetch`
-- **UI primitives:** Radix UI Accordion, Lucide React icons
-- **Utility:** clsx + tailwind-merge (cn helper), class-variance-authority, pako (gzip compression)
-- **curl parsing:** `@bany/curl-to-json` library
-- **Build tool:** pnpm (lockfile present), Next.js built-in
-- **Commit hygiene:** Husky + commitlint (conventional commits) + lint-staged (eslint --fix)
-- **Deployment:** Vercel (primary), Docker support (Dockerfile + docker-compose.yml)
+- **Framework:** Next.js 16 (App Router) with React 19
+- **Language:** TypeScript 5 (Strict Mode)
+- **Styling:** Tailwind CSS 4 + custom CSS modules
+- **State Management:** React Context + Custom Hooks (no Redux/Zustand)
+- **Persistence:** Browser localStorage (all data stays client-side)
+- **Icons:** Lucide React
+- **Animations:** Framer Motion
+- **HTTP Client:** Axios + native fetch
+- **Build tools:** Turbopack (dev), pnpm
 
-**Project type:** Web application (SPA-like), with a companion Chrome extension for localhost requests.
+**Project type:** Web application (SPA-like), deployed to Vercel at [hittable.vercel.app](https://hittable.vercel.app)
 
 ---
 
 ## 2. Architecture
 
-### Folder/file structure
+### Folder Structure
 
 ```
 hittable/
-├── app/                          # Next.js App Router pages and API routes
-│   ├── layout.tsx                # Root layout: fonts, providers, <Topbar/>, metadata, JSON-LD
-│   ├── page.tsx                  # Landing page (server component, fetches resume data)
-│   ├── hittable/page.tsx         # Main app page (client component, the API client UI)
-│   ├── api/proxy/route.ts        # Server-side CORS proxy endpoint (POST)
-│   ├── error.tsx                 # Error boundary
-│   ├── not-found.tsx             # 404 page
-│   ├── robots.ts                 # SEO robots
-│   └── sitemap.ts                # SEO sitemap
+├── app/                          # Next.js App Router pages
+│   ├── layout.tsx                # Root layout with SEO metadata, fonts, Providers
+│   ├── page.tsx                  # Landing/marketing page (server component)
+│   ├── hittable/page.tsx         # Main application page (client component)
+│   └── api/proxy/route.ts        # Server-side proxy endpoint for CORS bypass
+├── browserExtension/             # Chrome Extension for CORS bypass
+│   ├── background.js             # Service worker: fetches requests via chrome API
+│   ├── content.js                # Content script: bridges page ↔ extension
+│   └── manifest.json             # MV3 manifest
 ├── components/
-│   ├── hittable/                 # Core app components
-│   │   ├── Selector.tsx          # Sidebar: collections list + routes list, selection via URL params
-│   │   ├── RequestForm.tsx       # Main form area: URL bar + tab editor + response panel
-│   │   ├── Menu.tsx              # Context menu (rename, delete, export) for collections/routes
-│   │   ├── SyntaxHighlighter.tsx # JSON syntax highlighting with URL detection
-│   │   └── HistoryPanel.tsx      # Request history panel with replay functionality
-│   ├── RequestForm/              # Request form sub-components
-│   │   ├── UrlBar.tsx            # Method selector + URL textarea + send/save/copy buttons
-│   │   ├── TabEditor.tsx         # Params/Body/Headers tabbed JSON editor
-│   │   ├── ResponsePanel.tsx     # Response display with search, status badge, JSON tree
+│   ├── hittable/                 # Core app UI components
+│   │   ├── Selector.tsx          # Left sidebar: collections & routes list
+│   │   ├── RequestForm.tsx       # Main form orchestrator (UrlBar + TabEditor + ResponsePanel)
+│   │   ├── Menu.tsx              # Context menu for collection/route actions
+│   │   ├── HistoryPanel.tsx      # Request history modal
+│   │   └── SyntaxHighlighter.tsx # Code syntax highlighting
+│   ├── RequestForm/              # Request building components
+│   │   ├── UrlBar.tsx            # URL input, method selector, send/save/copy buttons
+│   │   ├── TabEditor.tsx         # Params/Body/Headers tabs with JSON/table modes
+│   │   ├── ResponsePanel.tsx     # Response display with tabs, search, raw view
 │   │   └── ResponsePanelComponents/
-│   │       ├── JsonNode.tsx      # Recursive collapsible JSON tree renderer
-│   │       ├── FloatingSearch.tsx # Search overlay for response JSON
-│   │       ├── Highlight.tsx     # Text highlighting with match registry
-│   │       ├── MatchContext.tsx   # React context for search match tracking
-│   │       └── CopyButton.tsx    # Copy JSON to clipboard button
+│   │       ├── JsonNode.tsx      # Recursive JSON tree renderer
+│   │       ├── FloatingSearch.tsx # Floating search bar for response
+│   │       ├── Highlight.tsx     # Text match highlighting
+│   │       ├── CopyButton.tsx    # Copy JSON to clipboard
+│   │       └── MatchContext.tsx  # React context for match registry
 │   ├── modals/                   # All modal dialogs
-│   │   ├── CreateModal.tsx       # Create collection or route
-│   │   ├── RenameModal.tsx       # Rename collection or route
-│   │   ├── DeleteModal.tsx       # Delete collection or route (with confirmation)
-│   │   ├── EnvModal.tsx          # Environment variables editor (per collection)
+│   │   ├── CreateModal.tsx       # Create collection/route
+│   │   ├── RenameModal.tsx       # Rename collection/route
+│   │   ├── DeleteModal.tsx       # Delete collection/route
 │   │   ├── ImportModal.tsx       # Import collection from compressed string
-│   │   ├── ExportModal.tsx       # Export collection as compressed string
-│   │   ├── NoteModal.tsx         # Notebook modal with editor
-│   │   ├── InfoModal.tsx         # Info accordion (keybindings + extension docs)
-│   │   ├── NoExtensionModal.tsx  # Prompt to install browser extension
-│   │   └── AuthModal.tsx         # Auth presets modal (Bearer, Basic, API Key)
-│   ├── notes/
-│   │   ├── NotePills.tsx         # Note list with search, rename, delete
-│   │   └── NoteEditor.tsx        # Note content textarea
-│   ├── homepage/
-│   │   ├── TopBar.tsx            # Global topbar with logo, nav, CTA
-│   │   ├── TerminalDemo.tsx      # Animated terminal demo for landing page
-│   │   └── PortfolioSection.tsx  # Developer profile section on landing page
-│   ├── ui/
-│   │   ├── SharedModal.tsx       # Reusable ModalShell, ModalInput, ModalActions
-│   │   └── Accordion.tsx         # Radix-based accordion component
-│   └── index.ts                  # Barrel export for all components
+│   │   ├── ExportModal.tsx       # Export collection to compressed string
+│   │   ├── EnvModal.tsx          # Environment variables editor
+│   │   ├── AuthModal.tsx         # Auth presets (Bearer/Basic/API Key)
+│   │   ├── NoteModal.tsx         # Notes editor modal
+│   │   ├── InfoModal.tsx         # Keyboard shortcuts & extension info
+│   │   └── NoExtensionModal.tsx  # Extension not found warning
+│   ├── notes/                    # Notes components
+│   │   ├── NoteEditor.tsx        # Markdown editor with preview
+│   │   └── NotePills.tsx         # Notes list sidebar
+│   ├── ui/                       # Shared UI primitives
+│   │   ├── SharedModal.tsx       # ModalShell, ModalInput, ModalActions
+│   │   └── Accordion.tsx         # Radix UI accordion
+│   └── homepage/                 # Landing page components
+│       ├── TopBar.tsx            # Navigation bar
+│       ├── PortfolioSection.tsx  # Developer portfolio section
+│       └── TerminalDemo.tsx      # Animated terminal demo
 ├── context/                      # React Context providers
-│   ├── providers.tsx             # Root provider wrapper (Notification → Client)
-│   ├── ClientProviders.tsx       # Client-side providers: QueryClient, DataProvider, ShortcutProvider
-│   ├── dataContext.tsx           # Main data context: collections, selector, form state, save logic
-│   ├── notifyContext.tsx         # Toast notification system with framer-motion animations
-│   └── ShortcutKeypressProvider.tsx # Global keyboard shortcut state (sidebar toggle)
-├── hooks/
-│   ├── useKeypress.ts            # Generic keyboard shortcut hook (meta/shift modifiers)
-│   ├── useExtension.ts           # Browser extension detection via postMessage polling
-│   ├── useNotify.ts              # Notification hook (info/success/error wrappers)
-│   └── index.ts                  # Barrel export
-├── services/
+│   ├── providers.tsx             # Root provider composition
+│   ├── ClientProviders.tsx       # Client-side providers (React Query, Data, Shortcuts)
+│   ├── dataContext.tsx           # Main app state (collections, form, response, history)
+│   ├── notifyContext.tsx         # Toast notification system
+│   └── ShortcutKeypressProvider.tsx # Keyboard shortcut state
+├── hooks/                        # Custom React hooks
+│   ├── useExtension.ts           # Detect browser extension availability
+│   ├── useKeypress.ts            # Global keyboard shortcut handler
+│   └── useNotify.ts              # Toast notification convenience hook
+├── services/                     # API/data fetching
 │   ├── Hittable.ts               # GetHittableCollections (localStorage), GetResume (external API)
-│   └── index.ts                  # Barrel export
-├── stores/
-│   └── auth.ts                   # Commented-out Pinia auth store (legacy, unused)
-├── utils/
-│   ├── curlConverter.ts          # curl → JSON parser + JSON → curl serializer
-│   ├── hittableProxy.ts          # Request routing: extension for localhost, proxy for external
-│   ├── hittableCollectionModifier.ts # CRUD operations on collections (create/rename/delete/update)
-│   ├── formatJson.ts             # JSON formatting/validation utility
-│   ├── responsePanelUtils.ts     # JSON tree helpers: type detection, search matching, URL param utils
-│   ├── noteModifier.ts           # Notes localStorage CRUD (load/save/create/delete/rename/filter)
-│   ├── compressString.ts         # pako gzip compression + base64 encoding (for import/export)
-│   ├── JsonStringParsing.ts      # Parse JSON string or "Key: Value" format
-│   ├── historyModifier.ts        # Request history CRUD (load/save/add/clear/format)
-│   ├── apiRequest.js             # Generic API request utility (legacy, not used in main flow)
-│   ├── check-user-permission.js  # Commented-out permission checker (legacy, unused)
+│   └── index.ts                  # Re-exports
+├── stores/                       # Zustand stores (minimal, only auth.ts)
+│   └── auth.ts                   # Auth store (minimal, not heavily used)
+├── utils/                        # Pure utility functions
+│   ├── curlConverter.ts          # curl ↔ JSON bidirectional conversion
+│   ├── hittableProxy.ts          # Request routing logic (extension vs proxy)
+│   ├── hittableCollectionModifier.ts # Collection CRUD operations
+│   ├── responsePanelUtils.ts     # JSON search, URL param helpers
+│   ├── formatJson.ts             # JSON pretty-printing
+│   ├── compressString.ts         # pako compression for import/export
+│   ├── historyModifier.ts        # Request history CRUD
+│   ├── noteModifier.ts           # Notes CRUD
+│   ├── JsonStringParsing.ts      # Parse response strings to JSON
 │   └── cn.ts                     # clsx + tailwind-merge utility
-├── types/
-│   ├── hittable.ts               # Core types: collections, curls, curlJson, responseJson, env, history
-│   ├── note.ts                   # Note types: NoteId, Note, NotesStore
+├── types/                        # TypeScript type definitions
+│   ├── hittable.ts               # Core types (collections, requests, responses)
+│   ├── note.ts                   # Note types
 │   ├── notification.ts           # Notification types
-│   └── index.ts                  # Barrel export + TApiResponse generic type
-├── config/
-│   ├── apiEndpoints.ts           # API endpoint definitions (posts CRUD, unused in main app)
-│   └── index.ts                  # Config exports: EXTENSION_URL, api config
-├── constants/
-│   ├── hittable.ts               # HTTP methods, method colors, default collections (JSONPlaceholder)
-│   ├── landing.ts                # Landing page content, feature cards, portfolio data
-│   ├── misc.ts                   # Keybindings documentation array
-│   └── index.ts                  # Barrel export
-├── styles/
-│   ├── app.css                   # Tailwind import + custom scrollbar styling
-│   ├── font.css                  # Icomoon icon font definitions
-│   ├── variables.css             # SCSS variable (legacy, $font-regular)
-│   ├── theme/defaultTheme.js     # Legacy theme file
-│   └── components/               # Legacy CSS component files (button, card, form, modal, sidebar, list)
-├── public/
-│   ├── assets/                   # Static assets (images, fonts)
-│   ├── manifest.json             # PWA manifest
-│   └── google04fc6d619347de5b.html # Google Search Console verification
-├── browserExtension/             # Chrome extension source
-│   ├── manifest.json             # Manifest V3: permissions for localhost, content script injection
-│   ├── content.js                # Content script: bridges page ↔ extension via postMessage
-│   └── background.js             # Service worker: makes fetch requests to localhost
-├── package.json
-├── pnpm-lock.yaml
-├── tsconfig.json
-├── next.config.ts
-├── postcss.config.mjs
-├── eslint.config.mjs
-├── commitlint.config.js
-├── vercel.json
-├── Dockerfile
-├── docker-compose.yml
-├── dockerEntryPoint.sh
-├── run.sh
-├── .env.example                  # Empty (no env vars currently required)
-├── .gitignore
-├── .husky/                       # Git hooks
-├── CHANGELOG.md                  # Changelog documenting all changes
-├── NEW_FEATURE_IDEAS.md          # Phase 1 research findings
-└── README.md
+│   └── index.ts                  # Re-exports
+├── constants/                    # App constants
+│   ├── hittable.ts               # HTTP methods, method colors, default collections
+│   ├── landing.ts                # Landing page content
+│   └── misc.ts                   # Miscellaneous constants
+├── styles/                       # CSS files
+│   ├── app.css                   # Global styles, scrollbar, note preview styles
+│   ├── font.css                  # Font declarations
+│   ├── variables.css             # CSS custom properties
+│   └── components/               # Component-specific CSS (buttons, modals, forms, etc.)
+└── public/                       # Static assets
 ```
 
-### Main entry points
+### Entry Points
 
-- **Landing page:** `app/page.tsx` — Server component, fetches resume data from external API, renders hero, features, keyboard shortcuts, portfolio, footer.
-- **App page:** `app/hittable/page.tsx` — Client component (`"use client"`), the main API client UI. Composes `<Selector />` (sidebar) + `<RequestForm />` (main area) + sidebar tool buttons.
-- **API proxy:** `app/api/proxy/route.ts` — Next.js Route Handler (POST), proxies HTTP requests from the browser to any target URL, bypassing CORS.
+- **Landing page:** `app/page.tsx` — Server component, fetches resume data, renders marketing content
+- **Main app:** `app/hittable/page.tsx` — Client component, orchestrates Selector + RequestForm + tool sidebar
+- **API proxy:** `app/api/proxy/route.ts` — Server-side POST handler that proxies HTTP requests to bypass CORS
 
-### Data flow
+### Data Flow
 
-1. **Collections** are loaded from `localStorage` on mount via `GetHittableCollections()`. If empty, a default "JSONPlaceholder Lab" collection is seeded.
-2. **`DataContext`** (React Context) holds all app state:
-   - `collections` — full collection tree (persisted to localStorage on every change)
-   - `selectorResponse` — currently selected collection/route/env/curlJson/responseJson
-   - `formInput` — the editable form state (method, url, headers, body, params)
-   - `proxyResponse` — the last API response
-   - `extensionAvailable` / `extensionChecked` — browser extension status
-3. **Selection** is driven by URL search params (`?c=collectionName&r=routeName`). The `Selector` component reads/writes these params via `useRouter`/`useSearchParams`.
-4. **Sending a request:** `UrlBar` calls `hittableProxy()` which:
-   - Resolves `<<KEY>>` environment variables in the form input
-   - If the target is localhost AND the extension is available → `fetchViaExtension()` (postMessage to content script → background service worker → fetch)
-   - If the target is localhost AND no extension → throws error
-   - Otherwise → `fetchViaProxy()` which POSTs to `/api/proxy` (Next.js server-side fetch)
-5. **Saving:** `handleSaveCollection()` updates the collection in state, which triggers the `useEffect` to persist to `localStorage`.
+1. **State Management:** Single `DataContext` holds all app state (collections, form inputs, response, history, extension status)
+2. **Persistence:** Collections auto-save to `localStorage["hittable"]` on every change via `useEffect`. Notes persist to `localStorage["notesStore"]`. History persists to `localStorage["hittable_history"]`. Sidebar state persists to `localStorage["hittable_sidebar_collapsed"]`
+3. **Request Flow:**
+   - User edits form → `formInput` state updates
+   - User clicks Send → `hittableProxy()` determines routing:
+     - If localhost + extension available → `fetchViaExtension()` (postMessage to content script → background script)
+     - If remote URL → `fetchViaProxy()` (POST to `/api/proxy` route)
+     - If localhost + no extension → throws error
+   - Response updates `proxyResponse` state → displayed in `ResponsePanel`
+   - Request logged to `history` state → persisted to localStorage
 
-### Persistence layer
+### Persistence Layer
 
-- **`localStorage`** with key `"hittable"` — stores the entire `THittableCollections` array as JSON.
-- **`localStorage`** with key `"notesStore"` — stores all notes as a `Record<NoteId, Note>`.
-- **`localStorage`** with key `"hittable_history"` — stores request history (max 100 entries).
-- No server-side database. All data is client-side only.
+All data persistence is via browser `localStorage`:
+- `"hittable"` → `THittableCollections` (collections with routes and responses)
+- `"notesStore"` → `NotesStore` (markdown notes)
+- `"hittable_history"` → `THistory` (request history, max 100 entries)
+- `"hittable_sidebar_collapsed"` → `boolean` (sidebar UI state)
+
+No server-side database. No user authentication for the app itself (the resume API call is external).
 
 ---
 
 ## 3. Features Implemented
 
-### Core features
-1. **Collection management** — Create, rename, delete collections. Collections are named groups of API routes.
-2. **Route management** — Create, rename, delete routes within a collection. Each route stores a curl string and its last response.
-3. **curl import** — Paste a curl command into the URL bar or route creation modal; it auto-parses method, URL, headers, body, and query params using `@bany/curl-to-json`.
-4. **curl export** — Copy the current request as a curl command via the "Copy as CURL" button.
-5. **CORS-free proxy** — Server-side proxy at `/api/proxy` forwards requests from the browser to any URL, avoiding CORS restrictions.
-6. **Browser extension for localhost** — Chrome extension (Manifest V3) that bridges requests to `localhost`/`127.0.0.1` via `postMessage` → content script → background service worker → `fetch()`.
-7. **Environment variables** — Per-collection key-value pairs referenced as `<<KEY>>` in URLs, headers, and body. Resolved at request time via `resolveEnv()`.
-8. **Persistent storage** — Collections auto-save to localStorage. Close the tab and return — everything persists.
-9. **JSON response viewer** — Collapsible recursive `JsonNode` tree with type-colored values (strings=green, numbers=blue, booleans=purple, null=red).
-10. **Response search** — `Ctrl/Cmd+F` opens a floating search bar. Matches are highlighted in yellow with active match glow. Enter/Shift+Enter navigates between matches.
-11. **Copy response** — One-click copy of formatted JSON response to clipboard.
-12. **Tab editor** — Params/Body/Headers tabs with JSON-formatted textarea. Editing params auto-updates the URL query string.
-13. **Keyboard shortcuts:**
-    - `Ctrl/Cmd+Enter` — Send request
-    - `Ctrl/Cmd+S` — Save changes to collection
-    - `Ctrl/Cmd+F` — Search in response
-    - `Ctrl/Cmd+B` — Toggle sidebar
-    - `Shift+T` — Create new route in current collection
-14. **Import/Export collections** — Collections can be exported as compressed (pako + base64) strings and imported on another instance.
-15. **Notes notebook** — Create, rename, delete, search, and edit notes. Persisted to localStorage. Available via the notebook modal.
-16. **Notification system** — Toast notifications (info/success/error) with configurable position and timeout, animated with Framer Motion.
-17. **Unsaved changes indicator** — Amber badge shows when the form differs from the saved collection state.
-18. **Method color coding** — Each HTTP method has a distinct color (GET=cyan, POST=green, PUT=orange, PATCH=purple, DELETE=red, HEAD=gray) applied to the URL bar border, glow, and send button.
-19. **URL detection in responses** — URLs in JSON responses are highlighted and clickable. Click copies; Cmd+click opens in new tab.
-20. **Response time & size metrics** — ResponsePanel header displays request duration (ms/s) and payload size (B/KB/MB) after each request.
-21. **Response headers tab** — ResponsePanel has Body/Headers tabs; headers table shows all response headers with per-header copy button and count badge.
-22. **Raw response view toggle** — Toggle between JSON tree view and raw text view in ResponsePanel (useful for HTML/XML/non-JSON responses).
-23. **Auth presets** — Auth modal with Bearer Token, Basic Auth, and API Key presets; auto-populates Authorization header based on selection; available in the right sidebar.
-24. **Request history** — Automatically logs all sent requests with timestamp, method, URL, status, and duration; stored in localStorage (max 100 entries); replay past requests with one click; available in the right sidebar.
-20. **Landing page** — Marketing page with hero section, animated terminal demo, feature cards, keyboard shortcuts section, developer portfolio section, and footer. Server-rendered with SEO metadata and JSON-LD.
+### Core Features
 
-### Partially implemented / legacy
-- **`stores/auth.ts`** — Entirely commented out. Was a Pinia-based auth store from a previous project. Not used.
-- **`utils/apiRequest.js`** — Generic API request utility. Not used by the main app flow (the proxy approach replaced it).
-- **`utils/check-user-permission.js`** — Commented out. Legacy permission checker.
-- **`config/apiEndpoints.ts`** — Defines posts CRUD endpoints. Not used by the main app.
-- **`styles/components/*.css`** — Legacy CSS files (button, card, form, modal, sidebar, list). Not imported by the main app (Tailwind handles styling).
-- **`styles/variables.css`** — SCSS variable `$font-regular: 'Roboto'`. Not used (app uses Geist fonts).
-- **`styles/theme/defaultTheme.js`** — Legacy theme file. Not imported.
+1. **Smart Collections** — Create, rename, delete collections; each collection has its own environment variables and list of routes
+2. **Route Management** — Create, rename, delete routes within collections; each route stores a curl command and optional response
+3. **HTTP Request Builder** — URL bar with method selector (GET/POST/PUT/PATCH/DELETE/HEAD), params/headers/body editors
+4. **Body Content Types** — Supports raw/JSON, x-www-form-urlencoded, raw/Text, and multipart/form-data with file upload
+5. **Table Mode Editing** — Toggle between JSON and key-value table views for params, headers, and body
+6. **Response Panel** — Displays response with status code, duration (ms/s), size (B/KB/MB), JSON tree view, and raw text view
+7. **Response Headers Tab** — Dedicated tab showing all response headers with per-header copy
+8. **Deep Search** — Floating search bar (Cmd/Ctrl+F) to find text within JSON responses and headers
+9. **CORS Bypass Proxy** — Server-side proxy route (`/api/proxy`) forwards requests to bypass browser CORS restrictions
+10. **Browser Extension** — Chrome extension ("Hittable Companion") for localhost CORS bypass via service worker
+11. **curl Integration** — Paste curl commands into URL bar for instant parsing; copy any route as curl
+12. **Environment Variables** — Per-collection `<<KEY>>` placeholder syntax; resolveEnv replaces at request time
+13. **Import/Export** — Export collections as pako-compressed base64 strings; import by pasting code
+14. **Request History** — Automatically logs all sent requests with timestamp, method, URL, status, duration, size; replay with one click; max 100 entries
+15. **Markdown Notes** — Rich markdown editor with 3-way view (Edit/Split/Preview); per-route documentation
+16. **Auth Presets** — Modal for Bearer Token, Basic Auth, and API Key; auto-populates Authorization header
+17. **Keyboard Shortcuts** — Cmd/Ctrl+Enter (Send), Cmd/Ctrl+S (Save), Cmd/Ctrl+F (Search), Cmd/Ctrl+B (Toggle Sidebar), Shift+T (New Route), Esc (Close Modal)
+18. **URL-based Route Selection** — Route selection encoded in URL params (`?c=CollectionName&r=RouteName`) for deep linking
+19. **Breadcrumb Navigation** — Clickable collection/route dropdowns in RequestForm for quick switching without sidebar
+20. **Unsaved Changes Protection** — `beforeunload` warning; visual indicator for unsaved changes
+21. **Landing Page** — Marketing page with terminal demo, feature cards, keyboard shortcuts section, developer portfolio
+22. **Toast Notifications** — Animated toast system (info/success/error) with position control
+23. **Responsive Design** — Mobile sidebar collapse, touch-friendly targets (44px min), adaptive layouts
 
-### Known issues / observations
-- `console.log(res)` in `app/page.tsx:59` — debug log left in production code.
-- `console.log(matchEls.current.length)` in `ResponsePanel.tsx:45` — debug log left in production code.
-- `console.log(selectedId, editContent)` in `NoteModal.tsx:22` — debug log left in production code.
-- The `stores/auth.ts` and some utility files are vestiges of a previous project (possibly "Sancus") and should be cleaned up.
-- No test files exist anywhere in the project.
+### Partially Implemented / In-Progress
+
+- **SyntaxHighlighter** (`components/hittable/SyntaxHighlighter.tsx`) — exists but usage is minimal
+- **Stores/auth.ts** — minimal auth store, not actively used in main flow
+- **`check-user-permission.js`** — utility file, appears unused in main app
+- **`apiRequest.js`** — utility file, appears unused (legacy)
+
+### Known Issues (from NEW_FEATURE_IDEAS.md)
+
+**Critical bugs still present:**
+- `JSON.parse` in `ImportModal` and `ExportModal` can still crash on malformed data
+- `set-cookie` parsing in proxy route splits on commas incorrectly (RFC 6265 issue)
+- No fetch timeout on upstream requests in proxy route
+- `curlConverter` produces `[object Object]` for nested header values
+- `valueMatchesSearch`/`countMatches` can stack overflow on deeply nested JSON
+- `decompressString` has no input validation
+- Curl paste handler has 1-second setTimeout race condition
+
+**Accessibility gaps:**
+- TabEditor tabs lack ARIA tab pattern (`role="tablist"`)
+- Icon-only buttons in UrlBar lack `aria-label`
+- `PanelItem` in Selector uses `<div onClick>` — not keyboard-focusable
 
 ---
 
 ## 4. Core Modules/Components
 
-### Key components
+### Key Files
 
-| Component | File | Responsibility |
-|-----------|------|----------------|
-| `Selector` | `components/hittable/Selector.tsx` | Two-panel sidebar: collections list + routes list. Drives selection via URL params. Handles Shift+T for new route creation. |
-| `RequestForm` | `components/hittable/RequestForm.tsx` | Main content area. Shows empty state or composes UrlBar + TabEditor + ResponsePanel. |
-| `UrlBar` | `components/RequestForm/UrlBar.tsx` | Method dropdown + URL textarea + Save/Send/Copy buttons. Handles curl paste detection, keyboard shortcuts, auto-resize. |
-| `TabEditor` | `components/RequestForm/TabEditor.tsx` | Params/Body/Headers tabbed editor. Params tab syncs with URL query string. |
-| `ResponsePanel` | `components/RequestForm/ResponsePanel.tsx` | Response display with status badge, search, copy, and JSON tree. Manages match registry for search navigation. |
-| `JsonNode` | `components/RequestForm/ResponsePanelComponents/JsonNode.tsx` | Recursive JSON tree renderer with collapsible objects/arrays, type coloring, and search highlighting. |
-| `ModalShell` | `components/ui/SharedModal.tsx` | Reusable modal wrapper with portal, backdrop blur, corner bracket decorations, and size variants. |
-| `Menu` | `components/hittable/Menu.tsx` | Context menu for collections/routes with rename, delete, export options. |
+| File | Responsibility |
+|------|---------------|
+| `context/dataContext.tsx` | Central state hub — collections, form, response, history, extension status, save handler |
+| `utils/hittableProxy.ts` | Request routing — decides extension vs proxy, handles multipart, env resolution |
+| `app/api/proxy/route.ts` | Server-side proxy — forwards HTTP requests, parses response, extracts headers/cookies |
+| `utils/curlConverter.ts` | Bidirectional curl ↔ JSON conversion using `@bany/curl-to-json` |
+| `utils/hittableCollectionModifier.ts` | Collection CRUD — create/rename/delete collections and routes, update env vars |
+| `components/hittable/Selector.tsx` | Left sidebar — collections list, routes list, URL-based selection, keyboard shortcuts |
+| `components/RequestForm/UrlBar.tsx` | URL input — method selector, send/save/copy buttons, curl paste detection |
+| `components/RequestForm/TabEditor.tsx` | Params/Body/Headers editors — JSON/table modes, body type selector, multipart support |
+| `components/RequestForm/ResponsePanel.tsx` | Response display — status/duration/size metrics, tabs, search, raw view toggle |
+| `components/ui/SharedModal.tsx` | ModalShell — reusable modal with focus trap, ARIA attributes, portal rendering |
 
-### Reusable hooks
+### Reusable Components/Hooks
 
-| Hook | File | Usage |
-|------|------|-------|
-| `useKeypress` | `hooks/useKeypress.ts` | Generic keyboard shortcut hook. Used in UrlBar (Ctrl+Enter, Ctrl+S), Selector (Shift+T), ResponsePanel (Ctrl+F), ShortcutProvider (Ctrl+B). |
-| `useExtension` | `hooks/useExtension.ts` | Detects browser extension availability via postMessage polling (10 attempts, 500ms interval). |
-| `useNotification` | `hooks/useNotify.ts` | Convenience wrapper around NotificationContext with `info()`, `success()`, `error()` methods. |
-| `useShortcuts` | `context/ShortcutKeypressProvider.tsx` | Accesses global shortcut state (currently just `toggleSidebar`). |
+| Component/Hook | Used In |
+|----------------|---------|
+| `ModalShell` | All modals (Import, Export, Auth, Note, Info, Create, Rename, Delete, Env, NoExtension) |
+| `ModalActions` | All confirm/cancel dialogs |
+| `useKeypress` | UrlBar (Send, Save), Selector (New Route), ResponsePanel (Search), EnvModal (Save) |
+| `useExtension` | DataContext — detects browser extension availability |
+| `useNotification` | ImportModal, NoteModal — toast feedback |
+| `useDataContext` | Nearly every component — access to shared state |
+| `useShortcuts` | Hittable page, Selector — sidebar toggle state |
+| `JsonNode` | ResponsePanel — recursive JSON tree rendering |
+| `Highlight` | JsonNode, FloatingSearch — text match highlighting |
 
-### Key utilities
+### Custom Logic
 
-| Utility | File | Purpose |
-|---------|------|---------|
-| `curlConverter` | `utils/curlConverter.ts` | Parses curl strings to `THittableCurlJson` using `@bany/curl-to-json`. Handles `<<ENV>>` variable shielding. |
-| `jsonToCurl` | `utils/curlConverter.ts` | Serializes `THittableCurlJson` back to curl command string. |
-| `hittableProxy` | `utils/hittableProxy.ts` | Routes requests: extension for localhost, proxy endpoint for everything else. |
-| `resolveEnv` | `utils/hittableCollectionModifier.ts` | Replaces `<<KEY>>` placeholders with environment variable values in all form fields. |
-| `updateCurl` / `createCurlName` / `deleteCurlName` / etc. | `utils/hittableCollectionModifier.ts` | Immutable collection CRUD operations returning new state. |
-| `formatJson` | `utils/formatJson.ts` | Parses and pretty-prints JSON with tab indentation. Returns `{ output, error }`. |
-| `compressString` / `decompressString` | `utils/compressString.ts` | pako deflate/inflate + URL-safe base64 encoding for collection import/export. |
-| `countMatches` / `valueMatchesSearch` | `utils/responsePanelUtils.ts` | Recursive JSON search utilities for the response panel search feature. |
-| `getParamsfromUrl` / `modifyUrlForNewParams` | `utils/responsePanelUtils.ts` | Bidirectional URL ↔ JSON params conversion. |
-| `cn` | `utils/cn.ts` | clsx + tailwind-merge class name utility. |
+- **`resolveEnv()`** — Replaces `<<KEY>>` placeholders in form inputs with environment variable values using regex `<<(\w+)>>`
+- **`hittableProxy()`** — Routing decision tree: localhost + extension → postMessage; remote → server proxy; localhost + no extension → error
+- **`compressString()`/`decompressString()`** — pako deflate/inflate with URL-safe base64 encoding for collection import/export
+- **`curlConverter()`** — Parses curl strings using `@bany/curl-to-json`, shields `<<VAR>>` placeholders during parsing, extracts params from URL
+- **`jsonToCurl()`** — Serializes form input back to curl command, escapes quotes in body/headers
+- **`countMatches()`/`valueMatchesSearch()`** — Recursive JSON search for deep search feature
 
 ---
 
 ## 5. UI/UX Details
 
-### Design system & theming
+### Design System
 
-- **Dark theme only** — No light mode toggle. The app uses a deep navy/dark blue color scheme.
-- **Primary accent:** Cyan (`#00e5cc` / `cyan-500`) — used for active states, borders, glows, buttons.
-- **Background:** `#080f1a` (app), `#0a1628` (panels), `#0e1f35` (modals/dropdowns), `#060d18` (topbar).
-- **Text:** White with various opacity levels (`text-white/80`, `text-white/40`, `text-white/15`).
-- **Fonts:** Geist Sans (body) + Geist Mono (code/UI elements), loaded via `next/font/google`.
-- **Method colors:** GET=`#00e5cc`, POST=`#4ade80`, PUT=`#fb923c`, PATCH=`#a78bfa`, DELETE=`#f87171`, HEAD=`#94a3b8`.
-- **Styling method:** Tailwind CSS 4.1.11 with `@tailwindcss/postcss`. Legacy CSS files exist but are not used by the main app.
-- **Custom scrollbar:** Thin 4px width with cyan gradient thumb (`styles/app.css`).
-- **Modal decorations:** Corner bracket borders on modals and URL bar (design signature).
-- **Ambient effects:** Subtle blur glow orbs in the app background (`bg-cyan-500/5 blur-[120px]`).
+- **Theme:** Dark-only (no light mode toggle). Background: `#080f1a` (deep navy), `#0a1628`, `#0c1a2e`, `#0e1f35`
+- **Accent color:** Cyan (`#00e5cc`) — used for active states, borders, highlights
+- **Method colors:** GET=`#00e5cc`, POST=`#4ade80`, PUT=`#fb923c`, PATCH=`#a78bfa`, DELETE=`#f87171`, HEAD=`#94a3b8`
+- **Fonts:** Geist Sans (`--font-geist-sans`) for UI, Geist Mono (`--font-geist-mono`) for code/data
+- **Styling approach:** Tailwind CSS 4 utility classes + custom CSS in `styles/components/` (buttons, modals, forms)
+- **Decorative elements:** Corner bracket borders on modals and URL bar (cyan-500/30), ambient background glow blobs
+- **Custom scrollbar:** Thin 4px scrollbar with cyan gradient thumb
 
-### Navigation/routing
+### Navigation/Routing
 
-- `/` — Landing page (server-rendered)
-- `/hittable` — Main app (client-rendered)
-- `/hittable?c=CollectionName&route=RouteName` — App with pre-selected route (URL-param driven selection)
-- No authentication, no login flow.
+- `/` — Landing page (server component)
+- `/hittable` — Main application (client component)
+- `/hittable?c=CollectionName&r=RouteName` — Deep-linked route selection
 
-### Key user flows
+### Key User Flows
 
-1. **First visit:** User sees landing page → clicks "Launch App" → arrives at `/hittable` → sees default "JSONPlaceholder Lab" collection with 6 pre-configured routes.
-2. **Sending a request:** Select collection → select route → URL bar populates with curl data → edit if needed → press `Ctrl+Enter` or click "Send" → response appears in ResponsePanel.
-3. **Creating a new route:** Press `Shift+T` or click "New Route" → enter name (optionally paste curl) → route created and selected.
-4. **Saving changes:** Edit URL/headers/body → "Unsaved" badge appears → press `Ctrl+S` or click "Save" → changes persisted to localStorage.
-5. **Importing a collection:** Click Import icon in sidebar → paste compressed string → collection added (auto-renamed if name conflict).
-6. **Using environment variables:** Click "Env Vars" → add key-value pairs → reference as `<<KEY>>` in requests → resolved at send time.
-7. **Searching responses:** After receiving response → press `Ctrl+F` → type search query → matches highlighted in yellow → Enter/Shift+Enter to navigate.
+1. **First visit:** Landing page → "Launch App" → `/hittable` → Empty state with "Create collection" prompt
+2. **Creating a collection:** Sidebar "+" button → CreateModal → enters name → new collection appears in sidebar
+3. **Adding a route:** Click collection → Routes panel appears → "+" button → CreateModal → new route
+4. **Sending a request:** Select route → edit URL/headers/body in TabEditor → Cmd/Ctrl+Enter or click Send → response appears in ResponsePanel
+5. **Saving changes:** Edit form → "Unsaved" indicator appears → Cmd/Ctrl+S → changes persisted to localStorage and collection
+6. **Importing a collection:** Sidebar import button → paste compressed code → collection added with unique name
+7. **Using environment variables:** Click "Env Vars" → add key/value pairs → use `<<KEY>>` in URL/headers/body → resolved at send time
+8. **Searching responses:** Click search icon or Cmd/Ctrl+F → type query → matches highlighted in JSON tree → navigate with arrows
+9. **Viewing history:** Click history icon → modal shows recent requests → click entry to replay
+10. **Adding auth:** Click shield icon → select preset (Bearer/Basic/API Key) → fill fields → Apply → Authorization header added
 
 ---
 
 ## 6. Configuration & Environment
 
-### Build/dev scripts
+### Build/Dev Scripts
 
 ```bash
-pnpm dev          # Next.js dev server with Turbopack
-pnpm build        # Production build
-pnpm start        # Start production server
-pnpm lint         # ESLint
-pnpm prepare      # Install Husky hooks
-pnpm commitlint   # Validate commit message
+npm run dev          # Start dev server with Turbopack (next dev --turbopack)
+npm run build        # Production build (next build)
+npm run start        # Start production server (next start)
+npm run lint         # Run ESLint (next lint)
+npm run prepare      # Set up Husky git hooks
+npm run commitlint   # Validate commit messages
 ```
 
-### Environment variables
+### Environment Variables
 
-The `.env.example` file is empty. No environment variables are currently required for the app to function. The config file references `NEXT_API_BASE_URL` and `NEXT_API_CLIENT_SECRET` but these are not used by the active codebase.
+- `.env.example` — exists (template for env vars)
+- No runtime environment variables needed for the app itself (all data is client-side)
+- The proxy route has no env-based configuration
 
-### Key config files
+### Key Dependencies (from package.json)
 
-| File | Purpose |
-|------|---------|
-| `next.config.ts` | Image remote patterns (localhost:3000, domiknows.vercel.app), SVG allowed |
-| `tsconfig.json` | Strict mode, `@/*` path alias to project root, ES2017 target |
-| `postcss.config.mjs` | Tailwind CSS PostCSS plugin |
-| `eslint.config.mjs` | ESLint flat config: Next.js core-web-vitals + TypeScript + TanStack Query |
-| `commitlint.config.js` | Conventional commits enforcement (feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert) |
-| `vercel.json` | Sitemap cache headers |
-| `Dockerfile` | Node.js bookworm + pnpm 10.12.4 |
-| `docker-compose.yml` | Docker Compose config |
+| Package | Version | Purpose |
+|---------|---------|---------|
+| next | 16.1.6 | Framework |
+| react / react-dom | 19.2.0 | UI library |
+| typescript | ^5 | Type safety |
+| tailwindcss | ^4.1.11 | Styling |
+| @bany/curl-to-json | ^1.2.10 | Curl parsing |
+| axios | ^1.13.3 | HTTP client |
+| framer-motion | ^12.23.0 | Animations |
+| lucide-react | ^0.548.0 | Icons |
+| marked | ^18.0.5 | Markdown rendering |
+| pako | ^2.1.0 | Compression for import/export |
+| @tanstack/react-query | ^5.81.5 | Server state (used minimally) |
+| @radix-ui/react-accordion | ^1.2.12 | Accordion component |
+| class-variance-authority | ^0.7.1 | Component variants |
+| clsx + tailwind-merge | — | Class name utilities |
+| husky | ^9.1.7 | Git hooks |
+| commitlint | ^19.0.0 | Commit message linting |
+| lint-staged | ^15.2.0 | Pre-commit lint |
 
-### Dependencies (from package.json)
+### Config Files
 
-**Runtime:**
-- next 16.1.6, react 19.2.0, react-dom 19.2.0
-- @tanstack/react-query 5.81.5
-- @radix-ui/react-accordion 1.2.12
-- framer-motion 12.23.0
-- lucide-react 0.548.0
-- axios 1.13.3
-- @bany/curl-to-json 1.2.10
-- pako 2.1.0
-- clsx 2.1.1, tailwind-merge 3.3.1, class-variance-authority 0.7.1
-- postcss 8.5.6
-
-**Dev:**
-- typescript 5.x, @types/node, @types/react, @types/react-dom, @types/pako
-- tailwindcss 4.1.11, @tailwindcss/postcss 4.1.11, tw-animate-css 1.4.0
-- eslint 9.x, eslint-config-next 16.0.0, @tanstack/eslint-plugin-query 5.81.2
-- husky 9.1.7, lint-staged 15.2.0
-- @commitlint/cli 19.x, @commitlint/config-conventional 19.x
-- baseline-browser-mapping 2.9.19
+- `next.config.ts` — Image remote patterns, SVG allowed
+- `tsconfig.json` — Strict mode, `@/*` path alias, ES2017 target
+- `eslint.config.mjs` — ESLint config
+- `postcss.config.mjs` — PostCSS with Tailwind plugin
+- `commitlint.config.js` — Conventional commits
+- `.husky/` — Git hooks directory
+- `vercel.json` — Vercel deployment config
+- `docker-compose.yml` / `Dockerfile` / `dockerEntryPoint.sh` — Docker support (exists but secondary to Vercel)
 
 ---
 
 ## 7. Current State
 
-### Fully working
-- Complete collection/route CRUD with localStorage persistence
-- curl import (paste in URL bar or creation modal)
-- curl export (copy as curl)
-- CORS-free server-side proxy (`/api/proxy`)
-- Browser extension for localhost requests (Manifest V3 Chrome extension)
-- Environment variable system with `<<KEY>>` resolution
-- JSON response tree viewer with collapsible nodes
-- Response search with match highlighting and navigation
-- Keyboard shortcuts (Ctrl+Enter, Ctrl+S, Ctrl+F, Ctrl+B, Shift+T)
-- Collection import/export via compressed strings
-- Notes notebook with CRUD and search
-- Toast notification system
-- Landing page with SEO metadata, JSON-LD, and animated demo
-- Unsaved changes detection
+### What's Fully Working
 
-### Still being iterated on / cleanup needed
-- Debug `console.log` statements left in production code (3 instances)
-- Legacy files from a previous project (`stores/auth.ts`, `utils/apiRequest.js`, `utils/check-user-permission.js`, `config/apiEndpoints.ts`, `styles/components/*.css`, `styles/variables.css`, `styles/theme/defaultTheme.js`)
-- No test suite exists
-- `.env.example` is empty despite config referencing env vars
+- Collection and route CRUD (create, rename, delete)
+- HTTP request sending via proxy and browser extension
+- Response display with JSON tree, raw view, headers tab, search
+- curl paste and copy
+- Environment variables with `<<KEY>>` syntax
+- Import/export collections (compressed format)
+- Request history with replay
+- Markdown notes with split editor
+- Auth presets (Bearer, Basic, API Key)
+- Body type selection (JSON, form-urlencoded, text, multipart with file upload)
+- Keyboard shortcuts throughout
+- Mobile responsive layout
+- ARIA accessibility attributes on modals
+- Unsaved changes protection
+- URL-based route selection
 
-### Recent / last major work
-- Based on the codebase state, recent work appears to have focused on:
-  - Browser extension integration (localhost request routing)
-  - Import/Export collection feature
-  - Notes notebook feature
-  - Landing page with developer portfolio section
-  - Response panel search functionality
+### What's Still Being Iterated On
+
+- The `NEW_FEATURE_IDEAS.md` contains a prioritized roadmap of 16 features
+- Several bug fixes from the audit are still pending (see "Known Issues" above)
+- The stores/auth.ts file exists but isn't actively used
+
+### Recent Changes (from CHANGELOG.md)
+
+The most recent work focused on:
+- Response time/size metrics in ResponsePanel
+- Response headers tab
+- Raw view toggle
+- Auth presets modal
+- Request history system
+- Markdown notes editor with split view
+- Table mode for body/headers/params
+- Body content type selector (JSON, form-urlencoded, text, multipart)
+- Breadcrumb-based route switching
+- Comprehensive bug fixes (crash prevention, encoding, accessibility)
+- Mobile responsive improvements
+
+### Next Planned Steps (from README.md roadmap)
+
+- [ ] Response History (partially done — history exists but not full response storage)
+- [ ] Auth presets (OAuth2, AWS Signature) — basic presets done, advanced ones pending
+- [ ] OpenAPI/Swagger import
 
 ---
 
 ## 8. Conventions
 
-### Coding patterns
-- **Client components:** All interactive components use `"use client"` directive
-- **Server components:** Landing page (`app/page.tsx`) is a server component that fetches data
-- **State management:** React Context only (no external state library)
-- **Styling:** Tailwind CSS utility classes exclusively. No CSS modules or styled-components for new code.
-- **Portals:** Modals use `createPortal(...)` to render into `document.body`
-- **Immutability:** All collection mutations return new arrays/objects (no mutation)
-- **URL-driven selection:** Route selection is encoded in URL search params, making it shareable/bookmarkable
+### Coding Style
 
-### Naming conventions
-- **Files:** PascalCase for components (`Selector.tsx`), camelCase for utilities (`curlConverter.ts`)
-- **Types:** `T` prefix for types (`THittableCollections`, `TResponseJson`), no prefix for interfaces
-- **Exports:** Named exports for components and utilities, barrel `index.ts` files for re-exports
-- **Components:** Default exports for page/layout components, named exports for shared UI
-- **Hooks:** `use` prefix (`useKeypress`, `useExtension`, `useNotification`)
-- **Path alias:** `@/*` maps to project root (e.g., `@/components`, `@/utils`, `@/types`)
+- **TypeScript strict mode** — All files use strict TypeScript
+- **Client components** — Explicit `"use client"` directive at top of components using state/hooks
+- **Functional components only** — No class components
+- **Hooks pattern** — Custom hooks in `hooks/` directory, context hooks for shared state
+- **Utility functions** — Pure functions in `utils/`, no side effects where possible
+- **Type definitions** — All types in `types/` directory, prefixed with `T` (e.g., `THittableCollection`, `TResponseJson`)
 
-### Decisions worth preserving
-- **Chose Next.js App Router** over Pages Router for server components and modern routing
-- **Chose React Context** over Redux/Zustand because the state tree is simple (collections + selection)
-- **Chose server-side proxy** over client-side CORS bypass for reliability and security
-- **Chose browser extension** for localhost requests because service workers can bypass CORS natively
-- **Chose pako compression** for import/export to keep shared strings manageable in length
-- **Chose URL params** for selection state to enable bookmarking and browser history navigation
-- **Chose `<<KEY>>` syntax** for environment variables (double angle brackets) to avoid conflicts with template literals
-- **No dark/light toggle** — the app is intentionally dark-only to match the developer tool aesthetic
-- **Chose Geist fonts** (sans + mono) for a modern, technical feel consistent with Vercel's ecosystem
+### Naming Conventions
+
+- **Files:** PascalCase for components (`Selector.tsx`, `UrlBar.tsx`), camelCase for utilities (`curlConverter.ts`)
+- **Components:** PascalCase (`ResponsePanel`, `TabEditor`)
+- **Types:** `T` prefix (`THittableCollections`, `TResponseJson`, `THistoryEntry`)
+- **Constants:** UPPER_SNAKE_CASE (`HITTABLE_METHODS`, `METHOD_COLORS`)
+- **Hooks:** `use` prefix (`useKeypress`, `useExtension`, `useDataContext`)
+- **CSS classes:** Tailwind utilities + custom classes in `styles/components/` (`.modal-button-mini`, `.btn-primary`)
+
+### Patterns Used Consistently
+
+- **Context + useState** for state management (no external state library for core app state)
+- **ModalShell** component for all modals with consistent styling
+- **`useKeypress`** hook for all keyboard shortcuts
+- **`useDataContext()`** for accessing shared state (destructured at component top)
+- **`useCallback`/`useMemo`** for performance-critical computations
+- **URL params** for route selection (deep linking support)
+- **localStorage** with try/catch for all persistence operations
+- **Error boundaries** at page level (`app/error.tsx`)
+
+### Key Decisions Worth Preserving
+
+1. **No external state library** — The app uses React Context + useState, not Redux/Zustand. This keeps bundle size small but means DataContext can cause re-renders. This was a deliberate choice for simplicity.
+2. **Browser-first persistence** — All data stays in localStorage. No server-side storage. This is a core privacy/design principle.
+3. **Dual proxy strategy** — Remote URLs go through server proxy; localhost goes through browser extension. This avoids needing a full proxy server while handling CORS.
+4. **curl as the interchange format** — Routes are stored as curl strings internally, enabling easy import/export and curl compatibility.
+5. **pako compression for import/export** — Collections are compressed to URL-safe base64 strings for easy sharing.
+6. **URL-based selection** — Route selection is encoded in URL params, enabling deep linking and browser back/forward navigation.
+7. **Tailwind + custom CSS hybrid** — Most styling is Tailwind utilities, but component-specific styles (buttons, modals) are in CSS files using `@apply`.
+8. **Monospace font for the app** — The entire Hittable app uses Geist Mono, reinforcing the developer/terminal aesthetic.

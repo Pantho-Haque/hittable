@@ -38,9 +38,9 @@ export default function HistoryPanel() {
         title="History"
         className="modal-button-mini relative"
       >
-        <Clock size={12} />
+        <Clock size={14} />
         {history.length > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 text-[7px] text-white/30 leading-none">{history.length}</span>
+          <span className="modal-button-badge">{history.length > 99 ? "99+" : history.length}</span>
         )}
       </button>
 

@@ -191,9 +191,9 @@ export default async function HomePage() {
           <div className="flex flex-wrap items-center gap-6">
             <a
               href={
-                res.hero.contactLinks.find(
+                res.hero.contactLinks?.find(
                   (link: { icon: string }) => link.icon === "github",
-                ).href
+                )?.href ?? "#"
               }
               target="_blank"
               rel="noopener noreferrer"

@@ -47,6 +47,14 @@ export function countMatches(value: JsonValue, query: string): number {
   return count;
 }
 
+function safeDecodeURIComponent(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
 export function getParamsfromUrl(url: string): string {
   // Strip fragment identifier before parsing
   const urlWithoutFragment = url.split("#")[0];
@@ -55,8 +63,8 @@ export function getParamsfromUrl(url: string): string {
   const paramsObj: Record<string, string> = {};
   params.split("&").forEach((param) => {
     const [key, ...valueParts] = param.split("=");
-    const decodedKey = decodeURIComponent(key);
-    const decodedValue = decodeURIComponent(valueParts.join("="));
+    const decodedKey = safeDecodeURIComponent(key);
+    const decodedValue = safeDecodeURIComponent(valueParts.join("="));
     paramsObj[decodedKey] = decodedValue;
   });
   return JSON.stringify(paramsObj, null, 2);

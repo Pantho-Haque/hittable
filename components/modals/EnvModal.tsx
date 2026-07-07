@@ -58,7 +58,7 @@ export default function EnvModal() {
         onClick={openModal}
         className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-semibold tracking-wider rounded-md border border-white/10 bg-white/5 text-white/40 hover:bg-white/8 hover:text-white/60 hover:border-white/20 transition-all cursor-pointer"
       >
-        <Settings2 size={11} />
+        <Settings2 size={14} />
         Env Vars
       </button>
 

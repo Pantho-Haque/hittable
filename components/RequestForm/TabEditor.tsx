@@ -1,8 +1,8 @@
 "use client";
 
 import { formatJson } from "@/utils/formatJson";
-import { Dispatch, SetStateAction, useState, useCallback, useMemo } from "react";
-import { modifyUrlForNewParams, getParamsfromUrl } from "@/utils/responsePanelUtils";
+import { Dispatch, SetStateAction, useState, useCallback, useEffect, useMemo } from "react";
+import { modifyUrlForNewParams } from "@/utils/responsePanelUtils";
 import { useDataContext } from "@/context/dataContext";
 import { Braces, Table2, Plus, Trash2 } from "lucide-react";
 
@@ -37,9 +37,9 @@ function KeyValueTable({
       {entries.length === 0 && (
         <button
           onClick={addRow}
-          className="flex items-center gap-1.5 text-[10px] text-white/25 hover:text-cyan-400 transition-colors cursor-pointer py-2"
+          className="flex items-center justify-center gap-1.5 text-[11px] text-white/40 hover:text-cyan-400 transition-colors cursor-pointer py-3 border border-dashed border-white/10 hover:border-cyan-500/30 rounded-md bg-white/2 hover:bg-cyan-500/5"
         >
-          <Plus size={10} />
+          <Plus size={12} />
           Add first row
         </button>
       )}
@@ -73,9 +73,9 @@ function KeyValueTable({
       {entries.length > 0 && (
         <button
           onClick={addRow}
-          className="flex items-center gap-1.5 text-[10px] text-white/20 hover:text-cyan-400 transition-colors cursor-pointer py-1 mt-1"
+          className="flex items-center justify-center gap-1.5 text-[11px] text-white/30 hover:text-cyan-400 transition-colors cursor-pointer py-2 mt-1 border border-dashed border-white/8 hover:border-cyan-500/25 rounded-md bg-white/2 hover:bg-cyan-500/5"
         >
-          <Plus size={10} />
+          <Plus size={12} />
           Add row
         </button>
       )}
@@ -95,6 +95,7 @@ export default function TabEditor({
     "params",
   );
   const [viewMode, setViewMode] = useState<ViewMode>("json");
+
   const [tableEntries, setTableEntries] = useState<Record<string, [string, string][]>>({
     params: [],
     headers: [],
@@ -128,20 +129,38 @@ export default function TabEditor({
     setTableEntries((prev) => ({ ...prev, [tab]: parsed }));
   }, [parseJsonToEntries]);
 
+  // Sync headers table entries when formInput.headers changes
+  useEffect(() => {
+    if (activeTab !== "headers") return;
+    try {
+      const parsed = parseJsonToEntries(formInput.headers);
+      const current = tableEntries["headers"];
+      if (JSON.stringify(parsed) !== JSON.stringify(current)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- guard check prevents cascading renders
+        setTableEntries((prev) => ({ ...prev, headers: parsed }));
+      }
+    } catch {
+      // Invalid JSON — don't sync
+    }
+  }, [formInput.headers, activeTab, parseJsonToEntries]); // eslint-disable-line react-hooks/exhaustive-deps -- tableEntries read via guard check, not needed as dependency
+
   // Get current entries for display
   const currentEntries = useMemo(() => tableEntries[activeTab] || [["", ""]], [activeTab, tableEntries]);
 
   // Handle table mode changes
   const handleTableChange = useCallback((entries: [string, string][]) => {
     setTableEntries((prev) => ({ ...prev, [activeTab]: entries }));
-    const json = entriesToJson(entries);
-    const { output, error: jsonErr } = formatJson(json);
-    setError(jsonErr);
 
     if (activeTab === "params") {
+      const json = entriesToJson(entries);
+      const { output, error: jsonErr } = formatJson(json);
+      setError(jsonErr);
       const newUrl = modifyUrlForNewParams(formInput.url, output);
       setFormInput((prev) => ({ ...prev, url: newUrl, params: output }));
     } else {
+      const json = entriesToJson(entries);
+      const { output, error: jsonErr } = formatJson(json);
+      setError(jsonErr);
       setFormInput((prev) => ({ ...prev, [activeTab]: output }));
     }
   }, [activeTab, formInput.url, entriesToJson, setFormInput, setError]);
@@ -162,14 +181,12 @@ export default function TabEditor({
     }
   }, [viewMode, formInput, syncTableFromJson]);
 
-  const isTableSupported = activeTab !== "body" || (() => {
-    try {
-      const obj = JSON.parse(formInput.body || "{}");
-      return typeof obj === "object" && obj !== null && !Array.isArray(obj);
-    } catch {
-      return false;
+  const getPlaceholder = () => {
+    if (activeTab === "body") {
+      return '{\n  "key": "value"\n}';
     }
-  })();
+    return '{\n  "Authorization": "Bearer ..."\n}';
+  };
 
   return (
     <div
@@ -194,9 +211,7 @@ export default function TabEditor({
           </button>
         ))}
 
-        {/* View mode toggle */}
-        {isTableSupported && (
-          <div className="ml-auto flex items-center gap-0.5 mr-1">
+        <div className="ml-auto flex items-center gap-0.5 mr-1">
             <button
               onClick={() => handleViewModeChange("json")}
               title="JSON mode"
@@ -220,11 +235,10 @@ export default function TabEditor({
               <Table2 size={12} />
             </button>
           </div>
-        )}
       </div>
 
       {/* Content */}
-      {viewMode === "table" && isTableSupported ? (
+      {viewMode === "table" ? (
         <KeyValueTable
           entries={currentEntries}
           onChange={handleTableChange}
@@ -238,18 +252,14 @@ export default function TabEditor({
           style={{ minHeight: 200 }}
           spellCheck={false}
           value={formInput[activeTab]}
-          placeholder={
-            activeTab === "body"
-              ? '{\n  "key": "value"\n}'
-              : '{\n  "Authorization": "Bearer ..."\n}'
-          }
+          placeholder={getPlaceholder()}
           onChange={(e) => {
             const val = e.target.value;
             const { output, error: jsonErr } = formatJson(val);
             setError(jsonErr);
-            if (activeTab == "params") {
+            if (activeTab === "params") {
               const newUrl = modifyUrlForNewParams(formInput.url, output);
-              setFormInput((prev) => ({ ...prev, url: newUrl, [activeTab]: output }));
+              setFormInput((prev) => ({ ...prev, url: newUrl, params: output }));
             } else {
               setFormInput((prev) => ({ ...prev, [activeTab]: output }));
             }

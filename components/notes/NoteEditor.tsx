@@ -10,8 +10,6 @@ marked.setOptions({
   breaks: true,
 });
 
-type ViewMode = "edit" | "split" | "preview";
-
 interface Props {
   selectedId: NoteId | null;
   selectedTitle: string | null;
@@ -27,22 +25,21 @@ export default function NoteEditor({
   isUnsaved,
   onChange,
 }: Props) {
-  const [viewMode, setViewMode] = useState<ViewMode>("preview");
+  const [isPreview, setIsPreview] = useState(true);
+  const [isSplit, setIsSplit] = useState(false);
 
   const renderedHtml = content
     ? marked.parse(content, { async: false }) as string
     : '<span style="opacity:0.3">Nothing to preview</span>';
 
-  const cycleViewMode = () => {
-    setViewMode((prev) => {
-      if (prev === "preview") return "edit";
-      if (prev === "edit") return "split";
-      return "preview";
-    });
+  const togglePreview = () => {
+    setIsSplit(false);
+    setIsPreview((p) => !p);
   };
 
-  const modeIcon = viewMode === "preview" ? <Eye size={14} /> : viewMode === "edit" ? <Pencil size={14} /> : <Columns2 size={14} />;
-  const modeLabel = viewMode === "preview" ? "Preview" : viewMode === "edit" ? "Edit" : "Split";
+  const toggleSplit = () => {
+    setIsSplit((s) => !s);
+  };
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -51,31 +48,46 @@ export default function NoteEditor({
         <span className="text-xs font-medium text-white/40 truncate">
           {selectedTitle ?? "Select a note"}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {isUnsaved && (
             <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">
               unsaved
             </span>
           )}
           {selectedId && (
-            <button
-              onClick={cycleViewMode}
-              title={`${modeLabel} mode`}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
-                viewMode !== "edit"
-                  ? "text-cyan-400 bg-cyan-400/10"
-                  : "text-white/30 hover:text-white/50"
-              }`}
-            >
-              {modeIcon}
-            </button>
+            <>
+              {/* Edit / Preview toggle */}
+              <button
+                onClick={togglePreview}
+                title={isPreview ? "Switch to edit" : "Switch to preview"}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                  !isSplit
+                    ? "text-cyan-400 bg-cyan-400/10"
+                    : "text-white/30 hover:text-white/50"
+                }`}
+              >
+                {isPreview ? <Eye size={14} /> : <Pencil size={14} />}
+              </button>
+              {/* Split toggle */}
+              <button
+                onClick={toggleSplit}
+                title={isSplit ? "Exit split view" : "Split view"}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                  isSplit
+                    ? "text-cyan-400 bg-cyan-400/10"
+                    : "text-white/30 hover:text-white/50"
+                }`}
+              >
+                <Columns2 size={14} />
+              </button>
+            </>
           )}
         </div>
       </div>
 
       {/* content area */}
       <div className="flex-1 min-h-0 flex">
-        {viewMode === "split" ? (
+        {isSplit ? (
           <>
             {/* edit pane */}
             <div className="flex-1 min-w-0 flex flex-col border border-white/5 rounded-l-lg overflow-hidden max-md:hidden">
@@ -118,7 +130,7 @@ export default function NoteEditor({
               />
             </div>
           </>
-        ) : viewMode === "preview" ? (
+        ) : isPreview ? (
           <div
             className="flex-1 overflow-y-auto p-3 text-[13px] text-white/70 leading-relaxed note-preview"
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
@@ -141,7 +153,7 @@ export default function NoteEditor({
         </span>
         {selectedId && (
           <span className="text-[10px] text-white/15">
-            {modeLabel} mode
+            {isSplit ? "Split" : isPreview ? "Preview" : "Edit"} mode
           </span>
         )}
       </div>

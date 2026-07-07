@@ -12,7 +12,6 @@ function isLocalUrl(url: string): boolean {
   }
 }
 
-
 export function fetchViaExtension(
   url: string,
   method: string,
@@ -76,15 +75,14 @@ export async function hittableProxy(
 ) {
   const {url, method, headers, body} = resolveEnv(formInput, env);
 
-  let parsedHeaders: Record<string, string>;
-  try {
-    parsedHeaders = JSON.parse(headers || "{}");
-  } catch {
-    parsedHeaders = {};
-  }
-
   const isLocal = isLocalUrl(url);
   if (isLocal && extensionAvailable) {
+    let parsedHeaders: Record<string, string>;
+    try {
+      parsedHeaders = JSON.parse(headers || "{}");
+    } catch {
+      parsedHeaders = {};
+    }
     return fetchViaExtension(url, method, parsedHeaders, body);
   }
 

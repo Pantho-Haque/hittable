@@ -41,6 +41,7 @@ const DataContext = createContext<{
   extensionChecked: boolean;
 
   handleSaveCollection: () => void;
+  handleRevert: () => void;
 
   history: THistory;
   setHistory: Dispatch<SetStateAction<THistory>>;
@@ -98,6 +99,17 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       );
     }, [selectorResponse, formInput, proxyResponse]);
 
+  const handleRevert = useCallback(() => {
+      if (!selectorResponse) return;
+      const saved = selectorResponse.curlJson;
+      setFormInput({
+        ...saved,
+        body: formatJson(saved.body).output,
+        headers: formatJson(saved.headers).output,
+      });
+      setProxyResponse(selectorResponse.responseJson ?? null);
+    }, [selectorResponse, setFormInput, setProxyResponse]);
+
   useEffect(() => {
     try {
       localStorage.setItem("hittable", JSON.stringify(collections));
@@ -107,9 +119,26 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   }, [collections]);
 
   const hasCollections = collections.length > 0;
+
+  const normalizeForComparison = (json: THittableCurlJson) => {
+    let normalizedBody = json.body ?? "";
+    try { normalizedBody = JSON.stringify(JSON.parse(json.body ?? "{}")); } catch { /* keep as-is */ }
+    let normalizedHeaders = json.headers ?? "";
+    try { normalizedHeaders = JSON.stringify(JSON.parse(json.headers ?? "{}")); } catch { /* keep as-is */ }
+    let normalizedParams = json.params ?? "";
+    try { normalizedParams = JSON.stringify(JSON.parse(json.params ?? "{}")); } catch { /* keep as-is */ }
+    return JSON.stringify({
+      method: json.method,
+      url: json.url,
+      headers: normalizedHeaders,
+      body: normalizedBody,
+      params: normalizedParams,
+    });
+  };
+
   const isUnsaved = useCallback(() => {
     if (!selectorResponse || !formInput) return false;
-    return jsonToCurl(selectorResponse.curlJson) !== jsonToCurl(formInput);
+    return normalizeForComparison(selectorResponse.curlJson) !== normalizeForComparison(formInput);
   }, [selectorResponse, formInput]);
 
   useEffect(() => {
@@ -142,6 +171,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         extensionChecked,
 
         handleSaveCollection,
+        handleRevert,
 
         history,
         setHistory,
