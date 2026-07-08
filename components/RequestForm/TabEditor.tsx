@@ -1,12 +1,97 @@
 "use client";
 
 import { formatJson } from "@/utils/formatJson";
-import { Dispatch, SetStateAction, useState, useCallback, useEffect, useMemo } from "react";
+import { Dispatch, SetStateAction, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { modifyUrlForNewParams } from "@/utils/responsePanelUtils";
 import { useDataContext } from "@/context/dataContext";
-import { Braces, Table2, Plus, Trash2 } from "lucide-react";
+import { Braces, Table2, Plus, Trash2, Sparkles } from "lucide-react";
 
 type ViewMode = "json" | "table";
+
+function JsonEditor({
+  value,
+  onChange,
+  placeholder,
+  tab,
+  error,
+  onBeautify,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  placeholder: string;
+  tab: string;
+  error: string | null;
+  onBeautify: () => void;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
+
+  const lineCount = useMemo(() => {
+    const lines = (value || "").split("\n").length;
+    return Math.max(lines, 1);
+  }, [value]);
+
+  const syncScroll = useCallback(() => {
+    if (textareaRef.current && lineNumbersRef.current) {
+      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  }, []);
+
+  useEffect(() => {
+    syncScroll();
+  }, [value, syncScroll]);
+
+  return (
+    <div className="flex-1 flex flex-col relative">
+      {/* Error indicator */}
+      {error && (
+        <div className="px-3 py-1.5 text-[10px] text-red-400 bg-red-500/10 border-b border-red-500/20 flex items-center justify-between">
+          <span className="truncate">{error}</span>
+          <button
+            onClick={onBeautify}
+            className="ml-2 px-2 py-0.5 text-[9px] font-medium text-red-300 hover:text-red-200 bg-red-500/20 rounded cursor-pointer transition-colors shrink-0"
+          >
+            Try Beautify
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Line numbers gutter */}
+        <div
+          ref={lineNumbersRef}
+          className="flex-shrink-0 overflow-hidden select-none border-r border-white/5 bg-[#080f1a]/30"
+          style={{ width: 40 }}
+          aria-hidden="true"
+        >
+          <div className="p-2 md:p-4 text-right">
+            {Array.from({ length: lineCount }, (_, i) => (
+              <div
+                key={i}
+                className="text-[10px] md:text-[12px] leading-relaxed text-white/20 font-mono"
+              >
+                {i + 1}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          key={tab}
+          className="flex-1 w-full resize-none bg-transparent p-2 md:p-4 text-[10px] md:text-[12px] text-white/70 outline-none placeholder-white/15 leading-relaxed font-mono"
+          style={{ minHeight: 200, tabSize: 2 }}
+          spellCheck={false}
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          onScroll={syncScroll}
+        />
+      </div>
+    </div>
+  );
+}
 
 function KeyValueTable({
   entries,
@@ -95,6 +180,13 @@ export default function TabEditor({
     "params",
   );
   const [viewMode, setViewMode] = useState<ViewMode>("json");
+
+  const currentContent = formInput[activeTab];
+  const jsonError = useMemo(() => {
+    if (viewMode !== "json") return null;
+    const { error } = formatJson(currentContent);
+    return error;
+  }, [currentContent, viewMode]);
 
   const [tableEntries, setTableEntries] = useState<Record<string, [string, string][]>>({
     params: [],
@@ -212,6 +304,28 @@ export default function TabEditor({
         ))}
 
         <div className="ml-auto flex items-center gap-0.5 mr-1">
+            {viewMode === "json" && (
+              <button
+                onClick={() => {
+                  const { output, error: jsonErr } = formatJson(formInput[activeTab]);
+                  if (jsonErr) {
+                    setError(jsonErr);
+                  } else {
+                    setError(null);
+                    if (activeTab === "params") {
+                      const newUrl = modifyUrlForNewParams(formInput.url, output);
+                      setFormInput((prev) => ({ ...prev, url: newUrl, params: output }));
+                    } else {
+                      setFormInput((prev) => ({ ...prev, [activeTab]: output }));
+                    }
+                  }
+                }}
+                title="Beautify JSON"
+                className="p-1.5 rounded transition-colors cursor-pointer text-white/30 hover:text-cyan-400 hover:bg-cyan-400/10"
+              >
+                <Sparkles size={12} />
+              </button>
+            )}
             <button
               onClick={() => handleViewModeChange("json")}
               title="JSON mode"
@@ -246,22 +360,34 @@ export default function TabEditor({
           valuePlaceholder={activeTab === "headers" ? "Header value" : activeTab === "params" ? "Value" : "Value"}
         />
       ) : (
-        <textarea
-          key={activeTab}
-          className="flex-1 w-full resize-none bg-transparent p-2 md:p-4 text-[10px] md:text-[12px] text-white/70 outline-none placeholder-white/15 leading-relaxed"
-          style={{ minHeight: 200 }}
-          spellCheck={false}
+        <JsonEditor
           value={formInput[activeTab]}
-          placeholder={getPlaceholder()}
-          onChange={(e) => {
-            const val = e.target.value;
-            const { output, error: jsonErr } = formatJson(val);
-            setError(jsonErr);
+          onChange={(val) => {
             if (activeTab === "params") {
-              const newUrl = modifyUrlForNewParams(formInput.url, output);
-              setFormInput((prev) => ({ ...prev, url: newUrl, params: output }));
+              const newUrl = modifyUrlForNewParams(formInput.url, val);
+              setFormInput((prev) => ({ ...prev, url: newUrl, params: val }));
             } else {
-              setFormInput((prev) => ({ ...prev, [activeTab]: output }));
+              setFormInput((prev) => ({ ...prev, [activeTab]: val }));
+            }
+            // Sync error to parent for Send button blocking
+            const { error } = formatJson(val);
+            setError(error);
+          }}
+          placeholder={getPlaceholder()}
+          tab={activeTab}
+          error={jsonError}
+          onBeautify={() => {
+            const { output, error: jsonErr } = formatJson(formInput[activeTab]);
+            if (jsonErr) {
+              setError(jsonErr);
+            } else {
+              setError(null);
+              if (activeTab === "params") {
+                const newUrl = modifyUrlForNewParams(formInput.url, output);
+                setFormInput((prev) => ({ ...prev, url: newUrl, params: output }));
+              } else {
+                setFormInput((prev) => ({ ...prev, [activeTab]: output }));
+              }
             }
           }}
         />
