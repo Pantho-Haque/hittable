@@ -1,6 +1,6 @@
 "use client";
 import { formatJson } from "@/utils/formatJson";
-import { AlertCircle, MessageCircleWarning, ChevronDown, RotateCcw } from "lucide-react";
+import { AlertCircle, MessageCircleWarning, ChevronDown, RotateCcw, Folder } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -40,7 +40,7 @@ function InputForm() {
 
   const [error, setError] = useState<string | null>(null);
   const [openDropdown, setOpenDropdown] = useState<
-    "collection" | "route" | null
+    "collection" | "route" | number | null
   >(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const lastSyncedRouteRef = useRef<string | null>(null);
@@ -121,6 +121,32 @@ function InputForm() {
     .map((r) => r.name);
   const collectionNames = collections.map((c) => c.collectionName);
 
+  // Get items at a specific folder level for folder dropdown
+  const getItemsAtFolderLevel = (levelIndex: number): THittableItem[] => {
+    if (!currentCollection) return [];
+    const pathToLevel = folderPath.slice(0, levelIndex + 1);
+    return getItemsAtPath(currentCollection.items, pathToLevel);
+  };
+
+  const handleFolderItemSelect = useCallback(
+    (levelIndex: number, item: THittableItem) => {
+      const targetPath = folderPath.slice(0, levelIndex + 1);
+      if (item.type === "folder") {
+        // Navigate into the selected folder (drill into it)
+        router.push(
+          `/hittable?c=${encodeURIComponent(collectionName)}&p=${encodeURIComponent([...targetPath, item.name].join("/"))}`,
+        );
+      } else {
+        // Select a route at this level
+        router.push(
+          `/hittable?c=${encodeURIComponent(collectionName)}&r=${encodeURIComponent(item.name)}&p=${encodeURIComponent(targetPath.join("/"))}`,
+        );
+      }
+      setOpenDropdown(null);
+    },
+    [collectionName, folderPath, router],
+  );
+
   return (
     <div className="h-full w-full flex flex-col gap-4 font-mono">
       <NoExtensionModal
@@ -169,14 +195,47 @@ function InputForm() {
           </div>
 
           {/* Folder path segments */}
-          {folderPath.map((segment, i) => (
-            <span key={i} className="flex items-center gap-1">
-              <span className="text-white/10 text-xs">/</span>
-              <span className="text-[8px] md:text-[9px] uppercase text-cyan-500/30">
-                {segment}
+          {folderPath.map((segment, i) => {
+            const levelItems = getItemsAtFolderLevel(i);
+            const isOpen = openDropdown === i;
+            return (
+              <span key={i} className="flex items-center gap-1 relative">
+                <span className="text-white/10 text-xs">/</span>
+                <button
+                  onClick={() => setOpenDropdown(isOpen ? null : i)}
+                  className="flex items-center gap-1 text-[8px] md:text-[9px] uppercase text-cyan-500/40 hover:text-cyan-400 transition-colors cursor-pointer"
+                >
+                  {segment}
+                  <ChevronDown
+                    size={7}
+                    className={`transition-transform ${isOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {isOpen && levelItems.length > 0 && (
+                  <div className="absolute top-full left-2 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[160px] max-h-[200px] overflow-y-auto">
+                    {levelItems.map((item) => (
+                      <button
+                        key={item.name}
+                        onClick={() => handleFolderItemSelect(i, item)}
+                        className={`w-full text-left px-3 py-1.5 text-[10px] transition-colors cursor-pointer flex items-center gap-2 ${
+                          item.type === "folder"
+                            ? "text-white/50 hover:text-white/80 hover:bg-white/5"
+                            : item.name === curlName
+                              ? "text-cyan-400 bg-cyan-500/10"
+                              : "text-white/50 hover:text-white/80 hover:bg-white/5"
+                        }`}
+                      >
+                        {item.type === "folder" && (
+                          <Folder size={10} className="text-cyan-500/40" />
+                        )}
+                        {item.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </span>
-            </span>
-          ))}
+            );
+          })}
 
           <span className="text-white/10 text-xs">/</span>
 
