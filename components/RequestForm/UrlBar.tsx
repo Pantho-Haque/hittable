@@ -11,6 +11,7 @@ import { CheckCircle2, Terminal, Loader2, Save, Send } from "lucide-react";
 import { useCallback, useState, useRef, useEffect } from "react";
 import { useDataContext } from "@/context/dataContext";
 import { useNotification } from "@/hooks/useNotify";
+import SaveFromHistoryModal from "@/components/modals/SaveFromHistoryModal";
 
 export default function UrlBar({ error }: { error: string | null }) {
   const {
@@ -242,6 +243,7 @@ export default function UrlBar({ error }: { error: string | null }) {
       </div>
 
       <div className="w-full flex justify-end items-center gap-1.5">
+        <SaveFromHistoryModal />
         <button
           title="Save (Ctrl/Cmd+S)"
           disabled={!isUnsaved()}
