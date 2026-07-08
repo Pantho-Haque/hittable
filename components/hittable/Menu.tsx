@@ -15,7 +15,7 @@ export default function Menu({
   setCollections,
   setSelection,
 }: {
-  type: "collection" | "route";
+  type: "collection" | "route" | "folder";
   collectionCurlList: { [key: string]: string[] };
   currentName: string;
   collectionName?: string;

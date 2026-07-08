@@ -262,3 +262,18 @@ export function nameExistsInPath(
   const targetItems = getItemsAtPath(items, path);
   return targetItems.some((i) => i.name === name);
 }
+
+export function countItemsInFolder(items: THittableItem[]): { routes: number; folders: number } {
+  let routes = 0;
+  let folders = 0;
+  for (const item of items) {
+    if (item.type === "route") routes++;
+    else if (item.type === "folder") {
+      folders++;
+      const sub = countItemsInFolder(item.items);
+      routes += sub.routes;
+      folders += sub.folders;
+    }
+  }
+  return { routes, folders };
+}

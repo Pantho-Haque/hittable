@@ -10,6 +10,7 @@ import {
   isAlreadyExistsInPath,
   renameCollectionName,
   renameCurlName,
+  renameFolderName,
 } from "@/utils/hittableCollectionModifier";
 import { ModalInput, ModalShell, ModalActions } from "@/components";
 import { useDataContext } from "@/context/dataContext";
@@ -25,7 +26,7 @@ export default function RenameModal({
   setSelection,
 }: {
   currentName: string;
-  type: "collection" | "route";
+  type: "collection" | "route" | "folder";
   collectionCurlList: { [key: string]: string[] };
   collectionName?: string;
   folderPath?: string[];
@@ -46,6 +47,22 @@ export default function RenameModal({
       }
       setCollections((prev) => renameCollectionName(prev, currentName, value.trim()));
       setSelection((prev) => ({ ...prev, collectionName: value.trim() }));
+    } else if (type === "folder") {
+      const col = collections.find(
+        (c) => c.collectionName === collectionName,
+      );
+      if (isAlreadyExistsInPath(col, folderPath ?? [], value.trim())) {
+        return setError(`"${value.trim()}" already exists`);
+      }
+      setCollections((prev) =>
+        renameFolderName(
+          prev,
+          currentName,
+          collectionName ?? "",
+          value.trim(),
+          folderPath,
+        ),
+      );
     } else {
       const col = collections.find(
         (c) => c.collectionName === collectionName,

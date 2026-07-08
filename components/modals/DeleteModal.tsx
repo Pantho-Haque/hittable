@@ -13,7 +13,9 @@ import {
   deleteCollectionName,
   deleteItem,
 } from "@/utils/hittableCollectionModifier";
+import { countItemsInFolder, findFolder } from "@/utils/treeHelpers";
 import { ModalActions, ModalShell } from "@/components";
+import { useDataContext } from "@/context/dataContext";
 
 export default function DeleteModal({
   currentName,
@@ -24,13 +26,23 @@ export default function DeleteModal({
   setSelection,
 }: {
   currentName: string;
-  type: "collection" | "route";
+  type: "collection" | "route" | "folder";
   collectionName?: string;
   folderPath?: string[];
   setCollections: Dispatch<SetStateAction<THittableCollections>>;
   setSelection: Dispatch<SetStateAction<THittableSelectorSelection>>;
 }) {
   const [open, setOpen] = useState(false);
+  const { collections } = useDataContext();
+
+  // Compute folder contents count for cascade delete warning
+  const folderContents = (() => {
+    if (type !== "folder" || !collectionName) return null;
+    const col = collections.find((c) => c.collectionName === collectionName);
+    if (!col) return null;
+    const folder = findFolder(col.items, folderPath ?? []);
+    return folder ? countItemsInFolder(folder.items) : null;
+  })();
 
   const handleDelete = useCallback(() => {
     if (type === "collection") {
@@ -40,7 +52,16 @@ export default function DeleteModal({
       setCollections((prev) =>
         deleteItem(prev, collectionName ?? "", currentName, folderPath),
       );
-      setSelection((prev) => ({ ...prev, curlName: "" }));
+      if (type === "folder") {
+        // When deleting a folder, clear selection back to parent
+        setSelection((prev) => ({
+          ...prev,
+          folderPath: prev.folderPath.slice(0, -1),
+          curlName: "",
+        }));
+      } else {
+        setSelection((prev) => ({ ...prev, curlName: "" }));
+      }
     }
     setOpen(false);
   }, [type, currentName, collectionName, folderPath, setCollections, setSelection]);
@@ -71,7 +92,13 @@ export default function DeleteModal({
       {open && (
         <ModalShell
           title={`Delete ${type}`}
-          subtitle={`This will permanently remove "${currentName}"${type === "collection" ? " and all its routes" : ""}.`}
+          subtitle={
+            type === "folder" && folderContents && (folderContents.routes > 0 || folderContents.folders > 0)
+              ? `This will permanently remove "${currentName}" and its ${folderContents.routes} route(s), ${folderContents.folders} sub-folder(s).`
+              : type === "collection"
+                ? `This will permanently remove "${currentName}" and all its routes.`
+                : `This will permanently remove "${currentName}".`
+          }
           onClose={() => setOpen(false)}
         >
           <div className="rounded-md border border-red-500/20 bg-red-500/8 px-3 py-2">

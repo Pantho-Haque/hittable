@@ -191,15 +191,17 @@ function RouteItem({
 function FolderItem({
   item,
   onClick,
+  menuSlot,
 }: {
   item: THittableItem & { type: "folder" };
   onClick: () => void;
+  menuSlot?: React.ReactNode;
 }) {
   return (
     <div
       title={item.name}
       onClick={onClick}
-      className="group/menu relative flex items-center mx-2 mb-0.5 rounded-md border border-transparent hover:bg-white/4 hover:border-white/5 transition-all cursor-pointer"
+      className="group/menu relative flex items-center justify-between mx-2 mb-0.5 rounded-md border border-transparent hover:bg-white/4 hover:border-white/5 transition-all cursor-pointer"
     >
       <div className="flex items-center gap-1.5 flex-1 min-w-0 pl-3 pr-1 py-2.5">
         <Folder size={12} className="shrink-0 text-cyan-500/40" />
@@ -208,6 +210,11 @@ function FolderItem({
         </span>
         <span className="text-[9px] text-white/50">{item.items.length}</span>
       </div>
+      {menuSlot && (
+        <div onClick={(e) => e.stopPropagation()}>
+          {menuSlot}
+        </div>
+      )}
     </div>
   );
 }
@@ -575,6 +582,17 @@ export default function Selector() {
                         item={item as THittableItem & { type: "folder" }}
                         onClick={() =>
                           handleDrillIntoFolder((item as THittableItem & { type: "folder" }).name)
+                        }
+                        menuSlot={
+                          <Menu
+                            type="folder"
+                            collectionCurlList={collectionCurlList}
+                            currentName={item.name}
+                            collectionName={navCollection}
+                            folderPath={navPath}
+                            setCollections={setCollections}
+                            setSelection={setSelection}
+                          />
                         }
                       />
                     ))}
