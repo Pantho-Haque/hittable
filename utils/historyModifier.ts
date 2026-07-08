@@ -36,6 +36,12 @@ export function addHistoryEntry(
   return updated;
 }
 
+export function removeHistoryEntry(history: THistory, id: string): THistory {
+  const updated = history.filter((e) => e.id !== id);
+  saveHistory(updated);
+  return updated;
+}
+
 export function clearHistory(): THistory {
   saveHistory([]);
   return [];

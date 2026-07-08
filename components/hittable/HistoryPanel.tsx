@@ -3,7 +3,7 @@
 import { Clock, Trash2, ArrowRight } from "lucide-react";
 import { useState } from "react";
 import { THistoryEntry } from "@/types";
-import { clearHistory, formatTimestamp } from "@/utils/historyModifier";
+import { clearHistory, removeHistoryEntry, formatTimestamp } from "@/utils/historyModifier";
 import { METHOD_COLORS } from "@/constants";
 import { useDataContext } from "@/context/dataContext";
 import { ModalShell, ModalActions } from "@/components";
@@ -14,6 +14,10 @@ export default function HistoryPanel() {
 
   const handleClear = () => {
     setHistory(clearHistory());
+  };
+
+  const handleDelete = (id: string) => {
+    setHistory((prev) => removeHistoryEntry(prev, id));
   };
 
   const handleReplay = (entry: THistoryEntry) => {
@@ -94,6 +98,16 @@ export default function HistoryPanel() {
                         <span className="text-[11px] text-white/60 truncate flex-1 font-mono">
                           {entry.url}
                         </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(entry.id);
+                          }}
+                          title="Delete entry"
+                          className="p-1 rounded text-white/0 group-hover:text-white/30 hover:!text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+                        >
+                          <Trash2 size={10} />
+                        </button>
                         <ArrowRight
                           size={10}
                           className="text-white/0 group-hover:text-white/30 transition-colors shrink-0"
