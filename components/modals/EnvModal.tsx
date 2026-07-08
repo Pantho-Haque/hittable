@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Settings2, Trash2 } from "lucide-react";
+import { Plus, Settings2, Trash2, Lock } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -10,24 +10,39 @@ import {
   THittableEnv,
 } from "@/types";
 import { createPortal } from "react-dom";
-import { updateEnv } from "@/utils/hittableCollectionModifier";
+import { updateEnv, updateSecrets } from "@/utils/hittableCollectionModifier";
 import { useDataContext } from "@/context/dataContext";
+
+type TabKey = "env" | "secrets";
 
 export default function EnvModal({ collectionName: propCollectionName }: { collectionName?: string } = {}) {
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>("env");
   const [localEnv, setLocalEnv] = useState<[string, string][]>([]);
+  const [localSecrets, setLocalSecrets] = useState<[string, string][]>([]);
   const {selectorResponse, setSelectorResponse, setCollections, collections} = useDataContext()
   const effectiveCollectionName = propCollectionName ?? selectorResponse?.collectionName ?? "";
   const collection = collections.find((c) => c.collectionName === effectiveCollectionName);
   const env = collection?.env ?? selectorResponse?.env ?? {};
+  const secrets = collection?.secrets ?? selectorResponse?.secrets ?? {};
 
   const openModal = () => {
     setLocalEnv(Object.entries(env ?? {}) as [string, string][]);
+    setLocalSecrets(Object.entries(secrets ?? {}) as [string, string][]);
+    setActiveTab("env");
     setOpen(true);
   };
 
-  const handleChange = (index: number, field: "key" | "value", val: string) => {
+  const handleEnvChange = (index: number, field: "key" | "value", val: string) => {
     setLocalEnv((prev) =>
+      prev.map((entry, i) =>
+        i === index ? (field === "key" ? [val, entry[1]] : [entry[0], val]) : entry,
+      ),
+    );
+  };
+
+  const handleSecretChange = (index: number, field: "key" | "value", val: string) => {
+    setLocalSecrets((prev) =>
       prev.map((entry, i) =>
         i === index ? (field === "key" ? [val, entry[1]] : [entry[0], val]) : entry,
       ),
@@ -36,13 +51,18 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
 
   const handleSave = useCallback(() => {
     const updatedEnv = Object.fromEntries(localEnv.filter(([k]) => k.trim())) as THittableEnv;
-    setCollections((prev) => updateEnv(prev, effectiveCollectionName, updatedEnv));
+    const updatedSecrets = Object.fromEntries(localSecrets.filter(([k]) => k.trim())) as THittableEnv;
+    setCollections((prev) => {
+      let result = updateEnv(prev, effectiveCollectionName, updatedEnv);
+      result = updateSecrets(result, effectiveCollectionName, updatedSecrets);
+      return result;
+    });
     setSelectorResponse((prev) => {
       if (!prev || prev.collectionName !== effectiveCollectionName) return prev;
-      return { ...prev, env: updatedEnv };
+      return { ...prev, env: updatedEnv, secrets: updatedSecrets };
     });
     setOpen(false);
-  }, [localEnv, effectiveCollectionName, setCollections, setSelectorResponse]);
+  }, [localEnv, localSecrets, effectiveCollectionName, setCollections, setSelectorResponse]);
 
   useEffect(() => {
     if (!open) return;
@@ -53,6 +73,10 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, handleSave]);
+
+  const currentEntries = activeTab === "env" ? localEnv : localSecrets;
+  const setCurrentEntries = activeTab === "env" ? setLocalEnv : setLocalSecrets;
+  const handleChange = activeTab === "env" ? handleEnvChange : handleSecretChange;
 
   return (
     <>
@@ -90,22 +114,54 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
                   </p>
                 </div>
                 <button
-                  onClick={() => setLocalEnv((prev) => [...prev, ["", ""]])}
+                  onClick={() => setCurrentEntries((prev) => [...prev, ["", ""]])}
                   className="flex items-center gap-1 text-[10px] text-cyan-400 border border-cyan-500/25 px-2.5 py-1.5 rounded-md hover:bg-cyan-500/10 cursor-pointer transition-colors"
                 >
                   <Plus size={11} /> Add
                 </button>
               </div>
 
+              {/* Tabs */}
+              <div className="flex gap-1 border-b border-white/10">
+                <button
+                  onClick={() => setActiveTab("env")}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold transition-colors cursor-pointer border-b-2 -mb-px ${
+                    activeTab === "env"
+                      ? "text-cyan-400 border-cyan-400"
+                      : "text-white/30 border-transparent hover:text-white/50"
+                  }`}
+                >
+                  <Settings2 size={11} />
+                  Env Vars
+                </button>
+                <button
+                  onClick={() => setActiveTab("secrets")}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold transition-colors cursor-pointer border-b-2 -mb-px ${
+                    activeTab === "secrets"
+                      ? "text-amber-400 border-amber-400"
+                      : "text-white/30 border-transparent hover:text-white/50"
+                  }`}
+                >
+                  <Lock size={11} />
+                  Secrets
+                </button>
+              </div>
+
+              {/* Tab content */}
               <div className="flex-1 overflow-y-auto flex flex-col gap-2">
-                {localEnv.length > 0 && (
+                {activeTab === "secrets" && (
+                  <p className="text-[9px] text-amber-400/50 px-1">
+                    Secrets are not resolved during export — they stay as variable references in the target format.
+                  </p>
+                )}
+                {currentEntries.length > 0 && (
                   <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-[9px] text-white/20 font-semibold uppercase tracking-widest px-1 mb-1">
                     <span>Key</span>
                     <span>Value</span>
                     <span />
                   </div>
                 )}
-                {localEnv.map(([key, value], i) => (
+                {currentEntries.map(([key, value], i) => (
                   <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
                     <input
                       className="border-b border-white/10 bg-transparent focus:border-cyan-500/50 outline-none py-1.5 px-1 text-xs text-white/70 placeholder-white/15 transition-colors"
@@ -120,17 +176,19 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
                       onChange={(e) => handleChange(i, "value", e.target.value)}
                     />
                     <button
-                      onClick={() => setLocalEnv((prev) => prev.filter((_, idx) => idx !== i))}
+                      onClick={() => setCurrentEntries((prev) => prev.filter((_, idx) => idx !== i))}
                       className="p-1 text-white/20 hover:text-red-400 transition-colors cursor-pointer"
                     >
                       <Trash2 size={13} />
                     </button>
                   </div>
                 ))}
-                {localEnv.length === 0 && (
+                {currentEntries.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-8 gap-2 text-white/20">
-                    <Settings2 size={20} />
-                    <p className="text-xs">No environment variables yet</p>
+                    {activeTab === "env" ? <Settings2 size={20} /> : <Lock size={20} />}
+                    <p className="text-xs">
+                      {activeTab === "env" ? "No environment variables yet" : "No secrets yet"}
+                    </p>
                   </div>
                 )}
               </div>

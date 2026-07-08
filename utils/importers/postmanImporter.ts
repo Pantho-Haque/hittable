@@ -1,4 +1,5 @@
 import { THittableCollection, THittableItem } from "@/types";
+import { ensureEnvVarsForText } from "./variableSyntax";
 
 interface PostmanCollection {
   info?: { name?: string; schema?: string };
@@ -47,10 +48,10 @@ type PostmanAuth = {
 
 function resolveUrl(url: PostmanRequest["url"]): string {
   if (!url) return "";
-  if (typeof url === "string") return url;
-  if (url.raw) return url.raw;
-  const host = Array.isArray(url.host) ? url.host.join(".") : (url.host ?? "");
-  const path = (url.path ?? []).map((p) => (typeof p === "string" ? p : p.value)).join("/");
+  if (typeof url === "string") return resolveVariableSyntax(url);
+  if (url.raw) return resolveVariableSyntax(url.raw);
+  const host = Array.isArray(url.host) ? url.host.map((h) => resolveVariableSyntax(h)).join(".") : resolveVariableSyntax(url.host ?? "");
+  const path = (url.path ?? []).map((p) => resolveVariableSyntax(typeof p === "string" ? p : p.value)).join("/");
   return `${host}/${path}`;
 }
 
@@ -74,11 +75,12 @@ function bodyToJSON(body: PostmanRequest["body"]): string {
   switch (body.mode) {
     case "raw": {
       if (!body.raw) return "{}";
+      const resolved = resolveVariableSyntax(body.raw);
       try {
-        const parsed = JSON.parse(body.raw);
+        const parsed = JSON.parse(resolved);
         return JSON.stringify(parsed, null, "\t");
       } catch {
-        return body.raw;
+        return resolved;
       }
     }
     case "urlencoded": {
@@ -182,6 +184,21 @@ function collectVariables(
   return vars;
 }
 
+function scanItemForVariables(item: THittableItem, env: Record<string, string>): void {
+  if (item.type === "route") {
+    // Scan the curl string for <<var>> patterns (which were already converted from {{var}})
+    for (const m of item.curl.matchAll(/<<(\w+)>>/g)) {
+      if (!(m[1] in env)) {
+        env[m[1]] = "";
+      }
+    }
+  } else if (item.type === "folder") {
+    for (const child of item.items) {
+      scanItemForVariables(child, env);
+    }
+  }
+}
+
 export function parsePostmanCollection(json: unknown): THittableCollection[] {
   const collections: THittableCollection[] = [];
 
@@ -203,10 +220,18 @@ export function parsePostmanCollection(json: unknown): THittableCollection[] {
     const itemVars = collectVariables(items);
     Object.assign(envVars, itemVars);
 
+    const convertedItems = convertPostmanItems(items);
+
+    // Ensure env var entries exist for all variable references in imported data
+    for (const item of convertedItems) {
+      scanItemForVariables(item, envVars);
+    }
+
     return {
       collectionName,
-      items: convertPostmanItems(items),
+      items: convertedItems,
       env: envVars,
+      secrets: {},
     };
   }
 

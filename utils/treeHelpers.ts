@@ -63,6 +63,7 @@ export function migrateCollections(data: unknown): THittableCollections {
       collectionName: col.collectionName,
       items: buildFolderTree(col.curls),
       env: col.env ?? {},
+      secrets: {},
     };
   });
 }

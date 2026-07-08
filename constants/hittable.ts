@@ -72,5 +72,6 @@ export const collections: THittableCollections = [
       host: "https://jsonplaceholder.typicode.com",
       token: "no-auth-required",
     },
+    secrets: {},
   },
 ];

@@ -19,7 +19,7 @@ export const createCollectionName = (
   prev: THittableCollections,
   currentName: string,
 ): THittableCollections => {
-  return [...prev, { collectionName: currentName, items: [], env: {} }];
+  return [...prev, { collectionName: currentName, items: [], env: {}, secrets: {} }];
 };
 
 export const createCurlName = (
@@ -213,3 +213,16 @@ export function resolveEnv(formInput: THittableCurlJson, env?: THittableEnv): TH
 
   return newFormInput;
 }
+
+export const updateSecrets = (
+  prev: THittableCollections,
+  collectionName: string,
+  secrets: Record<string, string>,
+): THittableCollections => {
+  return prev.map((collection) => {
+    if (collection.collectionName === collectionName) {
+      return { ...collection, secrets };
+    }
+    return collection;
+  });
+};

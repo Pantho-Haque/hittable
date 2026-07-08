@@ -1,6 +1,12 @@
-import { THittableCollection, THittableItem } from "@/types";
+import { THittableCollection, THittableItem, THittableEnv } from "@/types";
 
-function resolveEnvSyntax(text: string): string {
+function resolveEnvValues(text: string, env: THittableEnv): string {
+  return text.replace(/<<(\w+)>>/g, (_, key: string) => {
+    return key in env ? env[key] : `<<${key}>>`;
+  });
+}
+
+function resolveSecretSyntax(text: string): string {
   return text.replace(/<<(\w+)>>/g, "{{ _.${1} }}");
 }
 
@@ -37,6 +43,7 @@ function itemsToInsomniaResources(
   items: THittableItem[],
   parentId: string,
   resources: Record<string, unknown>[],
+  env: THittableEnv,
 ): void {
   for (const item of items) {
     if (item.type === "folder") {
@@ -47,14 +54,14 @@ function itemsToInsomniaResources(
         parentId,
         name: item.name,
       });
-      itemsToInsomniaResources(item.items, groupId, resources);
+      itemsToInsomniaResources(item.items, groupId, resources, env);
     } else {
       const parsed = parseCurlString(item.curl);
       const requestId = generateId("req");
 
       const insomniaHeaders: Record<string, string> = {};
       for (const [k, v] of Object.entries(parsed.headers)) {
-        insomniaHeaders[resolveEnvSyntax(k)] = resolveEnvSyntax(v);
+        insomniaHeaders[resolveEnvValues(k, env)] = resolveEnvValues(v, env);
       }
 
       resources.push({
@@ -63,11 +70,11 @@ function itemsToInsomniaResources(
         parentId,
         name: item.name,
         method: parsed.method,
-        url: resolveEnvSyntax(parsed.url),
+        url: resolveEnvValues(parsed.url, env),
         headers: insomniaHeaders,
         body: {
           mimeType: "application/json",
-          text: parsed.body ? resolveEnvSyntax(parsed.body) : "",
+          text: parsed.body ? resolveEnvValues(parsed.body, env) : "",
         },
       });
     }
@@ -93,13 +100,18 @@ export function exportToInsomniaCollection(
     scope: "collection",
   });
 
-  // Base environment
+  // Base environment — includes both env vars (resolved) and secrets (as Insomnia variables)
+  const envData = { ...collection.env };
+  // Secrets are exported as Insomnia environment variables (not resolved inline)
+  for (const [key, value] of Object.entries(collection.secrets)) {
+    envData[key] = value;
+  }
   resources.push({
     _type: "environment",
     _id: envId,
     parentId: workspaceId,
     name: "Base Environment",
-    data: collection.env,
+    data: envData,
   });
 
   // Root request group
@@ -111,7 +123,7 @@ export function exportToInsomniaCollection(
   });
 
   // Items (folders and requests)
-  itemsToInsomniaResources(collection.items, rootGroupId, resources);
+  itemsToInsomniaResources(collection.items, rootGroupId, resources, collection.env);
 
   return JSON.stringify({ resources }, null, 2);
 }

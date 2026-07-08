@@ -37,7 +37,7 @@ function parseInsomniaRequest(req: InsomniaResource): { name: string; curl: stri
 
   const noBody = ["GET", "HEAD", "DELETE"].includes(method.toUpperCase());
   if (!noBody && body?.text) {
-    curl += ` -d '${body.text.replace(/'/g, "'\\''")}'`;
+    curl += ` -d '${resolveVariableSyntax(body.text).replace(/'/g, "'\\''")}'`;
   }
 
   return { name: req.name ?? "Unnamed", curl, response: "" };
@@ -109,27 +109,37 @@ export function parseInsomniaExport(json: unknown): THittableCollection[] {
     // No folders — all requests go into one collection
     const requests = resources.filter((r) => r._type === "request");
     if (requests.length > 0) {
+      const items = requests.map((r) => {
+        const parsed = parseInsomniaRequest(r);
+        return {
+          type: "route" as const,
+          name: parsed.name,
+          curl: parsed.curl,
+          response: parsed.response,
+        };
+      });
+      for (const item of items) {
+        scanItemForVariables(item, envVars);
+      }
       collections.push({
         collectionName: workspaces[0]?.name ?? "Imported Collection",
-        items: requests.map((r) => {
-          const parsed = parseInsomniaRequest(r);
-          return {
-            type: "route" as const,
-            name: parsed.name,
-            curl: parsed.curl,
-            response: parsed.response,
-          };
-        }),
+        items,
         env: envVars,
+        secrets: {},
       });
     }
   } else {
     for (const group of topLevelGroups) {
       const groupName = group.name ?? "Imported";
+      const items = buildNestedItems(group._id ?? "", byId);
+      for (const item of items) {
+        scanItemForVariables(item, envVars);
+      }
       collections.push({
         collectionName: groupName,
-        items: buildNestedItems(group._id ?? "", byId),
+        items,
         env: envVars,
+        secrets: {},
       });
     }
   }
@@ -161,6 +171,20 @@ function extractEnvironmentVars(resources: InsomniaResource[]): Record<string, s
   }
 
   return envVars;
+}
+
+function scanItemForVariables(item: THittableItem, env: Record<string, string>): void {
+  if (item.type === "route") {
+    for (const m of item.curl.matchAll(/<<(\w+)>>/g)) {
+      if (!(m[1] in env)) {
+        env[m[1]] = "";
+      }
+    }
+  } else if (item.type === "folder") {
+    for (const child of item.items) {
+      scanItemForVariables(child, env);
+    }
+  }
 }
 
 export function isInsomniaExport(json: unknown): boolean {

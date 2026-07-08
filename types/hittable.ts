@@ -23,6 +23,7 @@ export type THittableCollection = {
   collectionName: string;
   items: THittableItem[];
   env: THittableEnv;
+  secrets: THittableEnv;
 };
 
 export type THittableCollections = THittableCollection[];
@@ -65,6 +66,7 @@ export type THittableSelectorResponse = {
   folderPath: string[];
   curlName: string;
   env?: THittableEnv;
+  secrets?: THittableEnv;
   curlJson: THittableCurlJson;
   responseJson?: TResponseJson;
 };

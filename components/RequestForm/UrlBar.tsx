@@ -6,8 +6,9 @@ import { curlConverter, jsonToCurl } from "@/utils/curlConverter";
 import { hittableProxy } from "@/utils/hittableProxy";
 import { getParamsfromUrl } from "@/utils/responsePanelUtils";
 import { addHistoryEntry } from "@/utils/historyModifier";
+import { updateEnv } from "@/utils/hittableCollectionModifier";
 import { CheckCircle2, Code2, Loader2, Save, Send } from "lucide-react";
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import { useDataContext } from "@/context/dataContext";
 
 export default function UrlBar({ error }: { error: string | null }) {
@@ -21,20 +22,35 @@ export default function UrlBar({ error }: { error: string | null }) {
     handleSaveCollection,
     history,
     setHistory,
+    collections,
+    setCollections,
   } = useDataContext();
 
-  const { env } = selectorResponse!;
+  const { env, secrets } = selectorResponse!;
   const mc = METHOD_COLORS[formInput.method] ?? "#94a3b8";
 
   const [curlCopied, setCurlCopied] = useState(false);
   const [proxyLoading, setProxyLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
 
   const autoResize = () => {
     const el = textareaRef.current;
+    const hl = highlightRef.current;
     if (el) {
       el.style.height = "auto";
       el.style.height = `${el.scrollHeight}px`;
+      if (hl) hl.style.height = `${el.scrollHeight}px`;
+    }
+  };
+
+  // Sync highlight scroll with textarea
+  const syncScroll = () => {
+    const el = textareaRef.current;
+    const hl = highlightRef.current;
+    if (el && hl) {
+      hl.scrollTop = el.scrollTop;
+      hl.scrollLeft = el.scrollLeft;
     }
   };
 
@@ -44,12 +60,32 @@ export default function UrlBar({ error }: { error: string | null }) {
     setTimeout(() => setCurlCopied(false), 2000);
   };
 
+  // Render URL with :param path segments highlighted in amber
+  function renderHighlightedUrl(url: string): React.ReactNode {
+    if (!url) return <span className="text-white/20">https://api.example.com/endpoint</span>;
+    const parts = url.split(/(:\w+)/g);
+    return parts.map((part, i) => {
+      if (/^:\w+$/.test(part)) {
+        return (
+          <span key={i} className="text-amber-400 font-semibold">
+            {part}
+          </span>
+        );
+      }
+      return (
+        <span key={i} className="text-white/80">
+          {part}
+        </span>
+      );
+    });
+  }
+
   const sendProxyRequest = useCallback(async () => {
     setProxyLoading(true);
     setProxyResponse(null);
     const startTime = performance.now();
     try {
-      const res = await hittableProxy(formInput, env, extensionAvailable);
+      const res = await hittableProxy(formInput, env, secrets, extensionAvailable);
       const durationMs = Math.round(performance.now() - startTime);
       const sizeBytes = res.data ? new TextEncoder().encode(JSON.stringify(res.data)).byteLength : 0;
       setProxyResponse({ ...res, durationMs, sizeBytes });
@@ -77,7 +113,7 @@ export default function UrlBar({ error }: { error: string | null }) {
     } finally {
       setProxyLoading(false);
     }
-  }, [setProxyResponse, formInput, env, extensionAvailable, history, setHistory]);
+  }, [setProxyResponse, formInput, env, secrets, extensionAvailable, history, setHistory]);
 
   function handleUrlPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const pasted = e.clipboardData.getData("text").trim();
@@ -91,6 +127,23 @@ export default function UrlBar({ error }: { error: string | null }) {
     setTimeout(() => {
       setFormInput(parsed);
     }, 1000);
+
+    // Create env var entries for any Postman/Insomnia-style {{var}} references found in the curl
+    const postmanVars = [...pasted.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
+    const insomniaVars = [...pasted.matchAll(/\{\{\s*_\.(\w+)\s*\}\}/g)].map((m) => m[1]);
+    const allVarNames = [...new Set([...postmanVars, ...insomniaVars])];
+    if (allVarNames.length > 0 && selectorResponse?.collectionName) {
+      const col = collections.find((c) => c.collectionName === selectorResponse.collectionName);
+      if (col) {
+        const updatedEnv = { ...col.env };
+        for (const name of allVarNames) {
+          if (!(name in updatedEnv)) {
+            updatedEnv[name] = "";
+          }
+        }
+        setCollections((prev) => updateEnv(prev, selectorResponse.collectionName, updatedEnv));
+      }
+    }
   }
 
   useKeypress({
@@ -104,6 +157,11 @@ export default function UrlBar({ error }: { error: string | null }) {
     isMeta: true,
     func: handleSaveCollection,
   });
+
+  // Auto-resize when URL changes externally (e.g. route selection)
+  useEffect(() => {
+    autoResize();
+  }, [formInput.url]);
 
   return (
     <div
@@ -143,23 +201,37 @@ export default function UrlBar({ error }: { error: string | null }) {
 
       <div className="h-4 w-px bg-white/10" />
 
-      <textarea
-        ref={textareaRef}
-        className="w-full flex-1 bg-transparent py-1 text-[10px] md:text-xs text-white/80 placeholder-white/20 outline-none resize-none overflow-hidden"
-        placeholder="https://api.example.com/endpoint"
-        value={formInput.url}
-        onChange={(e) => {
-          setFormInput({
-            ...formInput,
-            url: e.target.value,
-            params: getParamsfromUrl(e.target.value),
-          });
-          autoResize();
-        }}
-        onPaste={handleUrlPaste}
-        spellCheck={false}
-        rows={1}
-      />
+      {/* URL input with path parameter highlighting */}
+      <div className="relative w-full flex-1 min-h-[28px]">
+        {/* Highlight layer behind textarea */}
+        <div
+          ref={highlightRef}
+          className="absolute inset-0 pointer-events-none whitespace-pre-wrap break-all py-1 text-[10px] md:text-xs leading-normal overflow-hidden"
+          aria-hidden="true"
+        >
+          {renderHighlightedUrl(formInput.url)}
+        </div>
+        {/* Transparent textarea on top */}
+        <textarea
+          ref={textareaRef}
+          className="relative w-full bg-transparent py-1 text-[10px] md:text-xs text-transparent caret-white/80 outline-none resize-none overflow-hidden z-10"
+          style={{ caretColor: "rgba(255,255,255,0.8)" }}
+          placeholder="https://api.example.com/endpoint"
+          value={formInput.url}
+          onChange={(e) => {
+            setFormInput({
+              ...formInput,
+              url: e.target.value,
+              params: getParamsfromUrl(e.target.value),
+            });
+            autoResize();
+          }}
+          onPaste={handleUrlPaste}
+          onScroll={syncScroll}
+          spellCheck={false}
+          rows={1}
+        />
+      </div>
 
       <div className="w-full flex justify-end items-center gap-1.5">
         <button

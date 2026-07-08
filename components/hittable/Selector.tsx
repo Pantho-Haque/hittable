@@ -403,6 +403,7 @@ export default function Selector() {
       folderPath: selection.folderPath,
       curlName: selection.curlName,
       env: collection?.env,
+      secrets: collection?.secrets,
       curlJson: curlConverter(curl?.curl || ""),
       responseJson: parseStringToJson(curl?.response || ""),
     });

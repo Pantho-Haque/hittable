@@ -47,7 +47,7 @@ function decompressHittable(code: string): THittableCollection {
   }
   // Handle both old format (curls) and new format (items)
   if (Array.isArray(parsed.items)) {
-    return parsed as THittableCollection;
+    return { ...parsed, secrets: parsed.secrets ?? {} } as THittableCollection;
   }
   if (Array.isArray(parsed.curls)) {
     // Convert old format to new format
@@ -59,6 +59,7 @@ function decompressHittable(code: string): THittableCollection {
         curl: c.curl,
         response: c.response,
       })),
+      secrets: parsed.secrets ?? {},
     };
   }
   throw new Error("Invalid collection structure");

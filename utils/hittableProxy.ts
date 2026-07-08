@@ -71,9 +71,11 @@ async function fetchViaProxy(
 export async function hittableProxy(
   formInput: THittableCurlJson,
   env: THittableEnv | undefined,
+  secrets: THittableEnv | undefined,
   extensionAvailable: boolean,
 ) {
-  const {url, method, headers, body} = resolveEnv(formInput, env);
+  const mergedEnv = { ...(env ?? {}), ...(secrets ?? {}) };
+  const {url, method, headers, body} = resolveEnv(formInput, Object.keys(mergedEnv).length > 0 ? mergedEnv : undefined);
 
   const isLocal = isLocalUrl(url);
   if (isLocal && extensionAvailable) {
