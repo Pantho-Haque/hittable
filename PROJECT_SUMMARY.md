@@ -2,7 +2,7 @@
 
 ## 1. Project Overview
 
-**What it does:** Hittable is a lightweight, open-source HTTP API client that runs entirely in the browser. It's designed as a developer-first alternative to Postman/Insomnia, focusing on speed, transparency, and DX (developer experience). Users can create collections of API routes, send HTTP requests via a CORS-bypassing proxy or browser extension, and view responses in real-time.
+**What it does:** Hittable is a lightweight, open-source HTTP API client that runs entirely in the browser. It's designed as a developer-first alternative to Postman/Insomnia, focusing on speed, transparency, and DX (developer experience). Users can create collections of API routes (organized in nested folders), send HTTP requests via a CORS-bypassing proxy or browser extension, and view responses in real-time.
 
 **Target user:** Software developers and API developers who want a fast, keyboard-driven API testing tool without desktop app overhead.
 
@@ -38,9 +38,9 @@ hittable/
 │   └── manifest.json             # MV3 manifest
 ├── components/
 │   ├── hittable/                 # Core app UI components
-│   │   ├── Selector.tsx          # Left sidebar: collections & routes list
+│   │   ├── Selector.tsx          # Left sidebar: drill-down navigation with breadcrumbs
 │   │   ├── RequestForm.tsx       # Main form orchestrator (UrlBar + TabEditor + ResponsePanel)
-│   │   ├── Menu.tsx              # Context menu for collection/route actions
+│   │   ├── Menu.tsx              # Context menu for collection/route/folder actions
 │   │   ├── HistoryPanel.tsx      # Request history modal
 │   │   └── SyntaxHighlighter.tsx # Code syntax highlighting
 │   ├── RequestForm/              # Request building components
@@ -54,11 +54,11 @@ hittable/
 │   │       ├── CopyButton.tsx    # Copy JSON to clipboard
 │   │       └── MatchContext.tsx  # React context for match registry
 │   ├── modals/                   # All modal dialogs
-│   │   ├── CreateModal.tsx       # Create collection/route
-│   │   ├── RenameModal.tsx       # Rename collection/route
-│   │   ├── DeleteModal.tsx       # Delete collection/route
-│   │   ├── ImportModal.tsx       # Import collection from compressed string
-│   │   ├── ExportModal.tsx       # Export collection to compressed string
+│   │   ├── CreateModal.tsx       # Create collection/route/folder
+│   │   ├── RenameModal.tsx       # Rename collection/route/folder
+│   │   ├── DeleteModal.tsx       # Delete collection/route/folder
+│   │   ├── ImportModal.tsx       # Import from Hittable/Postman/Insomnia formats
+│   │   ├── ExportModal.tsx       # Export to Hittable/Postman/Insomnia formats
 │   │   ├── EnvModal.tsx          # Environment variables editor
 │   │   ├── AuthModal.tsx         # Auth presets (Bearer/Basic/API Key)
 │   │   ├── NoteModal.tsx         # Notes editor modal
@@ -85,21 +85,27 @@ hittable/
 │   ├── useKeypress.ts            # Global keyboard shortcut handler
 │   └── useNotify.ts              # Toast notification convenience hook
 ├── services/                     # API/data fetching
-│   ├── Hittable.ts               # GetHittableCollections (localStorage), GetResume (external API)
+│   ├── Hittable.ts               # GetHittableCollections (localStorage + migration), GetResume
 │   └── index.ts                  # Re-exports
 ├── stores/                       # Zustand stores (minimal, only auth.ts)
 │   └── auth.ts                   # Auth store (minimal, not heavily used)
 ├── utils/                        # Pure utility functions
 │   ├── curlConverter.ts          # curl ↔ JSON bidirectional conversion
 │   ├── hittableProxy.ts          # Request routing logic (extension vs proxy)
-│   ├── hittableCollectionModifier.ts # Collection CRUD operations
+│   ├── hittableCollectionModifier.ts # Collection CRUD (tree-aware)
+│   ├── treeHelpers.ts            # Tree traversal, modification, migration
 │   ├── responsePanelUtils.ts     # JSON search, URL param helpers
 │   ├── formatJson.ts             # JSON pretty-printing
 │   ├── compressString.ts         # pako compression for import/export
 │   ├── historyModifier.ts        # Request history CRUD
 │   ├── noteModifier.ts           # Notes CRUD
 │   ├── JsonStringParsing.ts      # Parse response strings to JSON
-│   └── cn.ts                     # clsx + tailwind-merge utility
+│   ├── cn.ts                     # clsx + tailwind-merge utility
+│   └── importers/                # Format-specific import/export
+│       ├── postmanImporter.ts    # Postman Collection v2.1 → Hittable
+│       ├── postmanExporter.ts    # Hittable → Postman Collection v2.1
+│       ├── insomniaImporter.ts   # Insomnia export → Hittable
+│       └── insomniaExporter.ts   # Hittable → Insomnia export
 ├── types/                        # TypeScript type definitions
 │   ├── hittable.ts               # Core types (collections, requests, responses)
 │   ├── note.ts                   # Note types
@@ -139,7 +145,7 @@ hittable/
 ### Persistence Layer
 
 All data persistence is via browser `localStorage`:
-- `"hittable"` → `THittableCollections` (collections with routes and responses)
+- `"hittable"` → `THittableCollections` (collections with nested folder tree, routes, responses, env vars)
 - `"notesStore"` → `NotesStore` (markdown notes)
 - `"hittable_history"` → `THistory` (request history, max 100 entries)
 - `"hittable_sidebar_collapsed"` → `boolean` (sidebar UI state)
@@ -148,73 +154,258 @@ No server-side database. No user authentication for the app itself (the resume A
 
 ---
 
-## 3. Features Implemented
+## 3. Data Model
+
+### Nested Folder Tree (Current)
+
+Collections contain a tree of items — routes and folders at any nesting depth:
+
+```typescript
+type THittableRoute = {
+  type: "route";
+  name: string;
+  curl: string;        // curl command string (the interchange format)
+  response: string;    // last response JSON (serialized)
+};
+
+type THittableFolder = {
+  type: "folder";
+  name: string;
+  items: THittableItem[];  // recursive: can contain routes OR sub-folders
+};
+
+type THittableItem = THittableRoute | THittableFolder;
+
+type THittableCollection = {
+  collectionName: string;
+  items: THittableItem[];  // top-level items (routes and/or folders)
+  env: Record<string, string>;  // environment variables for this collection
+};
+```
+
+### Legacy Format (Auto-Migrated)
+
+Old format stored routes as a flat `curls` array with "/"-joined names (e.g. "Users/Create"). On load, `migrateCollections()` detects this and converts to the nested tree format automatically, persisting the result.
+
+### Key Internal Types
+
+```typescript
+type THittableCurlJson = {
+  method: string;   // GET, POST, PUT, PATCH, DELETE, HEAD
+  url: string;      // may contain <<KEY>> env var placeholders
+  headers: string;  // JSON string of key-value pairs
+  body: string;     // JSON string or raw text
+  params: string;   // JSON string of query params
+};
+
+type THittableSelectorSelection = {
+  collectionName: string;
+  folderPath: string[];  // path through folder tree, e.g. ["Users", "Admin"]
+  curlName: string;      // name of selected route
+};
+
+type THittableSelectorResponse = {
+  collectionName: string;
+  folderPath: string[];
+  curlName: string;
+  env?: Record<string, string>;
+  curlJson: THittableCurlJson;
+  responseJson?: TResponseJson;
+};
+
+type TResponseJson = {
+  data?: unknown;
+  status?: number;
+  statusText?: string;
+  ok?: boolean;
+  headers?: unknown;
+  error?: string;
+  cookies?: unknown;
+  durationMs?: number;
+  sizeBytes?: number;
+} | null;
+```
+
+---
+
+## 4. Environment Variables
+
+### Syntax
+- **Hittable native:** `<<KEY>>` — used in URL, headers, body, params
+- **Postman import/export:** `{{varName}}` — translated bidirectionally
+- **Insomnia import/export:** `{{ _.varName }}` — translated bidirectionally
+
+### Storage
+- Env vars live in each collection's `env` object: `{ "host": "https://api.example.com", "token": "abc123" }`
+- The `<<KEY>>` placeholder is stored literally in the curl string (not resolved on save)
+- Resolution happens only at send time via `resolveEnv()` in `hittableCollectionModifier.ts`
+
+### Resolution
+```typescript
+// In hittableCollectionModifier.ts
+function resolveEnv(formInput, env) {
+  // Replaces <<KEY>> with env[KEY] in url, headers, body, params
+  // Unmatched placeholders remain as <<KEY>>
+}
+```
+
+---
+
+## 5. Import/Export System
+
+### Supported Formats
+
+| Format | Import | Export | Variable Syntax |
+|--------|--------|--------|-----------------|
+| Hittable native | ✅ Auto-detected | ✅ Default | `<<KEY>>` |
+| Postman Collection v2.1 | ✅ Auto-detected | ✅ | `{{varName}}` |
+| Insomnia Export | ✅ Auto-detected | ✅ | `{{ _.varName }}` |
+
+### Format Detection (Import)
+- **Postman:** JSON with `info.schema` containing `schema.getpostman.com`
+- **Insomnia:** JSON with `_type: "export"` or `__export_format: 4`, or resources array with `_type` fields
+- **Hittable:** Compressed string (fails JSON parse) or matches `{ collectionName, items/curls }` structure
+
+### Folder Handling
+- **Postman/Insomnia imports** create real nested folder trees (not flattened)
+- `Item groups` (Postman) and `request_groups` (Insomnia) become `THittableFolder` items
+- **Export** serializes the real nested structure back out
+
+### What Gets Dropped
+- **Postman:** Pre-request/test scripts, advanced auth (OAuth1/OAuth2/AWS/etc.), certificates, protocol behavior
+- **Insomnia:** Plugins, cookie jars, client certs, WebSocket/gRPC/socket.io, mock routes, unit tests, API specs
+
+See `IMPORT_EXPORT_FORMATS.md` for detailed schema documentation.
+
+---
+
+## 6. Features Implemented
 
 ### Core Features
 
-1. **Smart Collections** — Create, rename, delete collections; each collection has its own environment variables and list of routes
-2. **Route Management** — Create, rename, delete routes within collections; each route stores a curl command and optional response
-3. **HTTP Request Builder** — URL bar with method selector (GET/POST/PUT/PATCH/DELETE/HEAD), params/headers/body editors
-4. **Body Content Types** — Supports raw/JSON, x-www-form-urlencoded, raw/Text, and multipart/form-data with file upload
-5. **Table Mode Editing** — Toggle between JSON and key-value table views for params, headers, and body
-6. **Response Panel** — Displays response with status code, duration (ms/s), size (B/KB/MB), JSON tree view, and raw text view
-7. **Response Headers Tab** — Dedicated tab showing all response headers with per-header copy
-8. **Deep Search** — Floating search bar (Cmd/Ctrl+F) to find text within JSON responses and headers
-9. **CORS Bypass Proxy** — Server-side proxy route (`/api/proxy`) forwards requests to bypass browser CORS restrictions
-10. **Browser Extension** — Chrome extension ("Hittable Companion") for localhost CORS bypass via service worker
-11. **curl Integration** — Paste curl commands into URL bar for instant parsing; copy any route as curl
-12. **Environment Variables** — Per-collection `<<KEY>>` placeholder syntax; resolveEnv replaces at request time
-13. **Import/Export** — Export collections as pako-compressed base64 strings; import by pasting code
-14. **Request History** — Automatically logs all sent requests with timestamp, method, URL, status, duration, size; replay with one click; max 100 entries
-15. **Markdown Notes** — Rich markdown editor with 3-way view (Edit/Split/Preview); per-route documentation
-16. **Auth Presets** — Modal for Bearer Token, Basic Auth, and API Key; auto-populates Authorization header
-17. **Keyboard Shortcuts** — Cmd/Ctrl+Enter (Send), Cmd/Ctrl+S (Save), Cmd/Ctrl+F (Search), Cmd/Ctrl+B (Toggle Sidebar), Shift+T (New Route), Esc (Close Modal)
-18. **URL-based Route Selection** — Route selection encoded in URL params (`?c=CollectionName&r=RouteName`) for deep linking
-19. **Breadcrumb Navigation** — Clickable collection/route dropdowns in RequestForm for quick switching without sidebar
-20. **Unsaved Changes Protection** — `beforeunload` warning; visual indicator for unsaved changes
-21. **Landing Page** — Marketing page with terminal demo, feature cards, keyboard shortcuts section, developer portfolio
-22. **Toast Notifications** — Animated toast system (info/success/error) with position control
-23. **Responsive Design** — Mobile sidebar collapse, touch-friendly targets (44px min), adaptive layouts
+1. **Smart Collections with Nested Folders** — Create, rename, delete collections; each collection has its own env vars and a tree of folders and routes at arbitrary depth
+2. **Route Management** — Create, rename, delete routes at any nesting depth; each route stores a curl command and optional response
+3. **Folder Management** — Create, rename, delete folders; folders can contain routes and sub-folders
+4. **HTTP Request Builder** — URL bar with method selector (GET/POST/PUT/PATCH/DELETE/HEAD), params/headers/body editors
+5. **Body Content Types** — Supports raw/JSON, x-www-form-urlencoded, raw/Text, and multipart/form-data with file upload
+6. **Table Mode Editing** — Toggle between JSON and key-value table views for params, headers, and body
+7. **Response Panel** — Displays response with status code, duration (ms/s), size (B/KB/MB), JSON tree view, and raw text view
+8. **Response Headers Tab** — Dedicated tab showing all response headers with per-header copy and search
+9. **Deep Search** — Floating search bar (Cmd/Ctrl+F) to find text within JSON responses and headers
+10. **CORS Bypass Proxy** — Server-side proxy route (`/api/proxy`) forwards requests to bypass browser CORS restrictions
+11. **Browser Extension** — Chrome extension ("Hittable Companion") for localhost CORS bypass via service worker
+12. **curl Integration** — Paste curl commands into URL bar for instant parsing; copy any route as curl
+13. **Environment Variables** — Per-collection `<<KEY>>` placeholder syntax; resolveEnv replaces at request time
+14. **Import/Export** — Import/export collections in Hittable native (compressed), Postman v2.1, or Insomnia formats
+15. **Request History** — Automatically logs all sent requests with timestamp, method, URL, status, duration, size; replay with one click; max 100 entries
+16. **Markdown Notes** — Rich markdown editor with 3-way view (Edit/Split/Preview); per-route documentation
+17. **Auth Presets** — Modal for Bearer Token, Basic Auth, and API Key; auto-populates Authorization header
+18. **Keyboard Shortcuts** — Cmd/Ctrl+Enter (Send), Cmd/Ctrl+S (Save), Cmd/Ctrl+F (Search), Cmd/Ctrl+B (Toggle Sidebar), Shift+T (New Route), Esc (Close Modal)
+19. **URL-based Route Selection** — Route selection encoded in URL params (`?c=Collection&r=RouteName&p=Folder1/Folder2`) for deep linking
+20. **Breadcrumb Navigation** — Clickable collection/route dropdowns in RequestForm for quick switching without sidebar
+21. **Drill-down Sidebar Navigation** — Single-panel sidebar with drill-down: click collection → see its contents; click folder → drill in; back button and breadcrumb trail to navigate
+22. **Method Badge Indicators** — Colored badges (GET=cyan, POST=green, PUT=orange, PATCH=purple, DELETE=red, HEAD=gray) on route rows showing HTTP method at a glance
+23. **Unsaved Changes Protection** — `beforeunload` warning; visual indicator for unsaved changes; revert button
+24. **Landing Page** — Marketing page with terminal demo, feature cards, keyboard shortcuts section, developer portfolio
+25. **Toast Notifications** — Animated toast system (info/success/error) with position control
+26. **Responsive Design** — Mobile sidebar collapse, touch-friendly targets (44px min), adaptive layouts
+27. **Auto-set Content-Type** — When switching body type, Content-Type header is automatically set/updated; manual overrides preserved
+28. **Legacy Data Migration** — Old flat collections with "/"-joined route names are automatically migrated to nested folder tree on load
 
 ### Partially Implemented / In-Progress
 
 - **SyntaxHighlighter** (`components/hittable/SyntaxHighlighter.tsx`) — exists but usage is minimal
 - **Stores/auth.ts** — minimal auth store, not actively used in main flow
-- **`check-user-permission.js`** — utility file, appears unused in main app
-- **`apiRequest.js`** — utility file, appears unused (legacy)
-
-### Known Issues (from NEW_FEATURE_IDEAS.md)
-
-**Critical bugs still present:**
-- `JSON.parse` in `ImportModal` and `ExportModal` can still crash on malformed data
-- `set-cookie` parsing in proxy route splits on commas incorrectly (RFC 6265 issue)
-- No fetch timeout on upstream requests in proxy route
-- `curlConverter` produces `[object Object]` for nested header values
-- `valueMatchesSearch`/`countMatches` can stack overflow on deeply nested JSON
-- `decompressString` has no input validation
-- Curl paste handler has 1-second setTimeout race condition
-
-**Accessibility gaps:**
-- TabEditor tabs lack ARIA tab pattern (`role="tablist"`)
-- Icon-only buttons in UrlBar lack `aria-label`
-- `PanelItem` in Selector uses `<div onClick>` — not keyboard-focusable
 
 ---
 
-## 4. Core Modules/Components
+## 7. UI/UX Details
+
+### Design System
+
+- **Theme:** Dark-only (no light mode toggle). Background: `#080f1a` (deep navy), `#0a1628`, `#0c1a2e`, `#0e1f35`
+- **Accent color:** Cyan (`#00e5cc`) — used for active states, borders, highlights
+- **Method colors:** GET=`#00e5cc`, POST=`#4ade80`, PUT=`#fb923c`, PATCH=`#a78bfa`, DELETE=`#f87171`, HEAD=`#94a3b8`
+- **Fonts:** Geist Sans (`--font-geist-sans`) for UI, Geist Mono (`--font-geist-mono`) for code/data
+- **Styling approach:** Tailwind CSS 4 utility classes + custom CSS in `styles/components/` (buttons, modals, forms)
+- **Decorative elements:** Corner bracket borders on modals and URL bar (cyan-500/30), ambient background glow blobs
+- **Custom scrollbar:** Thin 4px scrollbar with cyan gradient thumb
+
+### Sidebar Navigation (Drill-down)
+
+The sidebar is a single panel that evolves based on navigation state:
+
+1. **Collection List** (top level): Shows all collections. Click a collection to drill in.
+2. **Inside Collection**: Shows that collection's top-level items (folders and routes). Folders shown first with folder icon and item count. Routes shown with method badge and name. Back button returns to collection list.
+3. **Inside Folder**: Same pattern, one level deeper. Back button returns to parent.
+4. **Breadcrumb Trail**: Always visible at top when inside a collection/folder. Shows `Collection / Folder1 / Folder2`. Each segment is clickable to jump back multiple levels.
+
+**Interaction Pattern:** Click-to-drill (not inline expand). Clicking a folder replaces the panel content with that folder's contents.
+
+### Method Badges
+
+Route rows display a compact bordered chip showing the HTTP method abbreviation (GET, POST, etc.) with color matching the method:
+- Border: `border-{color}40`
+- Background: `bg-{color}12`
+- Text: `{color}`
+
+### Toolbar Actions
+
+Inside a collection, the toolbar shows icon-only buttons (using `modal-button-mini` CSS class) with native `title` tooltips:
+- **Env Vars** → `Settings2` icon (opens EnvModal)
+- **New Route** → `Plus` icon (opens CreateModal)
+- **New Folder** → `Folder` icon (creates new folder inline)
+
+### Icon-Button Pattern (`.modal-button-mini`)
+
+```css
+.modal-button-mini {
+  @apply text-white/50 hover:text-cyan-300 transition-colors p-1.5 flex items-center justify-center border border-white/8 hover:border-white/15 cursor-pointer rounded-lg;
+}
+```
+
+Used by: ImportModal, AuthModal, HistoryPanel, NoteModal, InfoModal, EnvModal, CreateModal.
+
+### Navigation/Routing
+
+- `/` — Landing page (server component)
+- `/hittable` — Main application (client component)
+- `/hittable?c=CollectionName&r=RouteName&p=Folder1/Folder2` — Deep-linked route selection with folder path
+
+### Key User Flows
+
+1. **First visit:** Landing page → "Launch App" → `/hittable` → Empty state with "Create collection" prompt
+2. **Creating a collection:** Sidebar "+" button → CreateModal → enters name → new collection appears
+3. **Drilling into a collection:** Click collection name → panel shows collection contents (folders + routes)
+4. **Adding a route:** Click collection → "+" icon → CreateModal → new route created at current folder level
+5. **Creating a folder:** Click "New Folder" icon → folder created at current level
+6. **Sending a request:** Select route → edit URL/headers/body in TabEditor → Cmd/Ctrl+Enter or click Send → response appears
+7. **Saving changes:** Edit form → "Unsaved" indicator appears → Cmd/Ctrl+S → changes persisted to localStorage
+8. **Importing a collection:** Sidebar import button → paste Hittable/Postman/Insomnia data → auto-detected and imported
+9. **Exporting a collection:** Context menu on collection → Export → choose format (Hittable/Postman/Insomnia) → copy or download
+10. **Using environment variables:** Click "Env Vars" → add key/value pairs → use `<<KEY>>` in URL/headers/body → resolved at send time
+11. **Searching responses:** Click search icon or Cmd/Ctrl+F → type query → matches highlighted in JSON tree
+12. **Viewing history:** Click history icon → modal shows recent requests → click entry to replay
+13. **Adding auth:** Click shield icon → select preset (Bearer/Basic/API Key) → fill fields → Apply → Authorization header added
+14. **Navigating back:** Click back arrow or breadcrumb segment → returns to parent level
+
+---
+
+## 8. Core Modules/Components
 
 ### Key Files
 
 | File | Responsibility |
 |------|---------------|
 | `context/dataContext.tsx` | Central state hub — collections, form, response, history, extension status, save handler |
-| `utils/hittableProxy.ts` | Request routing — decides extension vs proxy, handles multipart, env resolution |
+| `utils/hittableProxy.ts` | Request routing — decides extension vs proxy, handles env resolution |
 | `app/api/proxy/route.ts` | Server-side proxy — forwards HTTP requests, parses response, extracts headers/cookies |
 | `utils/curlConverter.ts` | Bidirectional curl ↔ JSON conversion using `@bany/curl-to-json` |
-| `utils/hittableCollectionModifier.ts` | Collection CRUD — create/rename/delete collections and routes, update env vars |
-| `components/hittable/Selector.tsx` | Left sidebar — collections list, routes list, URL-based selection, keyboard shortcuts |
+| `utils/hittableCollectionModifier.ts` | Collection CRUD — tree-aware create/rename/delete, env var updates |
+| `utils/treeHelpers.ts` | Tree traversal, modification, migration (legacy → nested format) |
+| `components/hittable/Selector.tsx` | Left sidebar — drill-down navigation, breadcrumbs, method badges, search filter |
 | `components/RequestForm/UrlBar.tsx` | URL input — method selector, send/save/copy buttons, curl paste detection |
-| `components/RequestForm/TabEditor.tsx` | Params/Body/Headers editors — JSON/table modes, body type selector, multipart support |
+| `components/RequestForm/TabEditor.tsx` | Params/Body/Headers editors — JSON/table modes, body type selector |
 | `components/RequestForm/ResponsePanel.tsx` | Response display — status/duration/size metrics, tabs, search, raw view toggle |
 | `components/ui/SharedModal.tsx` | ModalShell — reusable modal with focus trap, ARIA attributes, portal rendering |
 
@@ -239,63 +430,25 @@ No server-side database. No user authentication for the app itself (the resume A
 - **`compressString()`/`decompressString()`** — pako deflate/inflate with URL-safe base64 encoding for collection import/export
 - **`curlConverter()`** — Parses curl strings using `@bany/curl-to-json`, shields `<<VAR>>` placeholders during parsing, extracts params from URL
 - **`jsonToCurl()`** — Serializes form input back to curl command, escapes quotes in body/headers
-- **`countMatches()`/`valueMatchesSearch()`** — Recursive JSON search for deep search feature
+- **`migrateCollections()`** — Detects legacy flat format and converts to nested folder tree
+- **`treeHelpers.ts`** — `findRoute`, `getItemsAtPath`, `insertItem`, `removeItem`, `renameItem`, `updateRoute`, `collectAllRouteNames`
 
 ---
 
-## 5. UI/UX Details
-
-### Design System
-
-- **Theme:** Dark-only (no light mode toggle). Background: `#080f1a` (deep navy), `#0a1628`, `#0c1a2e`, `#0e1f35`
-- **Accent color:** Cyan (`#00e5cc`) — used for active states, borders, highlights
-- **Method colors:** GET=`#00e5cc`, POST=`#4ade80`, PUT=`#fb923c`, PATCH=`#a78bfa`, DELETE=`#f87171`, HEAD=`#94a3b8`
-- **Fonts:** Geist Sans (`--font-geist-sans`) for UI, Geist Mono (`--font-geist-mono`) for code/data
-- **Styling approach:** Tailwind CSS 4 utility classes + custom CSS in `styles/components/` (buttons, modals, forms)
-- **Decorative elements:** Corner bracket borders on modals and URL bar (cyan-500/30), ambient background glow blobs
-- **Custom scrollbar:** Thin 4px scrollbar with cyan gradient thumb
-
-### Navigation/Routing
-
-- `/` — Landing page (server component)
-- `/hittable` — Main application (client component)
-- `/hittable?c=CollectionName&r=RouteName` — Deep-linked route selection
-
-### Key User Flows
-
-1. **First visit:** Landing page → "Launch App" → `/hittable` → Empty state with "Create collection" prompt
-2. **Creating a collection:** Sidebar "+" button → CreateModal → enters name → new collection appears in sidebar
-3. **Adding a route:** Click collection → Routes panel appears → "+" button → CreateModal → new route
-4. **Sending a request:** Select route → edit URL/headers/body in TabEditor → Cmd/Ctrl+Enter or click Send → response appears in ResponsePanel
-5. **Saving changes:** Edit form → "Unsaved" indicator appears → Cmd/Ctrl+S → changes persisted to localStorage and collection
-6. **Importing a collection:** Sidebar import button → paste compressed code → collection added with unique name
-7. **Using environment variables:** Click "Env Vars" → add key/value pairs → use `<<KEY>>` in URL/headers/body → resolved at send time
-8. **Searching responses:** Click search icon or Cmd/Ctrl+F → type query → matches highlighted in JSON tree → navigate with arrows
-9. **Viewing history:** Click history icon → modal shows recent requests → click entry to replay
-10. **Adding auth:** Click shield icon → select preset (Bearer/Basic/API Key) → fill fields → Apply → Authorization header added
-
----
-
-## 6. Configuration & Environment
+## 9. Configuration & Environment
 
 ### Build/Dev Scripts
 
 ```bash
 npm run dev          # Start dev server with Turbopack (next dev --turbopack)
 npm run build        # Production build (next build)
-npm run start        # Start production server (next start)
-npm run lint         # Run ESLint (next lint)
-npm run prepare      # Set up Husky git hooks
-npm run commitlint   # Validate commit messages
+npm run start        # Production server (next start)
+npm run lint         # ESLint (next lint)
+npm run prepare      # Husky git hooks
+npm run commitlint   # Commit message validation
 ```
 
-### Environment Variables
-
-- `.env.example` — exists (template for env vars)
-- No runtime environment variables needed for the app itself (all data is client-side)
-- The proxy route has no env-based configuration
-
-### Key Dependencies (from package.json)
+### Key Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
@@ -304,89 +457,30 @@ npm run commitlint   # Validate commit messages
 | typescript | ^5 | Type safety |
 | tailwindcss | ^4.1.11 | Styling |
 | @bany/curl-to-json | ^1.2.10 | Curl parsing |
-| axios | ^1.13.3 | HTTP client |
 | framer-motion | ^12.23.0 | Animations |
 | lucide-react | ^0.548.0 | Icons |
 | marked | ^18.0.5 | Markdown rendering |
 | pako | ^2.1.0 | Compression for import/export |
-| @tanstack/react-query | ^5.81.5 | Server state (used minimally) |
 | @radix-ui/react-accordion | ^1.2.12 | Accordion component |
-| class-variance-authority | ^0.7.1 | Component variants |
-| clsx + tailwind-merge | — | Class name utilities |
-| husky | ^9.1.7 | Git hooks |
-| commitlint | ^19.0.0 | Commit message linting |
-| lint-staged | ^15.2.0 | Pre-commit lint |
 
 ### Config Files
 
 - `next.config.ts` — Image remote patterns, SVG allowed
 - `tsconfig.json` — Strict mode, `@/*` path alias, ES2017 target
 - `eslint.config.mjs` — ESLint config
-- `postcss.config.mjs` — PostCSS with Tailwind plugin
 - `commitlint.config.js` — Conventional commits
 - `.husky/` — Git hooks directory
-- `vercel.json` — Vercel deployment config
-- `docker-compose.yml` / `Dockerfile` / `dockerEntryPoint.sh` — Docker support (exists but secondary to Vercel)
 
 ---
 
-## 7. Current State
-
-### What's Fully Working
-
-- Collection and route CRUD (create, rename, delete)
-- HTTP request sending via proxy and browser extension
-- Response display with JSON tree, raw view, headers tab, search
-- curl paste and copy
-- Environment variables with `<<KEY>>` syntax
-- Import/export collections (compressed format)
-- Request history with replay
-- Markdown notes with split editor
-- Auth presets (Bearer, Basic, API Key)
-- Body type selection (JSON, form-urlencoded, text, multipart with file upload)
-- Keyboard shortcuts throughout
-- Mobile responsive layout
-- ARIA accessibility attributes on modals
-- Unsaved changes protection
-- URL-based route selection
-
-### What's Still Being Iterated On
-
-- The `NEW_FEATURE_IDEAS.md` contains a prioritized roadmap of 16 features
-- Several bug fixes from the audit are still pending (see "Known Issues" above)
-- The stores/auth.ts file exists but isn't actively used
-
-### Recent Changes (from CHANGELOG.md)
-
-The most recent work focused on:
-- Response time/size metrics in ResponsePanel
-- Response headers tab
-- Raw view toggle
-- Auth presets modal
-- Request history system
-- Markdown notes editor with split view
-- Table mode for body/headers/params
-- Body content type selector (JSON, form-urlencoded, text, multipart)
-- Breadcrumb-based route switching
-- Comprehensive bug fixes (crash prevention, encoding, accessibility)
-- Mobile responsive improvements
-
-### Next Planned Steps (from README.md roadmap)
-
-- [ ] Response History (partially done — history exists but not full response storage)
-- [ ] Auth presets (OAuth2, AWS Signature) — basic presets done, advanced ones pending
-- [ ] OpenAPI/Swagger import
-
----
-
-## 8. Conventions
+## 10. Conventions
 
 ### Coding Style
 
 - **TypeScript strict mode** — All files use strict TypeScript
 - **Client components** — Explicit `"use client"` directive at top of components using state/hooks
 - **Functional components only** — No class components
-- **Hooks pattern** — Custom hooks in `hooks/` directory, context hooks for shared state
+- **Hooks pattern** — Custom hooks in `hooks/`, context hooks for shared state
 - **Utility functions** — Pure functions in `utils/`, no side effects where possible
 - **Type definitions** — All types in `types/` directory, prefixed with `T` (e.g., `THittableCollection`, `TResponseJson`)
 
@@ -397,7 +491,7 @@ The most recent work focused on:
 - **Types:** `T` prefix (`THittableCollections`, `TResponseJson`, `THistoryEntry`)
 - **Constants:** UPPER_SNAKE_CASE (`HITTABLE_METHODS`, `METHOD_COLORS`)
 - **Hooks:** `use` prefix (`useKeypress`, `useExtension`, `useDataContext`)
-- **CSS classes:** Tailwind utilities + custom classes in `styles/components/` (`.modal-button-mini`, `.btn-primary`)
+- **CSS classes:** Tailwind utilities + custom classes in `styles/components/` (`.modal-button-mini`)
 
 ### Patterns Used Consistently
 
@@ -408,15 +502,20 @@ The most recent work focused on:
 - **`useCallback`/`useMemo`** for performance-critical computations
 - **URL params** for route selection (deep linking support)
 - **localStorage** with try/catch for all persistence operations
-- **Error boundaries** at page level (`app/error.tsx`)
+- **Tree helpers** for all collection structure operations (never mutate directly)
 
 ### Key Decisions Worth Preserving
 
-1. **No external state library** — The app uses React Context + useState, not Redux/Zustand. This keeps bundle size small but means DataContext can cause re-renders. This was a deliberate choice for simplicity.
-2. **Browser-first persistence** — All data stays in localStorage. No server-side storage. This is a core privacy/design principle.
-3. **Dual proxy strategy** — Remote URLs go through server proxy; localhost goes through browser extension. This avoids needing a full proxy server while handling CORS.
-4. **curl as the interchange format** — Routes are stored as curl strings internally, enabling easy import/export and curl compatibility.
-5. **pako compression for import/export** — Collections are compressed to URL-safe base64 strings for easy sharing.
-6. **URL-based selection** — Route selection is encoded in URL params, enabling deep linking and browser back/forward navigation.
-7. **Tailwind + custom CSS hybrid** — Most styling is Tailwind utilities, but component-specific styles (buttons, modals) are in CSS files using `@apply`.
-8. **Monospace font for the app** — The entire Hittable app uses Geist Mono, reinforcing the developer/terminal aesthetic.
+1. **No external state library** — React Context + useState, not Redux/Zustand. Keeps bundle size small.
+2. **Browser-first persistence** — All data stays in localStorage. Core privacy/design principle.
+3. **Dual proxy strategy** — Remote URLs go through server proxy; localhost goes through browser extension.
+4. **curl as the interchange format** — Routes stored as curl strings internally. Enables easy import/export and curl compatibility.
+5. **Nested folder tree** — Collections use `items: (THittableRoute | THittableFolder)[]` for arbitrary depth nesting.
+6. **URL-based selection with folder path** — `?c=Collection&r=Route&p=Folder1/Folder2` enables deep linking.
+7. **Tree helpers for all CRUD** — `treeHelpers.ts` handles all traversal/modification. Never mutate tree directly.
+8. **Legacy auto-migration** — Old flat format auto-detected and converted on load.
+9. **Env vars stored separately from curl** — `<<KEY>>` stored literally in curl string; values in collection `env` object; resolved only at send time.
+10. **Icon-only buttons with tooltips** — `.modal-button-mini` pattern for toolbar actions, consistent across all modals.
+11. **Method badges** — Colored bordered chips showing HTTP method on route rows, using `METHOD_COLORS` constants.
+12. **Drill-down sidebar** — Single panel that evolves with navigation state, not multi-panel layout.
+13. **Monospace font** — Entire app uses Geist Mono, reinforcing developer/terminal aesthetic.
