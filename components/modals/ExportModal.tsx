@@ -1,6 +1,6 @@
 "use client";
 
-import { Upload } from "lucide-react";
+import { Download } from "lucide-react";
 import { useCallback, useState } from "react";
 import { ModalShell, ModalActions } from "@/components";
 import { compressString } from "@/utils/compressString";
@@ -97,7 +97,7 @@ export default function ExportModal({
         }}
         className="flex items-center gap-2 px-3 py-2 text-xs text-white/50 hover:bg-white/5 hover:text-cyan-400 transition-colors w-full text-left cursor-pointer"
       >
-        <Upload size={12} />
+        <Download size={12} />
         Export
       </button>
 

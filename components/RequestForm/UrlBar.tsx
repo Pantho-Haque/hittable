@@ -7,7 +7,7 @@ import { hittableProxy } from "@/utils/hittableProxy";
 import { getParamsfromUrl } from "@/utils/responsePanelUtils";
 import { addHistoryEntry } from "@/utils/historyModifier";
 import { updateEnv } from "@/utils/hittableCollectionModifier";
-import { CheckCircle2, Code2, Loader2, Save, Send } from "lucide-react";
+import { CheckCircle2, Terminal, Loader2, Save, Send } from "lucide-react";
 import { useCallback, useState, useRef, useEffect } from "react";
 import { useDataContext } from "@/context/dataContext";
 
@@ -269,7 +269,7 @@ export default function UrlBar({ error }: { error: string | null }) {
           {curlCopied ? (
             <CheckCircle2 className="h-3 w-3 md:h-3 md:w-3" />
           ) : (
-            <Code2 className="h-3 w-3" />
+            <Terminal className="h-3 w-3" />
           )}
         </button>
       </div>
