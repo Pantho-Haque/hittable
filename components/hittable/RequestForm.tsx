@@ -1,6 +1,6 @@
 "use client";
 import { formatJson } from "@/utils/formatJson";
-import { AlertCircle, MessageCircleWarning, ChevronDown, RotateCcw, Folder } from "lucide-react";
+import { AlertCircle, MessageCircleWarning, ChevronDown, RotateCcw, Folder, Route } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -12,6 +12,7 @@ import {
 import { useDataContext } from "@/context/dataContext";
 import { THittableItem } from "@/types";
 import { getItemsAtPath } from "@/utils/treeHelpers";
+import { METHOD_COLORS } from "@/constants";
 
 export default function RequestForm() {
   const { selectorResponse } = useDataContext();
@@ -117,35 +118,46 @@ function InputForm() {
     ? getItemsAtPath(currentCollection.items, folderPath)
     : [];
   const currentRoutes = currentItems
-    .filter((i): i is THittableItem & { type: "route" } => i.type === "route")
-    .map((r) => r.name);
+    .filter((i): i is THittableItem & { type: "route" } => i.type === "route");
   const collectionNames = collections.map((c) => c.collectionName);
 
-  // Get items at a specific folder level for folder dropdown
-  const getItemsAtFolderLevel = (levelIndex: number): THittableItem[] => {
+  // Get siblings at the PARENT level of a breadcrumb segment (one level up from the clicked segment)
+  const getItemsAtParentLevel = (levelIndex: number): THittableItem[] => {
     if (!currentCollection) return [];
-    const pathToLevel = folderPath.slice(0, levelIndex + 1);
-    return getItemsAtPath(currentCollection.items, pathToLevel);
+    const parentPath = folderPath.slice(0, levelIndex);
+    return getItemsAtPath(currentCollection.items, parentPath);
   };
 
   const handleFolderItemSelect = useCallback(
     (levelIndex: number, item: THittableItem) => {
-      const targetPath = folderPath.slice(0, levelIndex + 1);
+      const parentPath = folderPath.slice(0, levelIndex);
       if (item.type === "folder") {
-        // Navigate into the selected folder (drill into it)
+        // Drill into the selected folder
         router.push(
-          `/hittable?c=${encodeURIComponent(collectionName)}&p=${encodeURIComponent([...targetPath, item.name].join("/"))}`,
+          `/hittable?c=${encodeURIComponent(collectionName)}&p=${encodeURIComponent([...parentPath, item.name].join("/"))}`,
         );
       } else {
-        // Select a route at this level
+        // Select a route at this parent level
+        const pathParam = parentPath.length > 0
+          ? `&p=${encodeURIComponent(parentPath.join("/"))}`
+          : "";
         router.push(
-          `/hittable?c=${encodeURIComponent(collectionName)}&r=${encodeURIComponent(item.name)}&p=${encodeURIComponent(targetPath.join("/"))}`,
+          `/hittable?c=${encodeURIComponent(collectionName)}&r=${encodeURIComponent(item.name)}${pathParam}`,
         );
       }
       setOpenDropdown(null);
     },
     [collectionName, folderPath, router],
   );
+
+  function extractMethod(curlStr: string): string {
+    const methodMatch = curlStr.match(
+      /-X\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)/i,
+    );
+    if (methodMatch) return methodMatch[1].toUpperCase();
+    if (curlStr.match(/curl\s+-I\b/)) return "HEAD";
+    return "GET";
+  }
 
   return (
     <div className="h-full w-full flex flex-col gap-4 font-mono">
@@ -196,7 +208,7 @@ function InputForm() {
 
           {/* Folder path segments */}
           {folderPath.map((segment, i) => {
-            const levelItems = getItemsAtFolderLevel(i);
+            const siblingItems = getItemsAtParentLevel(i);
             const isOpen = openDropdown === i;
             return (
               <span key={i} className="flex items-center gap-1 relative">
@@ -211,26 +223,47 @@ function InputForm() {
                     className={`transition-transform ${isOpen ? "rotate-180" : ""}`}
                   />
                 </button>
-                {isOpen && levelItems.length > 0 && (
-                  <div className="absolute top-full left-2 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[160px] max-h-[200px] overflow-y-auto">
-                    {levelItems.map((item) => (
-                      <button
-                        key={item.name}
-                        onClick={() => handleFolderItemSelect(i, item)}
-                        className={`w-full text-left px-3 py-1.5 text-[10px] transition-colors cursor-pointer flex items-center gap-2 ${
-                          item.type === "folder"
-                            ? "text-white/50 hover:text-white/80 hover:bg-white/5"
-                            : item.name === curlName
+                {isOpen && siblingItems.length > 0 && (
+                  <div className="absolute top-full left-2 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[220px] overflow-y-auto">
+                    {siblingItems.map((item) => {
+                      const isCurrentFolder = item.type === "folder" && item.name === segment;
+                      const isCurrentRoute = item.type === "route" && item.name === curlName;
+                      const isActive = isCurrentFolder || isCurrentRoute;
+                      const method = item.type === "route" ? extractMethod((item as THittableItem & { type: "route" }).curl) : null;
+                      const mc = method ? METHOD_COLORS[method] ?? "#94a3b8" : null;
+                      return (
+                        <button
+                          key={item.name}
+                          onClick={() => handleFolderItemSelect(i, item)}
+                          className={`w-full text-left px-3 py-1.5 text-[10px] transition-colors cursor-pointer flex items-center gap-2 ${
+                            isActive
                               ? "text-cyan-400 bg-cyan-500/10"
                               : "text-white/50 hover:text-white/80 hover:bg-white/5"
-                        }`}
-                      >
-                        {item.type === "folder" && (
-                          <Folder size={10} className="text-cyan-500/40" />
-                        )}
-                        {item.name}
-                      </button>
-                    ))}
+                          }`}
+                        >
+                          {isActive && (
+                            <span className="w-0.5 h-3 bg-cyan-400 rounded-r-full shrink-0" />
+                          )}
+                          {item.type === "folder" ? (
+                            <Folder size={10} className="text-cyan-500/40 shrink-0" />
+                          ) : mc ? (
+                            <span
+                              className="shrink-0 px-1 py-0.5 rounded text-[8px] font-bold leading-none border"
+                              style={{
+                                color: mc,
+                                borderColor: `${mc}40`,
+                                backgroundColor: `${mc}12`,
+                              }}
+                            >
+                              {method}
+                            </span>
+                          ) : (
+                            <Route size={10} className="text-white/30 shrink-0" />
+                          )}
+                          <span className="truncate">{item.name}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </span>
@@ -256,20 +289,38 @@ function InputForm() {
               />
             </button>
             {openDropdown === "route" && currentRoutes.length > 0 && (
-              <div className="absolute top-full left-0 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[200px] overflow-y-auto">
-                {currentRoutes.map((name) => (
-                  <button
-                    key={name}
-                    onClick={() => handleRouteSelect(name)}
-                    className={`w-full text-left px-3 py-1.5 text-[10px] transition-colors cursor-pointer ${
-                      name === curlName
-                        ? "text-cyan-400 bg-cyan-500/10"
-                        : "text-white/50 hover:text-white/80 hover:bg-white/5"
-                    }`}
-                  >
-                    {name}
-                  </button>
-                ))}
+              <div className="absolute top-full left-0 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[220px] overflow-y-auto">
+                {currentRoutes.map((item) => {
+                  const isActive = item.name === curlName;
+                  const method = extractMethod(item.curl);
+                  const mc = METHOD_COLORS[method] ?? "#94a3b8";
+                  return (
+                    <button
+                      key={item.name}
+                      onClick={() => handleRouteSelect(item.name)}
+                      className={`w-full text-left px-3 py-1.5 text-[10px] transition-colors cursor-pointer flex items-center gap-2 ${
+                        isActive
+                          ? "text-cyan-400 bg-cyan-500/10"
+                          : "text-white/50 hover:text-white/80 hover:bg-white/5"
+                      }`}
+                    >
+                      {isActive && (
+                        <span className="w-0.5 h-3 bg-cyan-400 rounded-r-full shrink-0" />
+                      )}
+                      <span
+                        className="shrink-0 px-1 py-0.5 rounded text-[8px] font-bold leading-none border"
+                        style={{
+                          color: mc,
+                          borderColor: `${mc}40`,
+                          backgroundColor: `${mc}12`,
+                        }}
+                      >
+                        {method}
+                      </span>
+                      <span className="truncate">{item.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
