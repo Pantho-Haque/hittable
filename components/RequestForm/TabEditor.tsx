@@ -4,6 +4,7 @@ import { formatJson } from "@/utils/formatJson";
 import { Dispatch, SetStateAction, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { modifyUrlForNewParams } from "@/utils/responsePanelUtils";
 import { useDataContext } from "@/context/dataContext";
+import useKeypress from "@/hooks/useKeypress";
 import { Braces, Table2, Plus, Trash2, Sparkles } from "lucide-react";
 
 type ViewMode = "json" | "table";
@@ -14,14 +15,12 @@ function JsonEditor({
   placeholder,
   tab,
   error,
-  onBeautify,
 }: {
   value: string;
   onChange: (val: string) => void;
   placeholder: string;
   tab: string;
   error: string | null;
-  onBeautify: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
@@ -42,25 +41,19 @@ function JsonEditor({
   }, [value, syncScroll]);
 
   return (
-    <div className="flex-1 flex flex-col relative">
+    <div className="flex-1 flex flex-col relative min-h-0">
       {/* Error indicator */}
       {error && (
-        <div className="px-3 py-1.5 text-[10px] text-red-400 bg-red-500/10 border-b border-red-500/20 flex items-center justify-between">
+        <div className="px-3 py-1.5 text-[10px] text-red-400 bg-red-500/10 border-b border-red-500/20">
           <span className="truncate">{error}</span>
-          <button
-            onClick={onBeautify}
-            className="ml-2 px-2 py-0.5 text-[9px] font-medium text-red-300 hover:text-red-200 bg-red-500/20 rounded cursor-pointer transition-colors shrink-0"
-          >
-            Try Beautify
-          </button>
         </div>
       )}
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0">
         {/* Line numbers gutter */}
         <div
           ref={lineNumbersRef}
-          className="flex-shrink-0 overflow-hidden select-none border-r border-white/5 bg-[#080f1a]/30"
+          className="shrink-0 overflow-hidden select-none border-r border-white/5 bg-[#080f1a]/30"
           style={{ width: 40 }}
           aria-hidden="true"
         >
@@ -80,8 +73,8 @@ function JsonEditor({
         <textarea
           ref={textareaRef}
           key={tab}
-          className="flex-1 w-full resize-none bg-transparent p-2 md:p-4 text-[10px] md:text-[12px] text-white/70 outline-none placeholder-white/15 leading-relaxed font-mono"
-          style={{ minHeight: 200, tabSize: 2 }}
+          className="flex-1 w-full resize-none bg-transparent p-2 md:p-4 text-[10px] md:text-[12px] text-white/70 outline-none placeholder-white/15 leading-relaxed font-mono overflow-y-auto"
+          style={{ tabSize: 2 }}
           spellCheck={false}
           value={value}
           placeholder={placeholder}
@@ -118,7 +111,7 @@ function KeyValueTable({
   };
 
   return (
-    <div className="flex flex-col gap-1.5 flex-1 overflow-y-auto p-2 md:p-3">
+    <div className="flex flex-col gap-1.5 flex-1 min-h-0 overflow-y-auto p-2 md:p-3">
       {entries.length === 0 && (
         <button
           onClick={addRow}
@@ -280,10 +273,31 @@ export default function TabEditor({
     return '{\n  "Authorization": "Bearer ..."\n}';
   };
 
+  const handleBeautify = useCallback(() => {
+    const { output, error: jsonErr } = formatJson(formInput[activeTab]);
+    if (jsonErr) {
+      setError(jsonErr);
+    } else {
+      setError(null);
+      if (activeTab === "params") {
+        const newUrl = modifyUrlForNewParams(formInput.url, output);
+        setFormInput((prev) => ({ ...prev, url: newUrl, params: output }));
+      } else {
+        setFormInput((prev) => ({ ...prev, [activeTab]: output }));
+      }
+    }
+  }, [activeTab, formInput, setFormInput, setError]);
+
+  useKeypress({
+    key: "j",
+    isMeta: true,
+    func: handleBeautify,
+  });
+
   return (
     <div
       className="flex flex-col rounded-lg border border-white/8 bg-[#0a1628]/60 overflow-hidden"
-      style={{ minHeight: 240 }}
+      style={{ minHeight: 240, maxHeight: "60vh" }}
     >
       {/* Tab bar */}
       <div className="flex items-center border-b border-white/5 bg-[#0e1f35]/50 px-1 pt-1 shrink-0">
@@ -306,21 +320,8 @@ export default function TabEditor({
         <div className="ml-auto flex items-center gap-0.5 mr-1">
             {viewMode === "json" && (
               <button
-                onClick={() => {
-                  const { output, error: jsonErr } = formatJson(formInput[activeTab]);
-                  if (jsonErr) {
-                    setError(jsonErr);
-                  } else {
-                    setError(null);
-                    if (activeTab === "params") {
-                      const newUrl = modifyUrlForNewParams(formInput.url, output);
-                      setFormInput((prev) => ({ ...prev, url: newUrl, params: output }));
-                    } else {
-                      setFormInput((prev) => ({ ...prev, [activeTab]: output }));
-                    }
-                  }
-                }}
-                title="Beautify JSON"
+                onClick={handleBeautify}
+                title="Beautify JSON (Ctrl/Cmd+J)"
                 className="p-1.5 rounded transition-colors cursor-pointer text-white/30 hover:text-cyan-400 hover:bg-cyan-400/10"
               >
                 <Sparkles size={12} />
@@ -376,20 +377,6 @@ export default function TabEditor({
           placeholder={getPlaceholder()}
           tab={activeTab}
           error={jsonError}
-          onBeautify={() => {
-            const { output, error: jsonErr } = formatJson(formInput[activeTab]);
-            if (jsonErr) {
-              setError(jsonErr);
-            } else {
-              setError(null);
-              if (activeTab === "params") {
-                const newUrl = modifyUrlForNewParams(formInput.url, output);
-                setFormInput((prev) => ({ ...prev, url: newUrl, params: output }));
-              } else {
-                setFormInput((prev) => ({ ...prev, [activeTab]: output }));
-              }
-            }
-          }}
         />
       )}
     </div>

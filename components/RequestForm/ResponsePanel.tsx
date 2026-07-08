@@ -335,7 +335,7 @@ export default function ResponsePanel() {
 
         {/* ── Body ── */}
         {proxyResponse ? (
-          <div className="flex-1 overflow-auto p-2 md:p-3">
+          <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
             {activeTab === "headers" ? (
               <HeadersTable headers={responseHeaders} searchQuery={searchQuery} />
             ) : proxyResponse.error ? (

@@ -1,6 +1,6 @@
 "use client";
 import { formatJson } from "@/utils/formatJson";
-import { AlertCircle, MessageCircleWarning, ChevronDown, RotateCcw, Folder, Route } from "lucide-react";
+import { MessageCircleWarning, ChevronDown, RotateCcw, Folder, Route } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -325,32 +325,22 @@ function InputForm() {
             )}
           </div>
         </div>
-        {(isUnsaved() || error) && (
+        {isUnsaved() && (
           <div className="flex items-center w-full justify-start md:justify-end gap-2">
-            {isUnsaved() && !error && (
-              <>
-                <button
-                  onClick={handleRevert}
-                  title="Discard changes"
-                  className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[8px] md:text-[10px] font-semibold text-white/40 transition-all cursor-pointer hover:border-amber-500/30 hover:text-amber-400 min-h-[28px]"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                </button>
-                <span className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1 text-[8px] md:text-[10px] font-semibold text-amber-400 border border-amber-500/20">
-                  <MessageCircleWarning
-                    className="h-3 w-3"
-                    strokeWidth={2.5}
-                  />
-                  Unsaved · Ctrl/Cmd+S
-                </span>
-              </>
-            )}
-            {error && (
-              <span className="flex items-center gap-1.5 rounded-md bg-red-500/10 px-2.5 py-1 text-[8px] md:text-[10px] font-semibold text-red-400 border border-red-500/20">
-                <AlertCircle className="h-3 w-3" strokeWidth={2.5} />
-                {error}
-              </span>
-            )}
+            <button
+              onClick={handleRevert}
+              title="Discard changes"
+              className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[8px] md:text-[10px] font-semibold text-white/40 transition-all cursor-pointer hover:border-amber-500/30 hover:text-amber-400 min-h-[28px]"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </button>
+            <span className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1 text-[8px] md:text-[10px] font-semibold text-amber-400 border border-amber-500/20">
+              <MessageCircleWarning
+                className="h-3 w-3"
+                strokeWidth={2.5}
+              />
+              Unsaved · Ctrl/Cmd+S
+            </span>
           </div>
         )}
       </div>

@@ -10,6 +10,7 @@ import { updateEnv } from "@/utils/hittableCollectionModifier";
 import { CheckCircle2, Terminal, Loader2, Save, Send } from "lucide-react";
 import { useCallback, useState, useRef, useEffect } from "react";
 import { useDataContext } from "@/context/dataContext";
+import { useNotification } from "@/hooks/useNotify";
 
 export default function UrlBar({ error }: { error: string | null }) {
   const {
@@ -25,6 +26,7 @@ export default function UrlBar({ error }: { error: string | null }) {
     collections,
     setCollections,
   } = useDataContext();
+  const { error: notifyError } = useNotification();
 
   const { env, secrets } = selectorResponse!;
   const mc = METHOD_COLORS[formInput.method] ?? "#94a3b8";
@@ -149,7 +151,13 @@ export default function UrlBar({ error }: { error: string | null }) {
   useKeypress({
     key: "Enter",
     isMeta: true,
-    func: sendProxyRequest,
+    func: () => {
+      if (error) {
+        notifyError({ title: "Cannot send request", desc: "Fix the JSON error in your request body before sending." });
+        return;
+      }
+      sendProxyRequest();
+    },
   });
 
   useKeypress({

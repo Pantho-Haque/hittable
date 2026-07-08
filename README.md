@@ -117,6 +117,7 @@ One-click deployment to Vercel:
 | :--- | :--- |
 | `Ctrl/Cmd + Enter` | **Send Request** |
 | `Ctrl/Cmd + S` | **Save to Collection** |
+| `Ctrl/Cmd + J` | **Beautify JSON** |
 | `Ctrl/Cmd + F` | **Search Response Payload** |
 | `Ctrl/Cmd + B` | **Toggle Sidebar** |
 | `Shift + T` | **Create New Untitled Route** |
