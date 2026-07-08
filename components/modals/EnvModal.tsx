@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Settings2, Trash2, Lock } from "lucide-react";
+import { Plus, Variable, Trash2, Lock } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -85,7 +85,7 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
         title="Environment Variables"
         className="modal-button-mini"
       >
-        <Settings2 size={14} />
+        <Variable size={14} />
       </button>
 
       {open &&
@@ -131,7 +131,7 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
                       : "text-white/30 border-transparent hover:text-white/50"
                   }`}
                 >
-                  <Settings2 size={11} />
+                  <Variable size={11} />
                   Env Vars
                 </button>
                 <button
@@ -185,7 +185,7 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
                 ))}
                 {currentEntries.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-8 gap-2 text-white/20">
-                    {activeTab === "env" ? <Settings2 size={20} /> : <Lock size={20} />}
+                    {activeTab === "env" ? <Variable size={20} /> : <Lock size={20} />}
                     <p className="text-xs">
                       {activeTab === "env" ? "No environment variables yet" : "No secrets yet"}
                     </p>
