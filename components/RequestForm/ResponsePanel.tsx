@@ -1,19 +1,26 @@
 "use client";
 
 import { JsonValue } from "@/types";
-import { CheckCircle2, AlertCircle, Send, Search, Copy, Check, Code2, Braces } from "lucide-react";
-import { useState, useCallback, useMemo, useRef } from "react";
+import { CheckCircle2, AlertCircle, Send, Search, Copy, Check, Braces, Code2, FileText, Globe, Crosshair } from "lucide-react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import {
   MatchCtx,
   FloatingSearch,
   CopyButton,
   JsonNode,
+  Highlight,
   MatchRegistry,
 } from "@/components";
 import { countMatches } from "@/utils/responsePanelUtils";
 import useKeypress from "@/hooks/useKeypress";
 import { useDataContext } from "@/context/dataContext";
+import HtmlPreview from "./ResponsePanelComponents/HtmlPreview";
+import type { ElementInfo } from "./ResponsePanelComponents/HtmlPreview";
+import HtmlSourceViewer from "./ResponsePanelComponents/HtmlSourceViewer";
+import ElementInspector from "./ResponsePanelComponents/ElementInspector";
+import { findElementSourceLine } from "@/utils/htmlFormatter";
 
+type ResponseViewMode = "json" | "text" | "html";
 
 function HeadersTable({ headers, searchQuery }: { headers: Record<string, string>; searchQuery?: string }) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -33,7 +40,6 @@ function HeadersTable({ headers, searchQuery }: { headers: Record<string, string
     );
   }
 
-  // Filter entries by search query if provided
   const filtered = searchQuery
     ? entries.filter(([k, v]) =>
         k.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -76,16 +82,57 @@ function HeadersTable({ headers, searchQuery }: { headers: Record<string, string
   );
 }
 
+function detectViewMode(headers: Record<string, string>): ResponseViewMode {
+  const contentType = (headers["content-type"] ?? headers["Content-Type"] ?? "").toLowerCase();
+  if (contentType.includes("application/json") || contentType.includes("text/json")) {
+    return "json";
+  }
+  if (contentType.includes("text/html") || contentType.includes("application/xhtml")) {
+    return "html";
+  }
+  return "text";
+}
+
 export default function ResponsePanel() {
-  const {proxyResponse} = useDataContext();
+  const { proxyResponse } = useDataContext();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<"body" | "headers">("body");
-  const [rawView, setRawView] = useState(false);
+  const [viewMode, setViewMode] = useState<ResponseViewMode>("text");
   const [headersCopied, setHeadersCopied] = useState(false);
+  const [userOverrodeMode, setUserOverrodeMode] = useState(false);
+
+  const [inspectMode, setInspectMode] = useState(false);
+  const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
+  const [highlightedSourceLine, setHighlightedSourceLine] = useState<number | null>(null);
 
   const matchEls = useRef<HTMLElement[]>([]);
+  const prevResponseRef = useRef(proxyResponse);
+
+  // Clear user override when a new response arrives
+  useEffect(() => {
+    if (proxyResponse !== prevResponseRef.current) {
+      prevResponseRef.current = proxyResponse;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- guard check prevents cascading renders
+      if (userOverrodeMode) setUserOverrodeMode(false);
+    }
+  }, [proxyResponse, userOverrodeMode]);
+
+  const responseHeaders = useMemo(() => {
+    if (!proxyResponse?.headers) return {};
+    if (typeof proxyResponse.headers === "object" && proxyResponse.headers !== null) {
+      return proxyResponse.headers as Record<string, string>;
+    }
+    return {};
+  }, [proxyResponse?.headers]);
+
+  // Compute effective view mode: auto-detect when user hasn't overridden
+  const effectiveViewMode: ResponseViewMode = useMemo(() => {
+    if (userOverrodeMode) return viewMode;
+    if (activeTab !== "body") return viewMode;
+    return detectViewMode(responseHeaders);
+  }, [userOverrodeMode, viewMode, activeTab, responseHeaders]);
 
   const register = useCallback((el: HTMLElement) => {
     matchEls.current.push(el);
@@ -130,68 +177,11 @@ export default function ResponsePanel() {
     setSearchQuery("");
   }, []);
 
-  const matchCtxValue = useMemo<MatchRegistry>(
-    () => ({ register, activeIndex }),
-    [register, activeIndex],
-  );
+  // Get request URL for HTML base href
+  const { selectorResponse } = useDataContext();
+  const requestUrl = selectorResponse?.curlJson?.url;
 
-  const statusOk = proxyResponse?.status != null && proxyResponse.status < 300;
-  const statusWarn =
-    proxyResponse?.status != null &&
-    proxyResponse.status >= 300 &&
-    proxyResponse.status < 500;
-
-  const parsedData = useMemo<JsonValue | null>(() => {
-    if (!proxyResponse?.data) return null;
-    try {
-      return typeof proxyResponse.data === "string"
-        ? (JSON.parse(proxyResponse.data) as JsonValue)
-        : (proxyResponse.data as JsonValue);
-    } catch {
-      return null;
-    }
-  }, [proxyResponse?.data]);
-
-  const responseHeaders = useMemo(() => {
-    if (!proxyResponse?.headers) return {};
-    if (typeof proxyResponse.headers === "object" && proxyResponse.headers !== null) {
-      return proxyResponse.headers as Record<string, string>;
-    }
-    return {};
-  }, [proxyResponse?.headers]);
-
-  const headerCount = Object.keys(responseHeaders).length;
-
-  const totalMatches = useMemo(() => {
-    if (activeTab === "headers") {
-      // For headers tab, count matches across all key:value pairs
-      if (!searchQuery) return 0;
-      const q = searchQuery.toLowerCase();
-      return Object.entries(responseHeaders).filter(
-        ([k, v]) => k.toLowerCase().includes(q) || v.toLowerCase().includes(q)
-      ).length;
-    }
-    return parsedData && searchQuery ? countMatches(parsedData, searchQuery) : 0;
-  }, [parsedData, searchQuery, activeTab, responseHeaders]);
-
-  const hasJson = parsedData !== null && !proxyResponse?.error;
-
-  const formatDuration = (ms: number) => {
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(2)}s`;
-  };
-
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const handleCopyHeaders = () => {
-    navigator.clipboard.writeText(JSON.stringify(responseHeaders, null, 2));
-    setHeadersCopied(true);
-    setTimeout(() => setHeadersCopied(false), 1500);
-  };
+  const showCopyButton = activeTab === "body" && effectiveViewMode !== "html";
 
   return (
     <MatchCtx.Provider value={matchCtxValue}>
@@ -246,8 +236,7 @@ export default function ResponsePanel() {
           )}
 
           <div className="ml-auto flex items-center gap-1">
-            {/* Search: works for both body and headers */}
-            {(hasJson || activeTab === "headers") && (
+            {canSearch && (
               <button
                 onClick={() => setSearchOpen((o) => !o)}
                 title="Search (⌘F)"
@@ -260,8 +249,7 @@ export default function ResponsePanel() {
                 <Search className="h-2.5 w-2.5 md:h-3 md:w-3" />
               </button>
             )}
-            {/* Copy: body tab copies JSON, headers tab copies headers as JSON */}
-            {activeTab === "body" && parsedData && <CopyButton data={parsedData} />}
+            {showCopyButton && parsedData && <CopyButton data={parsedData} />}
             {activeTab === "headers" && headerCount > 0 && (
               <button
                 onClick={handleCopyHeaders}
@@ -275,23 +263,42 @@ export default function ResponsePanel() {
                 )}
               </button>
             )}
-            {/* Raw view toggle: only for body tab with JSON data */}
-            {hasJson && activeTab === "body" && (
-              <button
-                onClick={() => setRawView((o) => !o)}
-                title={rawView ? "Tree view" : "Raw view"}
-                className={`p-0.5 md:p-1 rounded transition-colors ${
-                  rawView
-                    ? "text-cyan-300/90 bg-cyan-400/10 ring-1 ring-cyan-400/20"
-                    : "text-white/25 hover:text-white/60 hover:bg-white/5"
-                }`}
-              >
-                {rawView ? (
+            {activeTab === "body" && (
+              <div className="flex items-center gap-0.5 ml-1 border-l border-white/8 pl-1">
+                <button
+                  onClick={() => handleViewModeChange("json")}
+                  title="JSON tree view"
+                  className={`p-0.5 md:p-1 rounded transition-colors ${
+                    effectiveViewMode === "json"
+                      ? "text-cyan-300/90 bg-cyan-400/10 ring-1 ring-cyan-400/20"
+                      : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                  }`}
+                >
                   <Braces className="h-2.5 w-2.5 md:h-3 md:w-3" />
-                ) : (
-                  <Code2 className="h-2.5 w-2.5 md:h-3 md:w-3" />
-                )}
-              </button>
+                </button>
+                <button
+                  onClick={() => handleViewModeChange("text")}
+                  title="Raw text view"
+                  className={`p-0.5 md:p-1 rounded transition-colors ${
+                    effectiveViewMode === "text"
+                      ? "text-cyan-300/90 bg-cyan-400/10 ring-1 ring-cyan-400/20"
+                      : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                  }`}
+                >
+                  <FileText className="h-2.5 w-2.5 md:h-3 md:w-3" />
+                </button>
+                <button
+                  onClick={() => handleViewModeChange("html")}
+                  title="HTML preview"
+                  className={`p-0.5 md:p-1 rounded transition-colors ${
+                    effectiveViewMode === "html"
+                      ? "text-cyan-300/90 bg-cyan-400/10 ring-1 ring-cyan-400/20"
+                      : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                  }`}
+                >
+                  <Globe className="h-2.5 w-2.5 md:h-3 md:w-3" />
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -321,7 +328,7 @@ export default function ResponsePanel() {
         )}
 
         {/* ── Floating Search ── */}
-        {searchOpen && (hasJson || activeTab === "headers") && (
+        {searchOpen && canSearch && (
           <FloatingSearch
             value={searchQuery}
             onChange={setSearchQuery}
@@ -335,30 +342,107 @@ export default function ResponsePanel() {
 
         {/* ── Body ── */}
         {proxyResponse ? (
-          <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             {activeTab === "headers" ? (
-              <HeadersTable headers={responseHeaders} searchQuery={searchQuery} />
+              <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
+                <HeadersTable headers={responseHeaders} searchQuery={searchQuery} />
+              </div>
             ) : proxyResponse.error ? (
-              <span className="font-mono text-[8px] md:text-[11px] text-red-400 whitespace-pre-wrap">
-                {proxyResponse.error}
-              </span>
-            ) : parsedData && rawView ? (
-              <pre className="font-mono text-[9px] md:text-[11px] text-white/60 leading-relaxed whitespace-pre-wrap break-all">
-                {typeof proxyResponse.data === "string"
-                  ? proxyResponse.data
-                  : JSON.stringify(proxyResponse.data, null, 2)}
-              </pre>
-            ) : parsedData ? (
-              <JsonNode
-                value={parsedData}
-                depth={0}
-                searchQuery={searchQuery}
-                defaultOpen={true}
-              />
+              <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
+                <span className="font-mono text-[8px] md:text-[11px] text-red-400 whitespace-pre-wrap">
+                  {proxyResponse.error}
+                </span>
+              </div>
+            ) : effectiveViewMode === "json" && parsedData ? (
+              <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
+                <JsonNode
+                  value={parsedData}
+                  depth={0}
+                  searchQuery={searchQuery}
+                  defaultOpen={true}
+                />
+              </div>
+            ) : effectiveViewMode === "html" ? (
+              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                {/* Preview header with inspect toggle */}
+                <div className="shrink-0 border-b border-white/5 bg-[#080f1a]/40 px-2 py-1 flex items-center gap-2">
+                  <Globe className="h-2.5 w-2.5 text-white/25" />
+                  <span className="text-[8px] md:text-[10px] text-white/25 tracking-wider uppercase">Preview</span>
+                  <button
+                    onClick={() => setInspectMode(!inspectMode)}
+                    title={inspectMode ? "Exit inspect mode" : "Inspect elements"}
+                    className={`ml-auto p-1 rounded transition-colors ${
+                      inspectMode
+                        ? "text-cyan-300 bg-cyan-400/10 ring-1 ring-cyan-400/20"
+                        : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                    }`}
+                  >
+                    <Crosshair className="h-3 w-3" />
+                  </button>
+                </div>
+
+                {/* Preview content */}
+                <div className={`flex-1 min-h-0 overflow-auto bg-white ${inspectMode ? "cursor-crosshair" : ""}`}>
+                  <HtmlPreview
+                    html={rawText}
+                    requestUrl={requestUrl}
+                    inspectMode={inspectMode}
+                    onElementSelect={(info) => {
+                      setSelectedElement(info);
+                      // Find and highlight the source line
+                      const sourceLines = rawText.split("\n");
+                      const lineNum = findElementSourceLine(
+                        info.tagName,
+                        info.attributes,
+                        sourceLines
+                      );
+                      setHighlightedSourceLine(lineNum);
+                    }}
+                  />
+                </div>
+
+                {/* Element inspector panel */}
+                {selectedElement && (
+                  <ElementInspector
+                    info={selectedElement}
+                    onClose={() => {
+                      setSelectedElement(null);
+                      setHighlightedSourceLine(null);
+                    }}
+                  />
+                )}
+
+                {/* Source view header */}
+                <div className="shrink-0 border-t border-white/5 bg-[#080f1a]/40 px-2 py-1 flex items-center gap-2">
+                  <Code2 className="h-2.5 w-2.5 text-white/25" />
+                  <span className="text-[8px] md:text-[10px] text-white/25 tracking-wider uppercase">Source</span>
+                  {highlightedSourceLine !== null && (
+                    <span className="text-[8px] text-cyan-400/50 ml-auto">
+                      Line {highlightedSourceLine + 1}
+                    </span>
+                  )}
+                </div>
+
+                {/* Source code viewer with line numbers */}
+                <div className="flex-1 min-h-0 overflow-auto">
+                  <HtmlSourceViewer
+                    source={rawText}
+                    searchQuery={searchQuery}
+                    highlightedLine={highlightedSourceLine}
+                    onLineClick={(line) => setHighlightedSourceLine(line)}
+                  />
+                </div>
+              </div>
             ) : (
-              <pre className="text-[8px] md:text-[11px] text-white/60 leading-relaxed whitespace-pre-wrap wrap-words">
-                {String(proxyResponse.data || '')}
-              </pre>
+              <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
+                <pre className="font-mono text-[8px] md:text-[11px] text-white/60 leading-relaxed whitespace-pre-wrap break-all">
+                  {searchQuery ? (
+                    <Highlight text={rawText} query={searchQuery} />
+                  ) : (
+                    rawText
+                  )}
+                </pre>
+              </div>
             )}
           </div>
         ) : (

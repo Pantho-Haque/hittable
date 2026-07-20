@@ -46,13 +46,16 @@ hittable/
 │   ├── RequestForm/              # Request building components
 │   │   ├── UrlBar.tsx            # URL input, method selector, send/save/copy buttons
 │   │   ├── TabEditor.tsx         # Params/Body/Headers tabs with JSON/table modes
-│   │   ├── ResponsePanel.tsx     # Response display with tabs, search, raw view
+│   │   ├── ResponsePanel.tsx     # Response display with tabs, search, raw view toggle
 │   │   └── ResponsePanelComponents/
 │   │       ├── JsonNode.tsx      # Recursive JSON tree renderer
 │   │       ├── FloatingSearch.tsx # Floating search bar for response
 │   │       ├── Highlight.tsx     # Text match highlighting
 │   │       ├── CopyButton.tsx    # Copy JSON to clipboard
-│   │       └── MatchContext.tsx  # React context for match registry
+│   │       ├── MatchContext.tsx  # React context for match registry
+│   │       ├── HtmlPreview.tsx   # Sandboxed HTML preview with base href injection and inspect mode
+│   │       ├── HtmlSourceViewer.tsx # Line-numbered, syntax-highlighted HTML source with code folding
+│   │       └── ElementInspector.tsx # Element info panel for inspect mode
 │   ├── modals/                   # All modal dialogs
 │   │   ├── CreateModal.tsx       # Create collection/route/folder
 │   │   ├── RenameModal.tsx       # Rename collection/route/folder
@@ -314,8 +317,9 @@ See `IMPORT_EXPORT_FORMATS.md` for detailed schema documentation.
 
 ### Partially Implemented / In-Progress
 
-- **SyntaxHighlighter** (`components/hittable/SyntaxHighlighter.tsx`) — exists but usage is minimal
+- **SyntaxHighlighter** (`components/hittable/SyntaxHighlighter.tsx`) — exists but usage is minimal; HTML source highlighting uses custom implementation
 - **Stores/auth.ts** — minimal auth store, not actively used in main flow
+- **HTML Inspect Mode** — Basic element inspection (tag, attributes, outer HTML) works via parent-side DOM access; advanced features like computed styles, box model, and DOM tree navigation deferred to follow-up
 
 ---
 

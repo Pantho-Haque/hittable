@@ -4,7 +4,11 @@ All notable changes to Hittable will be documented in this file.
 
 ## [Unreleased]
 
-### Added
+### Fixed
+- **HTML preview asset loading** — Assets (images, CSS) now load correctly in HTML preview. Added `<base href>` injection using the original request URL's origin and directory path, so relative URLs resolve against the source server. Same-origin assets are rewritten to route through `/api/proxy/asset` endpoint to bypass CORS restrictions. Cross-origin assets still subject to browser CORS rules.
+- **HTML preview inspect mode** — Inspect Element mode now works correctly. Removed the injected-script approach (which couldn't run without `allow-scripts`) and replaced with direct DOM access via `iframe.contentDocument`. Hover highlights elements with a cyan overlay; click captures tag name, attributes, and outer HTML.
+- **HTML source view readability** — Minified HTML source now displays properly formatted with line numbers. Added `js-beautify` for HTML/CSS/JS reformatting, ensuring minified inline `<script>` and `<style>` blocks are expanded into readable multi-line format. Line numbers and fold indicators now correspond to meaningful, readable lines.
+- **Asset proxy endpoint** — New GET `/api/proxy/asset` route for fetching HTML sub-resources (images, CSS) through the server to bypass CORS. Returns assets with proper Content-Type headers and cache headers.
 - **Auto-set Content-Type header** — When switching body type (JSON, form-urlencoded, text, multipart), the corresponding Content-Type header is automatically set/updated. Manual overrides are preserved — only auto-set values are replaced. Multipart Content-Type is left to fetch/proxy to set with proper boundary.
 - **File row compact chip UI** — File rows now display selected files as compact chips (paperclip icon + filename, truncated at 160px max) with an × button to remove individual files. An "+ Add file" button appears below chips for adding more files. Cleaner visual hierarchy than the previous full-width button.
 
