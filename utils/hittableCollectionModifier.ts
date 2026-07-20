@@ -11,8 +11,6 @@ import {
   renameItem,
   updateRoute,
   nameExistsInPath,
-  getItemsAtPath,
-  collectAllRouteNames,
 } from "@/utils/treeHelpers";
 
 export const createCollectionName = (

@@ -9,7 +9,6 @@ import {
   CopyButton,
   JsonNode,
   Highlight,
-  MatchRegistry,
 } from "@/components";
 import { countMatches } from "@/utils/responsePanelUtils";
 import useKeypress from "@/hooks/useKeypress";
@@ -182,6 +181,66 @@ export default function ResponsePanel() {
   const requestUrl = selectorResponse?.curlJson?.url;
 
   const showCopyButton = activeTab === "body" && effectiveViewMode !== "html";
+
+  const statusOk = proxyResponse?.status != null && proxyResponse.status >= 200 && proxyResponse.status < 300;
+  const statusWarn = proxyResponse?.status != null && proxyResponse.status >= 300 && proxyResponse.status < 500;
+
+  const parsedData = useMemo<JsonValue | null>(() => {
+    if (!proxyResponse?.data) return null;
+    try {
+      return typeof proxyResponse.data === "string"
+        ? (JSON.parse(proxyResponse.data) as JsonValue)
+        : (proxyResponse.data as JsonValue);
+    } catch {
+      return null;
+    }
+  }, [proxyResponse?.data]);
+
+  const rawText = useMemo(() => {
+    if (!proxyResponse?.data) return "";
+    return typeof proxyResponse.data === "string"
+      ? proxyResponse.data
+      : JSON.stringify(proxyResponse.data, null, 2);
+  }, [proxyResponse?.data]);
+
+  const headerCount = Object.keys(responseHeaders).length;
+
+  const totalMatches = useMemo(() => {
+    if (activeTab === "headers") {
+      if (!searchQuery) return 0;
+      const q = searchQuery.toLowerCase();
+      return Object.entries(responseHeaders).filter(
+        ([k, v]) => k.toLowerCase().includes(q) || v.toLowerCase().includes(q)
+      ).length;
+    }
+    return parsedData && searchQuery ? countMatches(parsedData, searchQuery) : 0;
+  }, [parsedData, searchQuery, activeTab, responseHeaders]);
+
+  const canSearch = (parsedData !== null && !proxyResponse?.error) || activeTab === "headers";
+
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleCopyHeaders = () => {
+    navigator.clipboard.writeText(JSON.stringify(responseHeaders, null, 2));
+    setHeadersCopied(true);
+    setTimeout(() => setHeadersCopied(false), 1500);
+  };
+
+  const handleViewModeChange = (mode: ResponseViewMode) => {
+    setViewMode(mode);
+    setUserOverrodeMode(true);
+  };
+
+  const matchCtxValue = useMemo(() => ({ register, activeIndex }), [register, activeIndex]);
 
   return (
     <MatchCtx.Provider value={matchCtxValue}>
