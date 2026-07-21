@@ -18,6 +18,7 @@ import type { ElementInfo } from "./ResponsePanelComponents/HtmlPreview";
 import HtmlSourceViewer from "./ResponsePanelComponents/HtmlSourceViewer";
 import ElementInspector from "./ResponsePanelComponents/ElementInspector";
 import { findElementSourceLine } from "@/utils/htmlFormatter";
+import type { DataSource } from "@/types/workspace";
 
 type ResponseViewMode = "json" | "text" | "html";
 
@@ -92,8 +93,9 @@ function detectViewMode(headers: Record<string, string>): ResponseViewMode {
   return "text";
 }
 
-export default function ResponsePanel() {
-  const { proxyResponse } = useDataContext();
+export default function ResponsePanel({ dataSource: propDataSource }: { dataSource?: DataSource } = {}) {
+  const contextData = useDataContext();
+  const { proxyResponse } = propDataSource ?? contextData;
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);

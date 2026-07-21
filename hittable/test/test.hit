@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "url": "https://jsonplaceholder.typicode.com/todos/1",
+  "headers": {},
+  "params": {},
+  "body": "",
+  "response": null
+}

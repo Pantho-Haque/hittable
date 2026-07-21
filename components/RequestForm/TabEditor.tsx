@@ -6,6 +6,7 @@ import { modifyUrlForNewParams } from "@/utils/responsePanelUtils";
 import { useDataContext } from "@/context/dataContext";
 import useKeypress from "@/hooks/useKeypress";
 import { Braces, Table2, Plus, Trash2, Sparkles } from "lucide-react";
+import type { DataSource } from "@/types/workspace";
 
 type ViewMode = "json" | "table";
 
@@ -163,11 +164,13 @@ function KeyValueTable({
 
 export default function TabEditor({
   setError,
+  dataSource: propDataSource,
 }: {
   setError: Dispatch<SetStateAction<string | null>>;
+  dataSource?: DataSource;
 }) {
-
-  const { formInput, setFormInput } = useDataContext();
+  const contextData = useDataContext();
+  const { formInput, setFormInput } = propDataSource ?? contextData;
 
   const [activeTab, setActiveTab] = useState<"params" | "body" | "headers">(
     "params",

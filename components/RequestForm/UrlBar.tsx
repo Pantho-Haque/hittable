@@ -12,8 +12,10 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import { useDataContext } from "@/context/dataContext";
 import { useNotification } from "@/hooks/useNotify";
 import SaveFromHistoryModal from "@/components/modals/SaveFromHistoryModal";
+import type { DataSource } from "@/types/workspace";
 
-export default function UrlBar({ error }: { error: string | null }) {
+export default function UrlBar({ error, dataSource: propDataSource }: { error: string | null; dataSource?: DataSource }) {
+  const contextData = useDataContext();
   const {
     formInput,
     setFormInput,
@@ -26,7 +28,7 @@ export default function UrlBar({ error }: { error: string | null }) {
     setHistory,
     collections,
     setCollections,
-  } = useDataContext();
+  } = propDataSource ?? contextData;
   const { error: notifyError } = useNotification();
 
   const { env, secrets } = selectorResponse!;
@@ -36,6 +38,11 @@ export default function UrlBar({ error }: { error: string | null }) {
   const [proxyLoading, setProxyLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
+  const envRef = useRef(env);
+  const secretsRef = useRef(secrets);
+
+  useEffect(() => { envRef.current = env; }, [env]);
+  useEffect(() => { secretsRef.current = secrets; }, [secrets]);
 
   const autoResize = () => {
     const el = textareaRef.current;
@@ -85,10 +92,9 @@ export default function UrlBar({ error }: { error: string | null }) {
 
   const sendProxyRequest = useCallback(async () => {
     setProxyLoading(true);
-    setProxyResponse(null);
     const startTime = performance.now();
     try {
-      const res = await hittableProxy(formInput, env, secrets, extensionAvailable);
+      const res = await hittableProxy(formInput, envRef.current, secretsRef.current, extensionAvailable);
       const durationMs = Math.round(performance.now() - startTime);
       const sizeBytes = res.data ? new TextEncoder().encode(JSON.stringify(res.data)).byteLength : 0;
       setProxyResponse({ ...res, durationMs, sizeBytes });
@@ -116,7 +122,7 @@ export default function UrlBar({ error }: { error: string | null }) {
     } finally {
       setProxyLoading(false);
     }
-  }, [setProxyResponse, formInput, env, secrets, extensionAvailable, history, setHistory]);
+  }, [setProxyResponse, formInput, extensionAvailable, history, setHistory]);
 
   function handleUrlPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const pasted = e.clipboardData.getData("text").trim();

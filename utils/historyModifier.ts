@@ -32,18 +32,18 @@ export function addHistoryEntry(
     timestamp: Date.now(),
   };
   const updated = [newEntry, ...history].slice(0, MAX_ENTRIES);
-  saveHistory(updated);
+  setTimeout(() => saveHistory(updated), 0);
   return updated;
 }
 
 export function removeHistoryEntry(history: THistory, id: string): THistory {
   const updated = history.filter((e) => e.id !== id);
-  saveHistory(updated);
+  setTimeout(() => saveHistory(updated), 0);
   return updated;
 }
 
 export function clearHistory(): THistory {
-  saveHistory([]);
+  setTimeout(() => saveHistory([]), 0);
   return [];
 }
 

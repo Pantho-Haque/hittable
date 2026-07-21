@@ -1,6 +1,7 @@
 export * from "./notification";
 export * from "./hittable";
 export * from "./note";
+export * from "./workspace";
 
 export type TApiResponse<T> = {
   data?: T;

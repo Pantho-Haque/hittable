@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import WorkspaceSwitcher from "@/components/workspace/WorkspaceSwitcher";
+
 export default function Topbar() {
   const pathname = usePathname();
   const isApp = pathname === "/hittable";
@@ -60,9 +62,7 @@ export default function Topbar() {
       {/* Right — CTA */}
       <div className="flex items-center gap-3">
         {isApp ? (
-          <>
-            {/* <LocalConnectionModal /> */}
-          </>
+          <WorkspaceSwitcher />
         ) : (
           <Link
             href="/hittable"
