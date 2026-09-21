@@ -14,6 +14,7 @@ import (
 	"github.com/hittable/shellapp/internal/gitx"
 	"github.com/hittable/shellapp/ui/components/explorer"
 	"github.com/hittable/shellapp/ui/components/gitpanel"
+	"github.com/hittable/shellapp/ui/components/mdpreview"
 	"github.com/hittable/shellapp/ui/components/palette"
 	"github.com/hittable/shellapp/ui/components/requesteditor"
 	"github.com/hittable/shellapp/ui/components/responseviewer"
@@ -32,6 +33,16 @@ const (
 	FocusResponse
 	FocusTextEditor
 	FocusMethodDropdown
+	FocusPreview
+)
+
+// MdMode is how a Markdown file is shown.
+type MdMode int
+
+const (
+	MdText MdMode = iota
+	MdPreview
+	MdSplit
 )
 
 type ViewMode int
@@ -61,6 +72,8 @@ type MainScreen struct {
 	Repo     *gitx.Repo
 	Git      *gitpanel.Panel
 	Palette  *palette.Palette
+	Preview  *mdpreview.Preview
+	MdMode   MdMode
 
 	Focus           FocusArea
 	LastFocus       FocusArea
@@ -75,9 +88,12 @@ type MainScreen struct {
 	EditorHeight    int
 	TermFocused     bool
 	GitOpen         bool
+	ExplorerHidden  bool
 	BlameOn         bool
 	lastGitRefresh  time.Time
 	blame           []gitx.BlameLine
+	gitPolling      bool
+	gitKey          string
 	Sending         bool
 	StatusBar       string
 	ExplorerFocused bool
@@ -143,6 +159,7 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 		Repo:            repo,
 		Git:             git,
 		Palette:         pal,
+		Preview:         mdpreview.New(),
 		Focus:           FocusExplorerPane,
 		LastFocus:       FocusURLBar,
 		ExplorerFocused: true,
@@ -191,6 +208,9 @@ func (m *MainScreen) SetSize(w, h int) {
 		m.ExplorerWidth = w - 20
 	}
 	m.MainWidth = w - m.ExplorerWidth - 1
+	if m.ExplorerHidden {
+		m.MainWidth = w
+	}
 
 	// Main column: main pane (MainH rows) + terminal strip (1) + terminal
 	// panel when open; footer takes the last row.
@@ -237,6 +257,21 @@ func (m *MainScreen) SetSize(w, h int) {
 	m.Body.SetSize(m.MainWidth-4, m.EditorHeight-2)
 	m.Response.SetSize(m.MainWidth-4, respInner)
 	m.TextEd.SetSize(m.MainWidth-2, m.MainH-3)
+	m.Preview.SetSize(m.MainWidth, m.MainH-1)
+	if m.isMarkdown() && m.MdMode == MdSplit {
+		left := m.MainWidth / 2
+		m.TextEd.SetSize(left-2, m.MainH-3)
+		m.Preview.SetSize(m.MainWidth-left, m.MainH-1)
+	}
+}
+
+// isMarkdown reports whether the active file is a .md document.
+func (m *MainScreen) isMarkdown() bool {
+	if m.ActiveFile == "" {
+		return false
+	}
+	doc := m.Store.Get(m.ActiveFile)
+	return doc != nil && doc.Kind == document.KindMarkdown
 }
 
 // termRows is the terminal panel height when open.

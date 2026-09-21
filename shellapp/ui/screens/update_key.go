@@ -57,6 +57,12 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// leave it. (ctrl+c goes to the shell, as in VS Code.)
 	if m.TermFocused {
 		switch key {
+		case "shift+up", "shift+pgup":
+			m.Term.Scroll(m.Term.Rows / 2)
+			return m, nil
+		case "shift+down", "shift+pgdown":
+			m.Term.Scroll(-m.Term.Rows / 2)
+			return m, nil
 		case "ctrl+b":
 			m.TermFocused = false
 			m.LastFocus = m.Focus
@@ -96,7 +102,11 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "ctrl+t":
 		if m.ActiveFile != "" && !m.inTextPrompt() {
-			m.toggleViewMode()
+			if m.isMarkdown() {
+				m.setMdMode((m.MdMode + 1) % 3)
+			} else {
+				m.toggleViewMode()
+			}
 			return m, nil
 		}
 	case "ctrl+y":
@@ -118,9 +128,22 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m.handleEsc()
 		case "shift+tab":
+			if m.isMarkdown() && m.MdMode == MdSplit {
+				m.blurAll()
+				m.Focus = FocusPreview
+				return m, nil
+			}
 			return m.handleShiftTab()
 		}
-		return m, m.handleTextEditorKey(msg)
+		cmd := m.handleTextEditorKey(msg)
+		if m.isMarkdown() && m.MdMode == MdSplit {
+			// Keep the preview near the cursor while editing.
+			if n := m.TextEd.TextArea.LineCount(); n > 1 {
+				m.Preview.SetContent(m.TextEd.GetContent())
+				m.Preview.ScrollToFraction(float64(m.TextEd.GetCursorRow()) / float64(n-1))
+			}
+		}
+		return m, cmd
 	}
 
 	if m.ExplorerFocused {
@@ -131,6 +154,21 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.Focus == FocusResponse && m.Response.SearchOpen {
 		return m, m.handleResponseSearchKey(msg)
+	}
+
+	if m.Focus == FocusPreview {
+		switch key {
+		case "esc":
+			return m.handleEsc()
+		case "tab", "shift+tab":
+			if m.MdMode == MdSplit {
+				m.Focus = FocusTextEditor
+				m.focusCurrent()
+			}
+			return m, nil
+		}
+		m.Preview.HandleKey(msg)
+		return m, nil
 	}
 
 	switch key {
@@ -195,6 +233,15 @@ func (m *MainScreen) inTextPrompt() bool {
 }
 
 func (m *MainScreen) toggleExplorerFocus() tea.Cmd {
+	if m.ExplorerHidden {
+		m.ExplorerHidden = false
+		m.SetSize(m.Width, m.Height)
+		m.LastFocus = m.Focus
+		m.blurAll()
+		m.Focus = FocusExplorerPane
+		m.setExplorerFocused(true)
+		return nil
+	}
 	if m.ExplorerFocused {
 		if m.ActiveFile == "" {
 			return nil
@@ -483,6 +530,8 @@ func (m *MainScreen) navKey(key string) bool {
 		m.toggleTerminal()
 	case "f1":
 		m.toggleHelp()
+	case "alt+b":
+		m.toggleExplorer()
 	default:
 		return false
 	}

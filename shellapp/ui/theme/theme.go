@@ -187,6 +187,9 @@ var (
 	TopBarBrandStyle  = lipgloss.NewStyle().Background(TopBarBg).Foreground(BrandCyan).Bold(true)
 	TopBarBranchStyle = lipgloss.NewStyle().Background(lipgloss.Color("#343746")).Foreground(SecondaryColor).Bold(true).Padding(0, 2)
 
+	// Markdown preview code blocks.
+	CodeBlockStyle = lipgloss.NewStyle().Background(lipgloss.Color("#21222c"))
+
 	// Help overlay.
 	HelpKeyStyle  = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Width(16)
 	HelpDescStyle = lipgloss.NewStyle().Foreground(TextColor)

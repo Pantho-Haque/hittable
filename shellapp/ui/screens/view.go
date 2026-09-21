@@ -46,6 +46,9 @@ func (m *MainScreen) View() string {
 		mainCol = lipgloss.JoinVertical(lipgloss.Left, mainCol, m.Zones.Mark("term_view", m.Term.View()))
 	}
 	split := lipgloss.JoinHorizontal(lipgloss.Top, explorerView, separator, mainCol)
+	if m.ExplorerHidden {
+		split = mainCol
+	}
 	footer := m.renderFooter()
 
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderTopBar(), split, footer)
@@ -96,7 +99,56 @@ func (m *MainScreen) renderRunnerView() string {
 
 func (m *MainScreen) renderTextView() string {
 	breadcrumb := theme.BreadcrumbStyle.Render(m.relPath())
-	return lipgloss.JoinVertical(lipgloss.Left, breadcrumb, m.Zones.Mark("editor", m.TextEd.View()))
+	if !m.isMarkdown() {
+		return lipgloss.JoinVertical(lipgloss.Left, breadcrumb, m.Zones.Mark("editor", m.TextEd.View()))
+	}
+
+	// Markdown: header with the Text / Preview / Split toggle.
+	seg := func(id, label string, mode MdMode) string {
+		st := theme.MutedStyle
+		if m.MdMode == mode {
+			st = theme.TabActiveStyle
+		} else if m.HoverZone == id {
+			st = theme.HoverStyle
+		}
+		return m.Zones.Mark(id, st.Render(label))
+	}
+	toggle := "[ " + seg("md_text", "Text", MdText) + " | " + seg("md_preview", "Preview", MdPreview) + " | " + seg("md_split", "Split", MdSplit) + " ]"
+	gap := m.MainWidth - lipgloss.Width(breadcrumb) - lipgloss.Width(toggle)
+	if gap < 1 {
+		gap = 1
+	}
+	header := breadcrumb + strings.Repeat(" ", gap) + toggle
+
+	var body string
+	switch m.MdMode {
+	case MdPreview:
+		m.Preview.SetContent(m.TextEd.GetContent())
+		body = m.Zones.Mark("md_pane", m.Preview.View(m.Focus == FocusPreview))
+	case MdSplit:
+		m.Preview.SetContent(m.TextEd.GetContent())
+		body = lipgloss.JoinHorizontal(lipgloss.Top,
+			m.Zones.Mark("editor", m.TextEd.View()),
+			m.Zones.Mark("md_pane", m.Preview.View(m.Focus == FocusPreview)))
+	default:
+		body = m.Zones.Mark("editor", m.TextEd.View())
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, header, body)
+}
+
+// setMdMode switches the Markdown view and re-lays out the panes.
+func (m *MainScreen) setMdMode(mode MdMode) {
+	m.MdMode = mode
+	m.SetSize(m.Width, m.Height)
+	switch mode {
+	case MdPreview:
+		m.blurAll()
+		m.Focus = FocusPreview
+		m.Preview.ScrollY = 0
+	default:
+		m.Focus = FocusTextEditor
+		m.focusCurrent()
+	}
 }
 
 // renderBinaryPlaceholder shows a friendly "Binary file" message instead of
@@ -204,6 +256,10 @@ var helpSections = []struct {
 		{"ctrl+e  ctrl+d", "rename / delete"},
 		{"r", "refresh tree"},
 	}},
+	{"Markdown", []helpRow{
+		{"ctrl+t", "Text → Preview → Split (mermaid diagrams rendered)"},
+		{"tab", "editor ⇄ preview in split view"},
+	}},
 	{"Find", []helpRow{
 		{"ctrl+p  /", "find file by name (fuzzy)"},
 		{"alt+f", "live grep file contents"},
@@ -241,9 +297,17 @@ func (m *MainScreen) renderHelp() string {
 	inner := m.MainWidth - 2
 	var body string
 	if inner >= 2*52 {
+		var left, right []string
+		for i, c := range cols {
+			if i%2 == 0 {
+				left = append(left, c)
+			} else {
+				right = append(right, c)
+			}
+		}
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
-			lipgloss.JoinVertical(lipgloss.Left, cols[0], cols[2], cols[3]), "  ",
-			lipgloss.JoinVertical(lipgloss.Left, cols[1], cols[4]))
+			lipgloss.JoinVertical(lipgloss.Left, left...), "  ",
+			lipgloss.JoinVertical(lipgloss.Left, right...))
 	} else {
 		body = lipgloss.JoinVertical(lipgloss.Left, cols...)
 	}
@@ -269,7 +333,10 @@ func (m *MainScreen) renderTermStrip() string {
 	}
 	hint := "  ctrl+j toggle"
 	if m.TermFocused {
-		hint = "  ctrl+j hide · ctrl+b explorer"
+		hint = "  ctrl+j hide · ctrl+b explorer · wheel scrolls back"
+	}
+	if off := m.Term.ScrollOffset; off > 0 {
+		hint = fmt.Sprintf("  ↑ scrollback %d/%d · any key returns", off, m.Term.ScrollbackLen())
 	}
 	line := st.Render(label) + theme.MutedStyle.Background(theme.SurfaceColor).Render(hint)
 	line = ansi.Truncate(line, m.MainWidth, "")

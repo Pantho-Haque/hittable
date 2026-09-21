@@ -41,7 +41,7 @@ type addConfirmMsg struct {
 }
 
 func (m *MainScreen) Init() tea.Cmd {
-	return nil
+	return gitTick()
 }
 
 func (m *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -60,6 +60,11 @@ func (m *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case gitpanel.DoneMsg:
 		m.Git.Done(msg)
+		return m, nil
+	case gitTickMsg:
+		return m, m.pollGit()
+	case gitStatusMsg:
+		m.applyStatus(msg)
 		return m, nil
 	case palette.ResultsMsg:
 		m.Palette.Deliver(msg)

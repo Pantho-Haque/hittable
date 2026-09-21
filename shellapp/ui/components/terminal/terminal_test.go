@@ -55,3 +55,43 @@ func TestKeyBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestScrollbackAndPaste(t *testing.T) {
+	term := New(t.TempDir(), nil)
+	term.shell = "/bin/sh"
+	term.SetSize(60, 6)
+	if err := term.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer term.Close()
+	time.Sleep(200 * time.Millisecond)
+	// Print 30 numbered lines: 24+ must land in scrollback.
+	term.Paste("i=1; while [ $i -le 30 ]; do echo line_$i; i=$((i+1)); done\n")
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(term.Snapshot(), "line_30") {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(term.Snapshot(), "line_30") {
+		t.Fatalf("loop did not run:\n%s", term.Snapshot())
+	}
+	time.Sleep(100 * time.Millisecond)
+	if n := term.ScrollbackLen(); n < 20 {
+		t.Fatalf("scrollback has %d lines, want >= 20", n)
+	}
+	term.Scroll(20)
+	if v := term.View(); !strings.Contains(v, "line_1") || strings.Contains(v, "line_30") {
+		t.Errorf("scrolled view should show older lines:\n%s", v)
+	}
+	term.SendKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	if term.ScrollOffset != 0 {
+		t.Error("a key should snap back to the live screen")
+	}
+	// A large paste must not block the caller.
+	done := make(chan struct{})
+	go func() { term.Paste(strings.Repeat("# filler text for the paste buffer\n", 400)); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Paste blocked the caller")
+	}
+}

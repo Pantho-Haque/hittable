@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -405,4 +406,141 @@ func (r *Repo) StashDrop(ref string) error {
 func (r *Repo) StashShow(ref string) string {
 	out, _ := r.Run("stash", "show", "-p", "--include-untracked", ref)
 	return out
+}
+
+// ---------- sync / publish ----------
+
+// Sync mirrors VS Code's default: pull then push; with no upstream it
+// publishes the branch to origin.
+func (r *Repo) Sync(st *Status) (string, error) {
+	if st != nil && st.Upstream == "" {
+		return r.Run("push", "-u", "origin", "HEAD")
+	}
+	out, err := r.Run("pull")
+	if err != nil {
+		return out, err
+	}
+	out2, err := r.Run("push")
+	return out + out2, err
+}
+
+// ---------- merge conflicts ----------
+
+// MergeInProgress reports whether a merge (or rebase / cherry-pick) is
+// waiting for conflict resolution, and which kind.
+func (r *Repo) MergeInProgress() (bool, string) {
+	for _, k := range []struct{ ref, name string }{{"MERGE_HEAD", "merge"}, {"REBASE_HEAD", "rebase"}, {"CHERRY_PICK_HEAD", "cherry-pick"}} {
+		if _, err := r.Run("rev-parse", "-q", "--verify", k.ref); err == nil {
+			return true, k.name
+		}
+	}
+	return false, ""
+}
+
+func (r *Repo) MergeAbort(kind string) error {
+	switch kind {
+	case "rebase":
+		_, err := r.Run("rebase", "--abort")
+		return err
+	case "cherry-pick":
+		_, err := r.Run("cherry-pick", "--abort")
+		return err
+	}
+	_, err := r.Run("merge", "--abort")
+	return err
+}
+
+// MergeContinue commits the resolved merge (or continues the rebase).
+func (r *Repo) MergeContinue(kind string) error {
+	switch kind {
+	case "rebase":
+		_, err := r.RunEnv([]string{"GIT_EDITOR=true"}, "rebase", "--continue")
+		return err
+	case "cherry-pick":
+		_, err := r.RunEnv([]string{"GIT_EDITOR=true"}, "cherry-pick", "--continue")
+		return err
+	}
+	_, err := r.Run("commit", "--no-edit")
+	return err
+}
+
+// RunEnv is Run with extra environment variables.
+func (r *Repo) RunEnv(env []string, args ...string) (string, error) {
+	cmd := exec.Command("git", append([]string{"-C", r.Root}, args...)...)
+	cmd.Env = append(os.Environ(), env...)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(errb.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return out.String(), errors.New(msg)
+	}
+	return out.String(), nil
+}
+
+// Conflict is one <<<<<<< / ======= / >>>>>>> block: line indexes into the
+// file (0-based, Start = marker line, End = closing marker line).
+type Conflict struct {
+	Start, Mid, End int
+	Ours, Theirs    []string
+	OursLabel       string
+	TheirsLabel     string
+}
+
+// ParseConflicts finds conflict blocks in file content.
+func ParseConflicts(content string) []Conflict {
+	lines := strings.Split(content, "\n")
+	var out []Conflict
+	for i := 0; i < len(lines); i++ {
+		if !strings.HasPrefix(lines[i], "<<<<<<<") {
+			continue
+		}
+		c := Conflict{Start: i, Mid: -1, End: -1, OursLabel: strings.TrimSpace(strings.TrimPrefix(lines[i], "<<<<<<<"))}
+		for j := i + 1; j < len(lines); j++ {
+			switch {
+			case c.Mid < 0 && strings.HasPrefix(lines[j], "======="):
+				c.Mid = j
+			case c.Mid >= 0 && strings.HasPrefix(lines[j], ">>>>>>>"):
+				c.End = j
+				c.TheirsLabel = strings.TrimSpace(strings.TrimPrefix(lines[j], ">>>>>>>"))
+			}
+			if c.End >= 0 {
+				break
+			}
+		}
+		if c.Mid < 0 || c.End < 0 {
+			break
+		}
+		c.Ours = lines[c.Start+1 : c.Mid]
+		c.Theirs = lines[c.Mid+1 : c.End]
+		out = append(out, c)
+		i = c.End
+	}
+	return out
+}
+
+// Resolve replaces conflict block idx with the chosen side(s):
+// "ours", "theirs" or "both".
+func Resolve(content string, idx int, choice string) string {
+	cs := ParseConflicts(content)
+	if idx < 0 || idx >= len(cs) {
+		return content
+	}
+	c := cs[idx]
+	lines := strings.Split(content, "\n")
+	var repl []string
+	switch choice {
+	case "ours":
+		repl = c.Ours
+	case "theirs":
+		repl = c.Theirs
+	default:
+		repl = append(append([]string{}, c.Ours...), c.Theirs...)
+	}
+	out := append([]string{}, lines[:c.Start]...)
+	out = append(out, repl...)
+	out = append(out, lines[c.End+1:]...)
+	return strings.Join(out, "\n")
 }

@@ -146,8 +146,11 @@ func TestLayoutFits(t *testing.T) {
 			"termopen":    func() { m.Explorer.MenuOpen = false; m.Term.Open = true; m.SetSize(sz[0], sz[1]) },
 			"termrunner":  func() { m.toggleViewMode() },
 			"git":         func() { m.Term.Open = false; m.SetSize(sz[0], sz[1]); m.GitOpen = true },
+			"nosidebar":   func() { m.GitOpen = false; m.toggleExplorer() },
+			"mdpreview":   func() { m.toggleExplorer(); m.openFileRaw(filepath.Join(hd, "notes.md")); m.setMdMode(MdPreview) },
+			"mdsplit":     func() { m.setMdMode(MdSplit) },
 		}
-		for _, name := range []string{"runner", "dropdown", "search", "headers", "invalidjson", "help", "text", "menu", "termopen", "termrunner", "git"} {
+		for _, name := range []string{"runner", "dropdown", "search", "headers", "invalidjson", "help", "text", "menu", "termopen", "termrunner", "git", "nosidebar", "mdpreview", "mdsplit"} {
 			states[name]()
 			lines := strings.Split(m.View(), "\n")
 			if len(lines) != sz[1] {
@@ -345,4 +348,152 @@ func TestNavbarPanelsExclusive(t *testing.T) {
 	if m.ShowHelp {
 		t.Error("second F1 should close help")
 	}
+}
+
+// Merge conflict: resolve a block in the panel, mark resolved, commit the merge.
+func TestMergeConflictInPanel(t *testing.T) {
+	m, hd := newTestScreen(t)
+	root := filepath.Dir(hd)
+	git := func(args ...string) string {
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=T", "GIT_AUTHOR_EMAIL=t@x", "GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@x")
+		out, _ := cmd.CombinedOutput()
+		return string(out)
+	}
+	git("init", "-q", "-b", "main")
+	git("config", "user.email", "t@x")
+	git("config", "user.name", "T")
+	git("add", ".")
+	git("commit", "-q", "-m", "init")
+	git("checkout", "-q", "-b", "feature")
+	os.WriteFile(filepath.Join(hd, "notes.md"), []byte("theirs\n"), 0o644)
+	git("commit", "-q", "-am", "feature")
+	git("checkout", "-q", "main")
+	os.WriteFile(filepath.Join(hd, "notes.md"), []byte("ours\n"), 0o644)
+	git("commit", "-q", "-am", "main")
+	git("merge", "feature") // conflicts
+
+	m = NewMainScreen(root, m.Zones)
+	m.SetSize(120, 40)
+	if b := m.Explorer.GitStatus[filepath.Join(hd, "notes.md")]; b != "!" {
+		t.Errorf("conflict badge = %q", b)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyF5})
+	v := m.View()
+	if !strings.Contains(v, "merge in progress · 1 conflict") || !strings.Contains(v, "abort merge") {
+		t.Fatalf("merge header missing:\n%s", v)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // cursor sits on the conflicted file
+	if !m.Git.Resolving || len(m.Git.Conflicts) != 1 {
+		t.Fatalf("resolve mode: %v %d", m.Git.Resolving, len(m.Git.Conflicts))
+	}
+	if v := m.View(); !strings.Contains(v, "conflict 1/1") || !strings.Contains(v, "<<<<<<<") {
+		t.Fatalf("resolver view:\n%s", v)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")}) // accept both
+	if len(m.Git.Conflicts) != 0 {
+		t.Fatalf("conflict not resolved")
+	}
+	b, _ := os.ReadFile(filepath.Join(hd, "notes.md"))
+	if string(b) != "ours\ntheirs\n" {
+		t.Errorf("file after accept both: %q", b)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}) // mark resolved
+	v = m.View()
+	if m.Git.Resolving || !strings.Contains(v, "0 conflict(s)") || !strings.Contains(v, "commit merge") {
+		t.Fatalf("after mark resolved:\n%s", v)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")}) // top: the merge header (it has a button)
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})                     // header action: commit merge
+	if m.Git.Merge {
+		t.Errorf("merge should be finished: %s", m.View())
+	}
+	if log := git("log", "--oneline", "-1"); !strings.Contains(log, "Merge") {
+		t.Errorf("merge commit missing: %s", log)
+	}
+}
+
+func TestExplorerToggle(t *testing.T) {
+	m, hd := newTestScreen(t)
+	m.openFileRaw(filepath.Join(hd, "a.hit"))
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b"), Alt: true})
+	if !m.ExplorerHidden || m.MainWidth != m.Width || strings.Contains(m.View(), "/001") {
+		t.Fatalf("explorer should be hidden: hidden=%v main=%d", m.ExplorerHidden, m.MainWidth)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlB}) // ctrl+b unhides and focuses
+	if m.ExplorerHidden || !m.ExplorerFocused {
+		t.Errorf("ctrl+b should show and focus the explorer")
+	}
+	if m.Git.SyncLabel() == "" {
+		t.Error("sync label empty")
+	}
+}
+
+// Markdown: Text → Preview → Split via ctrl+t, mermaid rendered, toggle clickable.
+func TestMarkdownPreviewModes(t *testing.T) {
+	m, hd := newTestScreen(t)
+	md := filepath.Join(hd, "doc.md")
+	os.WriteFile(md, []byte("# Hello World\n\nSome *text*.\n\n```mermaid\ngraph LR\n  A[Start] --> B[Finish]\n```\n"), 0o644)
+	m.SetSize(140, 40)
+	m.openFileRaw(md)
+	if !m.isMarkdown() || m.MdMode != MdText {
+		t.Fatalf("md should open in text mode: md=%v mode=%d", m.isMarkdown(), m.MdMode)
+	}
+	if v := m.View(); !strings.Contains(v, "[ Text | Preview | Split ]") && !strings.Contains(v, "Preview") {
+		t.Fatalf("toggle missing:\n%s", v)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if m.MdMode != MdPreview || m.Focus != FocusPreview {
+		t.Fatalf("ctrl+t should enter preview: mode=%d focus=%d", m.MdMode, m.Focus)
+	}
+	v := stripAnsi(m.View())
+	if !strings.Contains(v, "Hello World") || strings.Contains(v, "*text*") {
+		t.Errorf("preview should render markdown (emphasis markers gone):\n%s", v)
+	}
+	if strings.Contains(v, "graph LR") || !strings.Contains(v, "Start") || !strings.Contains(v, "Finish") {
+		t.Errorf("mermaid should be rendered as a diagram:\n%s", v)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if m.MdMode != MdSplit || m.Focus != FocusTextEditor {
+		t.Fatalf("second ctrl+t should enter split: mode=%d focus=%d", m.MdMode, m.Focus)
+	}
+	v = stripAnsi(m.View())
+	if !strings.Contains(v, "# Hello World") || !strings.Contains(v, "Finish") {
+		t.Errorf("split should show editor and preview:\n%s", v)
+	}
+	// Typing in split updates the preview.
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlEnd})
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	for _, r := range "## Added" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if v := stripAnsi(m.View()); strings.Count(v, "Added") < 2 {
+		t.Errorf("preview did not follow the edit:\n%s", v)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if m.MdMode != MdText {
+		t.Errorf("third ctrl+t should return to text")
+	}
+	// .hit files keep the runner/text toggle on ctrl+t.
+	m.openFileRaw(filepath.Join(hd, "a.hit"))
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if m.ViewMode != ViewText {
+		t.Error("ctrl+t on .hit should toggle text view")
+	}
+}
+
+func stripAnsi(s string) string {
+	var b strings.Builder
+	in := false
+	for _, r := range s {
+		switch {
+		case r == 0x1b:
+			in = true
+		case in && (r == 'm' || r == 'z'):
+			in = false
+		case !in:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

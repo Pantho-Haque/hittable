@@ -137,3 +137,53 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+func TestMergeConflictFlow(t *testing.T) {
+	r := newRepo(t)
+	env := []string{"GIT_AUTHOR_NAME=T", "GIT_AUTHOR_EMAIL=t@x", "GIT_COMMITTER_NAME=T", "GIT_COMMITTER_EMAIL=t@x"}
+	must := func(args ...string) {
+		if out, err := r.RunEnv(env, args...); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	must("checkout", "-q", "-b", "feature")
+	os.WriteFile(filepath.Join(r.Root, "a.txt"), []byte("theirs\ntwo\n"), 0o644)
+	must("commit", "-q", "-am", "feature change")
+	must("checkout", "-q", "main")
+	os.WriteFile(filepath.Join(r.Root, "a.txt"), []byte("ours\ntwo\n"), 0o644)
+	must("commit", "-q", "-am", "main change")
+	if _, err := r.RunEnv(env, "merge", "feature"); err == nil {
+		t.Fatal("merge should conflict")
+	}
+	ok, kind := r.MergeInProgress()
+	if !ok || kind != "merge" {
+		t.Fatalf("merge in progress: %v %q", ok, kind)
+	}
+	st, _ := r.Status()
+	if len(st.Files) != 1 || !st.Files[0].Conflict() || st.Files[0].Badge() != "!" {
+		t.Fatalf("conflict status: %+v", st.Files)
+	}
+	content, _ := os.ReadFile(filepath.Join(r.Root, "a.txt"))
+	cs := ParseConflicts(string(content))
+	if len(cs) != 1 || cs[0].Ours[0] != "ours" || cs[0].Theirs[0] != "theirs" {
+		t.Fatalf("parse: %+v", cs)
+	}
+	resolved := Resolve(string(content), 0, "both")
+	if resolved != "ours\ntheirs\ntwo\n" {
+		t.Fatalf("resolve both: %q", resolved)
+	}
+	os.WriteFile(filepath.Join(r.Root, "a.txt"), []byte(resolved), 0o644)
+	if err := r.Stage("a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.MergeContinue("merge"); err != nil {
+		t.Fatalf("continue: %v", err)
+	}
+	if ok, _ := r.MergeInProgress(); ok {
+		t.Error("merge should be finished")
+	}
+	log, _ := r.Log(5, "")
+	if len(log) < 4 || !contains(log[0].Subject, "Merge") {
+		t.Errorf("log after merge: %+v", log)
+	}
+}

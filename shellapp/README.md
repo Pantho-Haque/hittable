@@ -96,6 +96,10 @@ hittable --icons emoji .
 
 Click the `▸ TERMINAL` strip under the main pane, or press `ctrl+j` (VS Code's panel toggle; `ctrl+`` also works in terminals that send it). While the panel has focus every key goes to the shell; `ctrl+b` returns to the explorer.
 
+## Markdown
+
+Open any `.md` file and press `ctrl+t` (or click `[ Text | Preview | Split ]` in the header) to switch between the editor, a rendered preview, and a split view whose preview updates as you type. The preview renders headings, lists, tables, task lists, links, and highlighted code blocks; ```mermaid fences become box-drawing diagrams (flowcharts, sequence, and ER diagrams).
+
 ## Find files and text
 
 - `ctrl+p` (or `/` in the explorer, or the `Find` button) opens the fuzzy file finder. Type part of a name, `⏎` opens.
@@ -115,7 +119,11 @@ Click `⎇ Git` in the top bar (or press `F5`, `alt+g`, or `g` in the explorer).
 - **Stashes** — `⏎` pop, `s` stash, `d` drop.
 - **Blame** — every line of the open file with author, age, and commit; `b` turns on inline blame in the editor gutter (with current-line blame in the status row), `⏎` jumps to the line.
 
-The explorer colours changed files and shows M/A/D/U badges; the top bar shows the branch, the number of changed files, and ahead/behind counts.
+The explorer colours changed files and shows M/A/D/U badges; the top bar shows the branch and the number of changed files, plus a sync button (VS Code's default: pull then push, or publish when the branch has no upstream).
+
+**Merge conflicts.** When a merge, rebase, or cherry-pick stops on conflicts, Status shows a `⚠ merge in progress` group with the conflicted files. `⏎` (or the `resolve` button) opens the resolver: each block is highlighted, `c` accepts current, `i` incoming, `b` both, `n`/`p` move between blocks, `a` marks the file resolved, `o` opens it in the editor. The group header commits the merge once everything is resolved, or aborts it.
+
+**Sidebar.** `alt+b` or the `☰` button hides the file explorer; `ctrl+b` brings it back.
 
 ## Troubleshooting keys
 

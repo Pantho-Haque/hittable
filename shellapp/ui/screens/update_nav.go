@@ -50,7 +50,7 @@ func (m *MainScreen) cycleFocus(dir int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	// Text view: Tab toggles editor <-> explorer.
-	if m.Focus == FocusTextEditor {
+	if m.Focus == FocusTextEditor || m.Focus == FocusPreview {
 		m.blurAll()
 		m.LastFocus = FocusTextEditor
 		m.Focus = FocusExplorerPane

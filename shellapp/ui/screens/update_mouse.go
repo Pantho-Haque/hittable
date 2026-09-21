@@ -41,6 +41,10 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Y == 0 {
 		if press {
 			switch m.findTopZone(msg) {
+			case "top_sidebar":
+				m.toggleExplorer()
+			case "top_sync":
+				m.Git.SyncAction()
 			case "top_git", "top_branch":
 				m.toggleGit()
 			case "top_find":
@@ -64,13 +68,13 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Separator column between explorer and main pane.
-	if press && x == m.ExplorerWidth {
+	if press && !m.ExplorerHidden && x == m.ExplorerWidth {
 		m.Dragging = true
 		m.DragStartX = x
 		return m, nil
 	}
 
-	if x < m.ExplorerWidth {
+	if !m.ExplorerHidden && x < m.ExplorerWidth {
 		if m.ShowHelp && msg.Type == tea.MouseLeft {
 			m.ShowHelp = false
 		}
@@ -96,6 +100,16 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.Explorer.HoverRow = -1
 
 	// ---- terminal strip / panel (usable with no file open) ----
+	if m.Term.Open && (msg.Type == tea.MouseWheelUp || msg.Type == tea.MouseWheelDown) {
+		if z := m.Zones.Get("term_view"); z != nil && z.InBounds(msg) {
+			if msg.Type == tea.MouseWheelUp {
+				m.Term.Scroll(3)
+			} else {
+				m.Term.Scroll(-3)
+			}
+			return m, nil
+		}
+	}
 	if press {
 		if z := m.Zones.Get("term_strip"); z != nil && z.InBounds(msg) {
 			m.toggleTerminal()
@@ -128,6 +142,10 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					m.Git.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 					return m, nil
 				}
+				if tz := m.Zones.Get("git_sync"); tz != nil && tz.InBounds(msg) {
+					m.Git.SyncAction()
+					return m, nil
+				}
 				for i := range gitpanel.SectionNames {
 					if tz := m.Zones.Get(fmt.Sprintf("git_tab_%d", i)); tz != nil && tz.InBounds(msg) {
 						m.Git.Section = gitpanel.Section(i)
@@ -157,6 +175,14 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.Type {
 	case tea.MouseWheelUp, tea.MouseWheelDown:
+		if z := m.Zones.Get("md_pane"); z != nil && !z.IsZero() && z.InBounds(msg) {
+			if msg.Type == tea.MouseWheelUp {
+				m.Preview.Scroll(-3)
+			} else {
+				m.Preview.Scroll(3)
+			}
+			return m, nil
+		}
 		if m.ViewMode == ViewText {
 			return m, m.TextEd.Update(m.editorRelative(msg))
 		}
@@ -221,6 +247,19 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case "send_btn":
 		m.saveAndEnqueue()
 		return m, m.sendRequestAsync()
+	case "md_text":
+		m.setMdMode(MdText)
+		return m, nil
+	case "md_preview":
+		m.setMdMode(MdPreview)
+		return m, nil
+	case "md_split":
+		m.setMdMode(MdSplit)
+		return m, nil
+	case "md_pane":
+		m.blurAll()
+		m.Focus = FocusPreview
+		return m, nil
 	case "urlbar":
 		m.Focus = FocusURLBar
 		m.focusCurrent()
@@ -269,7 +308,7 @@ func (m *MainScreen) findZoneAt(msg tea.MouseMsg) string {
 			ids = append(ids, "method_"+method)
 		}
 	}
-	ids = append(ids, "urlbar", "response", "editor")
+	ids = append(ids, "md_text", "md_preview", "md_split", "md_pane", "urlbar", "response", "editor")
 	for _, id := range ids {
 		if z := m.Zones.Get(id); !z.IsZero() && z.InBounds(msg) {
 			return id
@@ -291,7 +330,7 @@ func (m *MainScreen) editorRelative(msg tea.MouseMsg) tea.MouseMsg {
 }
 
 func (m *MainScreen) findTopZone(msg tea.MouseMsg) string {
-	for _, id := range []string{"top_git", "top_find", "top_term", "top_help", "top_branch"} {
+	for _, id := range []string{"top_sidebar", "top_git", "top_find", "top_term", "top_help", "top_branch", "top_sync"} {
 		if z := m.Zones.Get(id); z != nil && !z.IsZero() && z.InBounds(msg) {
 			return id
 		}

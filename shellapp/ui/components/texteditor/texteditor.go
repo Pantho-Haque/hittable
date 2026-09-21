@@ -110,6 +110,74 @@ type TextEditor struct {
 	// LineHint, when set, supplies a status-row note for the cursor line
 	// (GitLens-style current-line blame).
 	LineHint func(row int) string
+	// Wrap soft-wraps long lines at the pane width (prose files); off means
+	// horizontal scrolling.
+	Wrap bool
+}
+
+// vrow is one visual row: a segment [start,end) (rune indexes) of a line.
+type vrow struct {
+	line       int
+	start, end int
+	first      bool
+}
+
+// layout splits lines into visual rows. Without wrap each line is one row.
+func (t *TextEditor) layout(lines []string, avail int) []vrow {
+	rows := make([]vrow, 0, len(lines))
+	for i, l := range lines {
+		r := []rune(l)
+		if !t.Wrap || displayCol(r, len(r)) <= avail {
+			rows = append(rows, vrow{i, 0, len(r), true})
+			continue
+		}
+		start := 0
+		first := true
+		for start < len(r) {
+			// Advance until the display width would exceed avail.
+			end, w := start, 0
+			lastSpace := -1
+			for end < len(r) {
+				cw := 1
+				if r[end] == '\t' {
+					cw = len(tabDisplay)
+				}
+				if w+cw > avail {
+					break
+				}
+				if r[end] == ' ' {
+					lastSpace = end
+				}
+				w += cw
+				end++
+			}
+			if end < len(r) && lastSpace > start {
+				end = lastSpace + 1 // break after the space
+			}
+			if end == start {
+				end = start + 1
+			}
+			rows = append(rows, vrow{i, start, end, first})
+			first = false
+			start = end
+		}
+	}
+	return rows
+}
+
+// vrowOf returns the index of the visual row holding (line, col).
+func vrowOf(rows []vrow, line, col int) int {
+	for i, v := range rows {
+		if v.line == line && (col < v.end || (col == v.end && (i+1 >= len(rows) || rows[i+1].line != line))) {
+			return i
+		}
+	}
+	for i := len(rows) - 1; i >= 0; i-- {
+		if rows[i].line == line {
+			return i
+		}
+	}
+	return 0
 }
 
 // SetAnnotations installs per-line gutter annotations (nil clears them).
@@ -471,6 +539,20 @@ func (t *TextEditor) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		if col < 0 {
 			col = 0
 		}
+		if t.Wrap {
+			vrows := t.layout(strings.Split(t.TextArea.Value(), "\n"), t.avail())
+			if row >= len(vrows) {
+				row = len(vrows) - 1
+			}
+			if row >= 0 {
+				v := vrows[row]
+				row = v.line
+				col = v.start + col
+				if col > v.end {
+					col = v.end
+				}
+			}
+		}
 		if msg.Action == tea.MouseActionMotion {
 			// Drag: extend the selection from where the press happened.
 			if b.anchor == nil {
@@ -706,35 +788,50 @@ func (t *TextEditor) gutterWidth() int {
 	return w
 }
 
+func (t *TextEditor) avail() int {
+	a := t.Width - t.gutterWidth()
+	if a < 1 {
+		a = 1
+	}
+	return a
+}
+
 func (t *TextEditor) followCursor() {
 	b := t.cur
 	row, col := t.TextArea.Line(), t.TextArea.LineInfo().ColumnOffset
-	if lines := strings.Split(t.TextArea.Value(), "\n"); row < len(lines) {
-		col = displayCol([]rune(lines[row]), col)
-	}
+	lines := strings.Split(t.TextArea.Value(), "\n")
+	vr := vrowOf(t.layout(lines, t.avail()), row, col)
 	rows := t.contentRows()
-	if row < b.scrollY {
-		b.scrollY = row
+	if vr < b.scrollY {
+		b.scrollY = vr
 	}
-	if row >= b.scrollY+rows {
-		b.scrollY = row - rows + 1
+	if vr >= b.scrollY+rows {
+		b.scrollY = vr - rows + 1
 	}
-	avail := t.Width - t.gutterWidth()
-	if avail < 1 {
-		avail = 1
-	}
-	if col < b.scrollX {
-		b.scrollX = col
-	}
-	if col >= b.scrollX+avail {
-		b.scrollX = col - avail + 1
+	if t.Wrap {
+		b.scrollX = 0
+	} else {
+		dc := col
+		if row < len(lines) {
+			dc = displayCol([]rune(lines[row]), col)
+		}
+		if dc < b.scrollX {
+			b.scrollX = dc
+		}
+		if dc >= b.scrollX+t.avail() {
+			b.scrollX = dc - t.avail() + 1
+		}
 	}
 	t.clampScroll()
 }
 
 func (t *TextEditor) clampScroll() {
 	b := t.cur
-	if max := t.TextArea.LineCount() - t.contentRows(); b.scrollY > max {
+	total := t.TextArea.LineCount()
+	if t.Wrap {
+		total = len(t.layout(strings.Split(t.TextArea.Value(), "\n"), t.avail()))
+	}
+	if max := total - t.contentRows(); b.scrollY > max {
 		b.scrollY = max
 	}
 	if b.scrollY < 0 {
@@ -788,20 +885,27 @@ func (t *TextEditor) View() string {
 	t.clampScroll()
 	selS, selE, hasSel := t.Selection()
 
+	vrows := t.layout(lines, avail)
+	numW := len(strconv.Itoa(t.TextArea.LineCount())) + 1
 	var out []string
-	for i := b.scrollY; i < b.scrollY+rows; i++ {
-		if i >= len(lines) {
+	for vi := b.scrollY; vi < b.scrollY+rows; vi++ {
+		if vi >= len(vrows) {
 			out = append(out, "")
 			continue
 		}
+		v := vrows[vi]
+		i := v.line
 		numStyle := theme.GutterStyle
 		if i == row {
 			numStyle = theme.GutterActiveStyle
 		}
-		num := numStyle.Render(fmt.Sprintf("%*d ", len(strconv.Itoa(t.TextArea.LineCount()))+1, i+1))
+		num := numStyle.Render(fmt.Sprintf("%*d ", numW, i+1))
+		if !v.first {
+			num = strings.Repeat(" ", numW+1)
+		}
 		if t.AnnotWidth > 0 {
 			a := ""
-			if i < len(t.Annotations) {
+			if i < len(t.Annotations) && v.first {
 				a = t.Annotations[i]
 			}
 			a = ansi.Truncate(a, t.AnnotWidth, "…")
@@ -812,10 +916,10 @@ func (t *TextEditor) View() string {
 			}
 			num = st.Render(a) + " " + num
 		}
+		raw := []rune(lines[i])
 		shown := strings.ReplaceAll(lines[i], "\t", tabDisplay)
 		full := t.highlight(shown)
 		if hasSel && i >= selS.row && i <= selE.row {
-			raw := []rune(lines[i])
 			sc, ec := 0, displayCol(raw, len(raw))
 			if i == selS.row {
 				sc = displayCol(raw, selS.col)
@@ -828,11 +932,19 @@ func (t *TextEditor) View() string {
 				full = ansi.Cut(full, 0, sc) + theme.SelectionStyle.Render(string(sr[sc:ec])) + ansi.Cut(full, ec, len(sr))
 			}
 		}
-		text := ansi.Cut(full, b.scrollX, b.scrollX+avail)
-		if i == row && t.Focused {
-			raw := []rune(lines[i])
-			dc := displayCol(raw, col)
-			c := dc - b.scrollX
+		// Visible window of this segment in display columns (never past the
+		// segment end, so a wrapped row does not bleed into the next one).
+		segStart := displayCol(raw, v.start) + b.scrollX
+		segEnd := displayCol(raw, v.end)
+		if t.Wrap && segEnd > segStart+avail {
+			segEnd = segStart + avail
+		}
+		if !t.Wrap {
+			segEnd = segStart + avail
+		}
+		text := ansi.Cut(full, segStart, segEnd)
+		if i == row && t.Focused && col >= v.start && (col < v.end || (col == v.end && (vi+1 >= len(vrows) || vrows[vi+1].line != i))) {
+			c := displayCol(raw, col) - segStart
 			cell := " "
 			if col < len(raw) && raw[col] != '\t' {
 				cell = string(raw[col])

@@ -48,7 +48,7 @@ const (
 type row struct {
 	text   string
 	header bool
-	group  int    // 0 staged, 1 changes (status section)
+	group  int    // 0 staged, 1 changes, 2 conflicts (status section)
 	action string // "+" stage, "−" unstage (files); "+ stage all" / "− unstage all" (headers)
 	file   *gitx.FileStatus
 	staged bool
@@ -91,6 +91,18 @@ type Panel struct {
 	detailSplit  []string
 	detailScroll int
 	collapsed    [2]bool // status groups
+
+	// Merge state (merge / rebase / cherry-pick waiting on conflicts).
+	Merge     bool
+	MergeKind string
+
+	// Conflict resolution mode for one file.
+	Resolving      bool
+	ResolvePath    string
+	ResolveRel     string
+	ResolveContent string
+	Conflicts      []gitx.Conflict
+	ConflictIdx    int
 
 	// Split renders diffs side by side; Editing edits the working file in
 	// the detail pane.
@@ -152,6 +164,7 @@ func (p *Panel) Refresh() {
 	} else {
 		p.Status = st
 	}
+	p.Merge, p.MergeKind = p.Repo.MergeInProgress()
 	switch p.Section {
 	case SecCommits:
 		path := ""
@@ -190,9 +203,13 @@ func (p *Panel) buildRows() {
 		if p.Status == nil {
 			break
 		}
-		var staged, changed []gitx.FileStatus
+		var staged, changed, conflicts []gitx.FileStatus
 		for _, f := range p.Status.Files {
 			if p.Filter != "" && !strings.Contains(strings.ToLower(f.Path), strings.ToLower(p.Filter)) {
+				continue
+			}
+			if f.Conflict() {
+				conflicts = append(conflicts, f)
 				continue
 			}
 			if f.Staged() && !f.Untracked() {
@@ -200,6 +217,18 @@ func (p *Panel) buildRows() {
 			}
 			if f.Unstaged() || f.Untracked() {
 				changed = append(changed, f)
+			}
+		}
+		if p.Merge {
+			h := row{text: fmt.Sprintf("⚠ %s in progress · %d conflict(s)", p.MergeKind, len(conflicts)), header: true, group: 2}
+			if len(conflicts) == 0 {
+				h.action = "✓ commit " + p.MergeKind
+			} else {
+				h.action = "✕ abort " + p.MergeKind
+			}
+			p.rows = append(p.rows, h)
+			for i := range conflicts {
+				p.rows = append(p.rows, row{file: &conflicts[i], group: 2, action: "resolve"})
 			}
 		}
 		groups := []struct {
@@ -284,6 +313,10 @@ func (p *Panel) loadDetail() {
 	}
 	var text string
 	switch {
+	case r.file != nil && r.file.Conflict():
+		b, _ := os.ReadFile(p.Repo.Abs(r.file.Path))
+		n := len(gitx.ParseConflicts(string(b)))
+		text = fmt.Sprintf("%d conflict block(s) — press ⏎ or [ resolve ] to resolve here, o to open in the editor", n)
 	case r.file != nil:
 		text = p.Repo.Diff(*r.file, r.staged)
 		if strings.TrimSpace(text) == "" {
@@ -438,7 +471,9 @@ func (p *Panel) move(d int) {
 	if target >= len(p.rows) {
 		target = len(p.rows) - 1
 	}
-	for target >= 0 && target < len(p.rows) && p.rows[target].header {
+	// Skip headers that carry no action; ones with a button (stage all,
+	// commit merge…) stay reachable from the keyboard.
+	for target >= 0 && target < len(p.rows) && p.rows[target].header && p.rows[target].action == "" {
 		target += step
 	}
 	if target >= 0 && target < len(p.rows) {
@@ -485,12 +520,19 @@ func (p *Panel) confirm(title string, fn func()) {
 	p.confirmFn = fn
 }
 
+// PromptOpen reports whether an inline prompt / confirm is active.
+func (p *Panel) PromptOpen() bool { return p.prompt != promptNone }
+
 // HandleKey processes a key while the panel has focus. Returns false when the
 // key is Esc with nothing to dismiss (the screen closes the panel).
 func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 	p.Message = ""
 	if p.prompt != promptNone {
 		p.handlePromptKey(msg)
+		return true
+	}
+	if p.Resolving {
+		p.handleResolveKey(msg)
 		return true
 	}
 	if p.Editing {
@@ -579,6 +621,15 @@ func (p *Panel) rowAction(r *row) {
 		return
 	}
 	switch {
+	case r.header && r.group == 2:
+		kind := p.MergeKind
+		if strings.HasPrefix(r.action, "✓") {
+			p.run("commit "+kind, func() error { return p.Repo.MergeContinue(kind) })
+		} else {
+			p.confirm("abort "+kind, func() { p.run("abort "+kind, func() error { return p.Repo.MergeAbort(kind) }) })
+		}
+	case r.file != nil && r.file.Conflict():
+		p.startResolve(*r.file)
 	case r.header && r.group == 0:
 		p.run("unstage all", func() error { return p.Repo.Unstage(".") })
 	case r.header:
@@ -598,8 +649,12 @@ func (p *Panel) primary() {
 		return
 	}
 	switch {
+	case r.header && p.Section == SecStatus && r.group == 2:
+		p.rowAction(r)
 	case r.header && p.Section == SecStatus:
 		p.toggleGroup(r.group)
+	case r.file != nil && r.file.Conflict():
+		p.startResolve(*r.file)
 	case r.file != nil && p.OnOpenFile != nil:
 		p.OnOpenFile(p.Repo.Abs(r.file.Path))
 	case r.branch != nil && !r.branch.Current:
@@ -638,6 +693,8 @@ func (p *Panel) sectionKey(key string) {
 			p.async("pull", p.Repo.Pull)
 		case "f":
 			p.async("fetch", p.Repo.Fetch)
+		case "y":
+			p.SyncAction()
 		}
 	case SecCommits:
 		switch key {
@@ -766,6 +823,20 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 	listTop := 2 // border + tabs row
 	switch msg.Type {
 	case tea.MouseLeft:
+		if p.Resolving && msg.Action == tea.MouseActionPress && msg.Y >= listTop+p.listRows()+1 {
+			// Map the clicked row back to a conflict block (headers add rows).
+			line := p.detailScroll + msg.Y - (listTop + p.listRows() + 1)
+			rl := 0
+			for i, c := range p.Conflicts {
+				rl++ // header row
+				if line >= c.Start+i+1 && line <= c.End+i+1 {
+					p.ConflictIdx = i
+					return
+				}
+			}
+			_ = rl
+			return
+		}
 		if p.Editing && msg.Y >= listTop+p.listRows()+1 {
 			rel := msg
 			rel.X -= 2
@@ -821,6 +892,165 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 	}
 }
 
+// ---------- merge conflict resolution ----------
+
+func (p *Panel) startResolve(f gitx.FileStatus) {
+	abs := p.Repo.Abs(f.Path)
+	var content string
+	var err error
+	if p.LoadFile != nil {
+		content, err = p.LoadFile(abs)
+	} else {
+		var b []byte
+		b, err = os.ReadFile(abs)
+		content = string(b)
+	}
+	if err != nil {
+		p.Message = err.Error()
+		return
+	}
+	p.Resolving, p.ResolvePath, p.ResolveRel = true, abs, f.Path
+	p.ResolveContent = content
+	p.Conflicts = gitx.ParseConflicts(content)
+	p.ConflictIdx = 0
+	p.detailScroll = 0
+	p.scrollToConflict()
+}
+
+func (p *Panel) stopResolve() {
+	p.Resolving = false
+	p.Conflicts = nil
+	p.Refresh()
+}
+
+func (p *Panel) persistResolve() {
+	if p.SaveFile != nil {
+		p.SaveFile(p.ResolvePath, p.ResolveContent)
+	} else {
+		_ = os.WriteFile(p.ResolvePath, []byte(p.ResolveContent), 0o644)
+	}
+}
+
+func (p *Panel) resolveCurrent(choice string) {
+	if len(p.Conflicts) == 0 {
+		return
+	}
+	p.ResolveContent = gitx.Resolve(p.ResolveContent, p.ConflictIdx, choice)
+	p.Conflicts = gitx.ParseConflicts(p.ResolveContent)
+	if p.ConflictIdx >= len(p.Conflicts) {
+		p.ConflictIdx = len(p.Conflicts) - 1
+	}
+	if p.ConflictIdx < 0 {
+		p.ConflictIdx = 0
+	}
+	p.persistResolve()
+	p.Message = fmt.Sprintf("accepted %s · %d left", choice, len(p.Conflicts))
+	p.scrollToConflict()
+}
+
+func (p *Panel) scrollToConflict() {
+	if p.ConflictIdx < len(p.Conflicts) {
+		p.detailScroll = p.Conflicts[p.ConflictIdx].Start - 2
+		if p.detailScroll < 0 {
+			p.detailScroll = 0
+		}
+	}
+}
+
+func (p *Panel) handleResolveKey(msg tea.KeyMsg) {
+	switch msg.String() {
+	case "esc":
+		p.stopResolve()
+	case "c", "1":
+		p.resolveCurrent("ours")
+	case "i", "2":
+		p.resolveCurrent("theirs")
+	case "b", "3":
+		p.resolveCurrent("both")
+	case "n", "down", "j":
+		if p.ConflictIdx < len(p.Conflicts)-1 {
+			p.ConflictIdx++
+		}
+		p.scrollToConflict()
+	case "p", "up", "k":
+		if p.ConflictIdx > 0 {
+			p.ConflictIdx--
+		}
+		p.scrollToConflict()
+	case "J":
+		p.detailScroll++
+	case "K":
+		if p.detailScroll > 0 {
+			p.detailScroll--
+		}
+	case "o":
+		if p.OnOpenFile != nil {
+			abs := p.ResolvePath
+			p.stopResolve()
+			p.OnOpenFile(abs)
+		}
+	case "a", "enter":
+		if len(p.Conflicts) > 0 {
+			p.Message = fmt.Sprintf("%d conflict(s) still unresolved", len(p.Conflicts))
+			return
+		}
+		rel := p.ResolveRel
+		p.persistResolve()
+		p.Resolving, p.Conflicts = false, nil
+		p.run("mark resolved "+rel, func() error { return p.Repo.Stage(rel) })
+	}
+}
+
+// resolveLines renders the file with conflict blocks highlighted and a
+// CodeLens-style action line above the current block.
+func (p *Panel) resolveLines(width int) []string {
+	lines := strings.Split(p.ResolveContent, "\n")
+	inBlock := map[int]int{} // line -> conflict index
+	kind := map[int]string{}
+	for i, c := range p.Conflicts {
+		for l := c.Start; l <= c.End; l++ {
+			inBlock[l] = i
+			switch {
+			case l == c.Start || l == c.Mid || l == c.End:
+				kind[l] = "marker"
+			case l < c.Mid:
+				kind[l] = "ours"
+			default:
+				kind[l] = "theirs"
+			}
+		}
+	}
+	var out []string
+	for i, l := range lines {
+		ci, ok := inBlock[i]
+		if ok && i == p.Conflicts[ci].Start {
+			lens := "   ↳ accept: c current · i incoming · b both · n/p next/prev · a mark resolved"
+			if ci == p.ConflictIdx {
+				out = append(out, ansi.Truncate(theme.PromptStyle.Render(fmt.Sprintf(" conflict %d/%d ", ci+1, len(p.Conflicts)))+theme.MutedStyle.Render(lens), width, "…"))
+			} else {
+				out = append(out, theme.MutedStyle.Render(fmt.Sprintf(" conflict %d/%d", ci+1, len(p.Conflicts))))
+			}
+		}
+		text := fmt.Sprintf("%4d %s", i+1, strings.ReplaceAll(l, "\t", "    "))
+		st := lipgloss.NewStyle()
+		switch kind[i] {
+		case "marker":
+			st = theme.GitHeaderStyle
+		case "ours":
+			st = theme.DiffAddStyle
+		case "theirs":
+			st = theme.DiffHunkStyle
+		}
+		text = ansi.Truncate(st.Render(text), width, "…")
+		if ok && ci == p.ConflictIdx {
+			text = theme.HoverStyle.Render(ansi.Strip(text) + strings.Repeat(" ", max(0, width-lipgloss.Width(ansi.Strip(text)))))
+			text = st.Render("") + text
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
 // ---------- view ----------
 
 func (p *Panel) View(z *zone.Manager) string {
@@ -857,7 +1087,7 @@ func (p *Panel) View(z *zone.Manager) string {
 		mode = theme.TabActiveStyle.Render("inline") + " " + theme.MutedStyle.Render("split")
 	}
 	mode = z.Mark("git_diffmode", "["+mode+"]")
-	right := branch + "  " + mode
+	right := branch + "  " + z.Mark("git_sync", theme.SendButtonStyle.Render(p.SyncLabel())) + "  " + mode
 	if gap := inner - lipgloss.Width(head) - lipgloss.Width(right); gap > 0 {
 		head += strings.Repeat(" ", gap)
 	}
@@ -873,8 +1103,23 @@ func (p *Panel) View(z *zone.Manager) string {
 	}
 	lines = append(lines, theme.MutedStyle.Render(strings.Repeat("─", inner)))
 
-	// Detail: editor when editing, otherwise the (inline or split) diff.
-	if p.Editing && p.Editor != nil {
+	// Detail: conflict resolver, editor when editing, otherwise the diff.
+	if p.Resolving {
+		rl := p.resolveLines(inner)
+		if max := len(rl) - p.detailRows(); p.detailScroll > max {
+			p.detailScroll = max
+		}
+		if p.detailScroll < 0 {
+			p.detailScroll = 0
+		}
+		for i := p.detailScroll; i < p.detailScroll+p.detailRows(); i++ {
+			if i >= len(rl) {
+				lines = append(lines, "")
+				continue
+			}
+			lines = append(lines, rl[i])
+		}
+	} else if p.Editing && p.Editor != nil {
 		p.Editor.SetSize(inner-2, p.detailRows()-2)
 		p.Editor.Hint = "editing working copy · esc done · ctrl+s save"
 		lines = append(lines, strings.Split(p.Editor.View(), "\n")...)
@@ -900,6 +1145,8 @@ func (p *Panel) View(z *zone.Manager) string {
 		foot = theme.PromptStyle.Render(" " + p.promptTitle + " ")
 	case p.prompt != promptNone:
 		foot = theme.PromptStyle.Render(" "+p.promptTitle+": "+p.promptText+"▏") + theme.MutedStyle.Render("  ⏎ ok · esc cancel")
+	case p.Resolving:
+		foot = theme.MutedStyle.Render(fmt.Sprintf(" resolving %s · c/i/b accept current/incoming/both · n/p next/prev · a mark resolved · o open · esc back", p.ResolveRel))
 	case p.Busy != "":
 		foot = theme.WordmarkStyle.Render(" " + p.Busy)
 	case p.Message != "":
@@ -912,10 +1159,36 @@ func (p *Panel) View(z *zone.Manager) string {
 	return theme.FocusedBorderStyle.Width(inner).Height(p.inner()).MaxHeight(p.Height).Render(strings.Join(lines, "\n"))
 }
 
+// SyncLabel mirrors VS Code's status-bar sync button.
+func (p *Panel) SyncLabel() string {
+	st := p.Status
+	switch {
+	case st == nil:
+		return " ⟳ Sync "
+	case st.Upstream == "":
+		return " ⤴ Publish branch "
+	case st.Behind > 0:
+		return fmt.Sprintf(" ⟳ Sync ↑%d ↓%d ", st.Ahead, st.Behind)
+	case st.Ahead > 0:
+		return fmt.Sprintf(" ↑ Push %d ", st.Ahead)
+	}
+	return " ⟳ Sync "
+}
+
+// SyncAction runs pull+push (or publish) in the background.
+func (p *Panel) SyncAction() {
+	st := p.Status
+	label := "sync"
+	if st != nil && st.Upstream == "" {
+		label = "publish"
+	}
+	p.async(label, func() (string, error) { return p.Repo.Sync(st) })
+}
+
 func (p *Panel) hints() string {
 	switch p.Section {
 	case SecStatus:
-		return "+/− stage/unstage · e edit here · v split · d discard · c commit · S stash · p push · P pull · f fetch · ⏎ open"
+		return "+/− stage/unstage · e edit here · v split · c commit · y sync/push · S stash · d discard · P pull · f fetch · ⏎ open"
 	case SecCommits:
 		return "⏎/jk browse · J/K scroll diff · f file↔repo history · / search · y hash"
 	case SecBranches:
@@ -982,8 +1255,11 @@ func (p *Panel) renderRow(r *row, selected bool, width int) string {
 	}
 	if action != "" {
 		st := theme.DiffAddStyle
-		if strings.HasPrefix(r.action, "−") {
+		switch {
+		case strings.HasPrefix(r.action, "−"), strings.HasPrefix(r.action, "✕"):
 			st = theme.DiffDelStyle
+		case r.action == "resolve":
+			st = theme.HashStyle
 		}
 		action = st.Render(action)
 	}

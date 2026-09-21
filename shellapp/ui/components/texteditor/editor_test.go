@@ -75,3 +75,48 @@ func TestUndoRedoTabFindClick(t *testing.T) {
 		t.Errorf("status row wrong:\n%s", view)
 	}
 }
+
+func TestSoftWrap(t *testing.T) {
+	ed := New()
+	ed.Wrap = true
+	ed.SetSize(30, 8)
+	long := "one two three four five six seven eight nine ten eleven twelve"
+	ed.SetContent("/x/doc.md", long+"\nshort\n")
+	ed.Focus()
+	v := stripANSI(ed.View())
+	if strings.Contains(v, "…") || !strings.Contains(v, "seven") || !strings.Contains(v, "twelve") {
+		t.Fatalf("wrapped view should show the whole line:\n%s", v)
+	}
+	if strings.Count(v, "\n") != 9 { // Height + 2 border rows
+		t.Errorf("view must stay %d rows, got %d", 10, strings.Count(v, "\n")+1)
+	}
+	if strings.Contains(v, "workf") || strings.Contains(strings.ReplaceAll(v, " ", ""), "sevenseven") {
+		t.Errorf("wrapped rows must not repeat text at the break:\n%s", v)
+	}
+	// Click on the second visual row (continuation) maps into the long line.
+	ed.Update(tea.MouseMsg{Type: tea.MouseLeft, X: 3 + 2, Y: 1})
+	if ed.GetCursorRow() != 0 || ed.TextArea.LineInfo().ColumnOffset <= 20 {
+		t.Errorf("click on continuation row: row=%d col=%d", ed.GetCursorRow(), ed.TextArea.LineInfo().ColumnOffset)
+	}
+	// End of the long line keeps the cursor visible on a later visual row.
+	ed.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	if !strings.Contains(stripANSI(ed.View()), "twelve") {
+		t.Error("cursor row should be visible")
+	}
+}
+
+func stripANSI(s string) string {
+	var b strings.Builder
+	in := false
+	for _, r := range s {
+		switch {
+		case r == 0x1b:
+			in = true
+		case in && (r == 'm' || r == 'z'):
+			in = false
+		case !in:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}

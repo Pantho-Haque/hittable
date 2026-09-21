@@ -1,4 +1,4 @@
-# hittable.sh — Full Requirements & Architecture Spec
+[<64;61;32M[<64;61;32M[<65;46;31M# hittable.sh — Full Requirements & Architecture Spec
 
 This is the complete, self-contained source of truth for `hittable.sh`, a terminal-based
 (TUI) API client written in Go. Read this doc top to bottom before writing any code — it
@@ -420,6 +420,8 @@ send binding.
 | Git panel             | `ctrl+g` (outside editors), `alt+g`, `F5`, `g` in explorer, click `⎇ Git` | Global |
 | Git: sections         | `1-5`, `tab`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
 | Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `d` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · discard · commit · stash · push · pull · fetch · open/collapse · filter |
+| Markdown view         | `ctrl+t` cycles Text → Preview → Split; click `[ Text | Preview | Split ]` | .md file open |
+| Preview scroll        | `jk` `↑↓` `pgup/pgdown` `g/G`, wheel | Preview focused (tab ⇄ editor in split) |
 | Find file             | `ctrl+p`, `/` in explorer, click `Find` | Global (fuzzy, skips node_modules etc.) |
 | Live grep             | `alt+f`, `tab` inside the palette | Global (ripgrep → git grep → walk) |
 | Git: commits          | `f` `/` `y` `J/K` | file↔repo history · search · hash · scroll diff |
@@ -693,3 +695,33 @@ send binding.
 6. Undo: verified through the real-terminal harness that `ctrl+z` (0x1a) undoes.
    `cmd+z` never reaches a terminal program on macOS unless the terminal maps it
    (iTerm2: Keys → Key Bindings → map ⌘Z to "Send Hex Codes: 0x1a").
+
+### v2.5 — Terminal scrollback & paste, realtime git
+1. **Scrollback**: the emulator only holds the visible screen, so rows are now
+   captured as they scroll off (output is fed line by line; a screen shift is
+   detected by comparing the new grid with the previous one, excluding the cursor
+   row; alternate-screen apps are never captured). Wheel over the panel or
+   `shift+↑/↓` / `shift+pgup/pgdown` scroll back (5000 lines); any key returns.
+   The strip shows `↑ scrollback n/m` while scrolled.
+2. **Paste**: writes to the PTY go through a dedicated writer goroutine (a large
+   paste used to block the UI on the tty input buffer). Pasted text (terminal
+   bracketed paste or `ctrl+v`) is sent as one bracketed block when the shell has
+   enabled mode 2004 (zsh/bash do), so multi-line pastes are inserted, not executed
+   line by line; newlines are normalised to CR.
+3. **Realtime git**: a 2s tick runs `git status` off the UI goroutine; when the
+   fingerprint changes the explorer badges, tree, top-bar badge, blame overlay and
+   the open Git panel refresh. Covers changes made in the integrated terminal or
+   outside the app.
+
+### v2.7 — Markdown preview
+1. **`ui/components/mdpreview`**: glamour (Dracula style, word-wrapped to the pane)
+   renders headings, emphasis, lists, task lists, tables, block quotes, links and
+   fenced code with syntax highlighting. ```mermaid fences are converted to
+   box-drawing diagrams with `mermaid-ascii` (flowchart/graph TD·LR, sequence and
+   ER diagrams); unsupported or broken diagrams fall back to the source block and a
+   renderer panic is recovered. Output is cached per (content, width).
+2. **Modes** for `.md` files: Text (editor), Preview (rendered, scrollable), Split
+   (editor left, live preview right that follows the cursor while typing). `ctrl+t`
+   cycles; the header toggle is clickable; the choice is remembered across files.
+3. Dependencies added: `charmbracelet/glamour`, `AlexanderGrooff/mermaid-ascii`
+   (only its `pkg/render` + `pkg/diagram` packages are compiled in).

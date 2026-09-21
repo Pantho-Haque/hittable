@@ -121,7 +121,11 @@ func (m *MainScreen) openFileRaw(path string) {
 		m.setExplorerFocused(true)
 		return
 	}
+	m.TextEd.Wrap = doc.Kind == document.KindMarkdown
 	m.TextEd.SetContent(path, doc.Content)
 	m.Focus = FocusTextEditor
 	m.focusCurrent()
+	if doc.Kind == document.KindMarkdown {
+		m.setMdMode(m.MdMode) // re-layout for the remembered Text/Preview/Split choice
+	}
 }

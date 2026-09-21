@@ -116,6 +116,7 @@ func (m *MainScreen) refreshGit(force bool) {
 	if err != nil {
 		return
 	}
+	m.gitKey = statusKey(st)
 	m.Git.Status = st
 	badges := make(map[string]string, len(st.Files))
 	for _, f := range st.Files {
@@ -205,7 +206,8 @@ func (m *MainScreen) renderTopBar() string {
 		gitIcon, findIcon, termIcon = "⑂", "🔍", "▤"
 	}
 
-	left := sp(1) + theme.HitMarkStyle.Render(" H ") + sp(1) + theme.TopBarBrandStyle.Render("HITTABLE") +
+	sidebar := btn("top_sidebar", "☰", !m.ExplorerHidden)
+	left := sidebar + sp(1) + theme.HitMarkStyle.Render(" H ") + sp(1) + theme.TopBarBrandStyle.Render("HITTABLE") +
 		theme.TopBarDimStyle.Render("  ›  ") + theme.TopBarTextStyle.Render(filepath.Base(m.RootDir)) + sp(4)
 	buttons := btn("top_git", gitIcon+" Git", m.GitOpen) + sp(1) +
 		btn("top_find", findIcon+" Find", m.Palette.Open) + sp(1) +
@@ -220,10 +222,15 @@ func (m *MainScreen) renderTopBar() string {
 		if n := len(st.Files); n > 0 {
 			badge += theme.MutedStyle.Background(lipgloss.Color("#343746")).Render(fmt.Sprintf("  ●%d", n))
 		}
-		if st.Ahead > 0 || st.Behind > 0 {
-			badge += theme.MutedStyle.Background(lipgloss.Color("#343746")).Render(fmt.Sprintf("  ↑%d ↓%d", st.Ahead, st.Behind))
+		syncSt := theme.TopBarButtonStyle
+		if m.HoverZone == "top_sync" {
+			syncSt = theme.TopBarHoverStyle
 		}
-		right = m.Zones.Mark("top_branch", theme.TopBarBranchStyle.Render(badge)) + sp(1)
+		if m.Git.Busy != "" {
+			syncSt = theme.TopBarActiveStyle
+		}
+		right = m.Zones.Mark("top_branch", theme.TopBarBranchStyle.Render(badge)) + sp(1) +
+			m.Zones.Mark("top_sync", syncSt.Render(strings.TrimSpace(m.Git.SyncLabel()))) + sp(1)
 	case m.Repo == nil:
 		right = theme.TopBarDimStyle.Render("not a git repo") + sp(1)
 	}
@@ -234,4 +241,92 @@ func (m *MainScreen) renderTopBar() string {
 	}
 	line += right
 	return ansi.Truncate(line, m.Width, "")
+}
+
+// ---------- realtime status ----------
+
+type gitTickMsg struct{}
+type gitStatusMsg struct {
+	st  *gitx.Status
+	key string
+}
+
+const gitPollInterval = 2 * time.Second
+
+func gitTick() tea.Cmd {
+	return tea.Tick(gitPollInterval, func(time.Time) tea.Msg { return gitTickMsg{} })
+}
+
+// pollGit runs `git status` off the UI goroutine; the result arrives as a
+// gitStatusMsg and is applied only when something changed.
+func (m *MainScreen) pollGit() tea.Cmd {
+	if m.Repo == nil || m.gitPolling {
+		return gitTick()
+	}
+	m.gitPolling = true
+	repo := m.Repo
+	go func() {
+		st, err := repo.Status()
+		if err != nil || teaProgram == nil {
+			if teaProgram != nil {
+				teaProgram.Send(gitStatusMsg{})
+			}
+			return
+		}
+		teaProgram.Send(gitStatusMsg{st: st, key: statusKey(st)})
+	}()
+	return gitTick()
+}
+
+// statusKey fingerprints a status so unchanged polls are ignored.
+func statusKey(st *gitx.Status) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s|%s|%d|%d|", st.Branch, st.Upstream, st.Ahead, st.Behind)
+	for _, f := range st.Files {
+		b.WriteString(f.Path)
+		b.WriteByte(f.Index)
+		b.WriteByte(f.Worktree)
+		b.WriteByte(';')
+	}
+	return b.String()
+}
+
+// applyStatus installs a polled status: explorer badges, top bar, tree
+// (new / deleted files) and the open git panel.
+func (m *MainScreen) applyStatus(msg gitStatusMsg) {
+	m.gitPolling = false
+	if msg.st == nil || msg.key == m.gitKey {
+		return
+	}
+	m.gitKey = msg.key
+	m.lastGitRefresh = time.Now()
+	m.Git.Status = msg.st
+	badges := make(map[string]string, len(msg.st.Files))
+	for _, f := range msg.st.Files {
+		badges[m.Repo.Abs(f.Path)] = f.Badge()
+	}
+	_ = m.Explorer.RebuildTree()
+	m.Explorer.SetGitStatus(badges)
+	if m.BlameOn {
+		m.applyBlame()
+	}
+	if m.GitOpen && !m.Git.Editing && !m.Git.PromptOpen() {
+		m.Git.Refresh()
+	}
+}
+
+// toggleExplorer hides / shows the sidebar (alt+b, ☰ button).
+func (m *MainScreen) toggleExplorer() {
+	m.ExplorerHidden = !m.ExplorerHidden
+	if m.ExplorerHidden && m.ExplorerFocused {
+		m.setExplorerFocused(false)
+		if m.ActiveFile != "" {
+			m.Focus = m.LastFocus
+			if m.Focus == FocusExplorerPane {
+				m.Focus = FocusURLBar
+			}
+			m.focusCurrent()
+		}
+	}
+	m.SetSize(m.Width, m.Height)
 }
