@@ -16,19 +16,20 @@ const (
 	KindEnv
 	KindMarkdown
 	KindGeneric
+	KindBinary
 )
 
 type DocumentModel struct {
-	mu           sync.Mutex
-	Path         string
-	Kind         FileKind
-	Content      string
-	RawContent   []byte
-	ViewMode     ViewMode
-	HitContent   interface{}
-	Generation   uint64
-	GenCounter   uint64
-	LastFlushed  uint64
+	mu          sync.Mutex
+	Path        string
+	Kind        FileKind
+	Content     string
+	RawContent  []byte
+	ViewMode    ViewMode
+	HitContent  interface{}
+	Generation  uint64
+	GenCounter  uint64
+	LastFlushed uint64
 }
 
 func NewDocumentModel(path string, kind FileKind, content string, raw []byte) *DocumentModel {

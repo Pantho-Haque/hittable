@@ -5,95 +5,190 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hittable/shellapp/ui/components/gitpanel"
+	"github.com/hittable/shellapp/ui/components/palette"
 	"github.com/hittable/shellapp/ui/components/requesteditor"
 )
 
 func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	x := msg.X
-	y := msg.Y
+
+	// bubbletea reports a drag as a left-button event with a motion action.
+	press := msg.Type == tea.MouseLeft && msg.Action == tea.MouseActionPress
+	drag := msg.Action == tea.MouseActionMotion && msg.Button == tea.MouseButtonLeft
 
 	if msg.Type == tea.MouseRelease {
 		m.Dragging = false
+		if ed := m.focusedEditor(); ed != nil {
+			ed.Update(m.editorRelative(msg))
+		}
 		return m, nil
 	}
-
-	if msg.Type == tea.MouseMotion && m.Dragging {
-		delta := x - m.DragStartX
-		m.ExplorerWidth += delta
+	if drag && m.Dragging {
+		m.ExplorerWidth += x - m.DragStartX
 		m.DragStartX = x
-		if m.ExplorerWidth < 15 {
-			m.ExplorerWidth = 15
-		}
-		if m.ExplorerWidth > m.Width-20 {
-			m.ExplorerWidth = m.Width - 20
-		}
-		m.MainWidth = m.Width - m.ExplorerWidth - 1
-		m.Explorer.SetSize(m.ExplorerWidth, m.Height-2)
-		m.URLBar.SetSize(m.MainWidth - 4)
-		m.Params.SetSize(m.MainWidth-4, m.Height/3)
-		m.Headers.SetSize(m.MainWidth-4, m.Height/3)
-		m.Body.SetSize(m.MainWidth-4, m.Height/3)
-		m.Response.SetSize(m.MainWidth-4, m.Height/3)
-		m.TextEd.SetSize(m.MainWidth-4, m.Height-4)
+		m.SetSize(m.Width, m.Height) // clamps width and resizes children
 		return m, nil
 	}
-
-	if msg.Type == tea.MouseMotion {
-		zoneID := m.findZoneAt(msg)
-		m.HoverZone = zoneID
-		m.updateExplorerHover(y)
+	if drag {
+		// Text selection drag inside the focused editor.
+		if ed := m.focusedEditor(); ed != nil {
+			return m, ed.Update(m.editorRelative(msg))
+		}
 		return m, nil
 	}
-
-	if msg.Type == tea.MouseLeft {
-		separatorX := m.ExplorerWidth
-		if x == separatorX || x == separatorX+1 {
-			m.Dragging = true
-			m.DragStartX = x
-			return m, nil
-		}
-
-		zoneID := m.findZoneAt(msg)
-
-		if m.URLBar.DropdownOpen && !strings.HasPrefix(zoneID, "method_") {
-			m.URLBar.CloseDropdown()
-			m.Focus = FocusURLBar
-			m.URLBar.Focus()
-		}
-
-		if zoneID == "" {
-			if x < m.ExplorerWidth {
-				m.ExplorerFocused = true
-				m.URLBar.Blur()
-				m.Params.Blur()
-				m.Headers.Blur()
-				m.Body.Blur()
-				m.TextEd.Blur()
-				m.Focus = FocusExplorerPane
+	// Top bar buttons.
+	if msg.Y == 0 {
+		if press {
+			switch m.findTopZone(msg) {
+			case "top_git", "top_branch":
+				m.toggleGit()
+			case "top_find":
+				if m.Palette.Open {
+					m.Palette.Close()
+				} else {
+					m.openPalette(palette.ModeFiles)
+				}
+			case "top_term":
+				m.toggleTerminal()
+			case "top_help":
+				m.toggleHelp()
 			}
+		} else if msg.Type == tea.MouseMotion {
+			m.HoverZone = m.findTopZone(msg)
+		}
+		return m, nil
+	}
+	if m.HoverZone != "" && strings.HasPrefix(m.HoverZone, "top_") && msg.Type == tea.MouseMotion {
+		m.HoverZone = ""
+	}
+
+	// Separator column between explorer and main pane.
+	if press && x == m.ExplorerWidth {
+		m.Dragging = true
+		m.DragStartX = x
+		return m, nil
+	}
+
+	if x < m.ExplorerWidth {
+		if m.ShowHelp && msg.Type == tea.MouseLeft {
+			m.ShowHelp = false
+		}
+		if msg.Type == tea.MouseLeft || msg.Type == tea.MouseRight {
+			m.leaveTerminal()
+			m.StatusBar = ""
+			if !m.ExplorerFocused {
+				m.LastFocus = m.Focus
+				m.blurAll()
+			}
+			m.setExplorerFocused(true)
+			m.Focus = FocusExplorerPane
+		}
+		if press || msg.Type == tea.MouseRight {
+			m.GitOpen = false
+			m.Palette.Close()
+		}
+		em := msg
+		em.Y--                     // explorer starts under the top bar
+		m.Explorer.HandleMouse(em) // openFileRaw flips focus back for files
+		return m, nil
+	}
+	m.Explorer.HoverRow = -1
+
+	// ---- terminal strip / panel (usable with no file open) ----
+	if press {
+		if z := m.Zones.Get("term_strip"); z != nil && z.InBounds(msg) {
+			m.toggleTerminal()
 			return m, nil
 		}
+		if z := m.Zones.Get("term_view"); m.Term.Open && z != nil && z.InBounds(msg) {
+			m.focusTerminal()
+			return m, nil
+		}
+	}
 
-		if strings.HasPrefix(zoneID, "explorer_") {
-			var idx int
-			fmt.Sscanf(strings.TrimPrefix(zoneID, "explorer_"), "%d", &idx)
-			return m, func() tea.Msg { return explorerClickMsg{idx: idx} }
+	// ---- find palette ----
+	if m.Palette.Open {
+		if z := m.Zones.Get("palette"); z != nil && z.InBounds(msg) {
+			rel := msg
+			rel.X -= z.StartX
+			rel.Y -= z.StartY
+			m.Palette.HandleMouse(rel)
+		} else if press {
+			m.Palette.Close()
 		}
-		if zoneID == "tab_Params" {
-			return m, func() tea.Msg { return tabClickMsg{tab: requesteditor.TabParams} }
+		return m, nil
+	}
+
+	// ---- git panel ----
+	if m.GitOpen {
+		if z := m.Zones.Get("git_panel"); z != nil && z.InBounds(msg) {
+			if press {
+				if tz := m.Zones.Get("git_diffmode"); tz != nil && tz.InBounds(msg) {
+					m.Git.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+					return m, nil
+				}
+				for i := range gitpanel.SectionNames {
+					if tz := m.Zones.Get(fmt.Sprintf("git_tab_%d", i)); tz != nil && tz.InBounds(msg) {
+						m.Git.Section = gitpanel.Section(i)
+						m.Git.Cursor = 0
+						m.Git.Refresh()
+						return m, nil
+					}
+				}
+			}
+			rel := msg
+			rel.X -= z.StartX
+			rel.Y -= z.StartY
+			m.Git.HandleMouse(rel)
 		}
-		if zoneID == "tab_Headers" {
-			return m, func() tea.Msg { return tabClickMsg{tab: requesteditor.TabHeaders} }
+		return m, nil
+	}
+
+	// ---- main pane ----
+	if m.ShowHelp {
+		if msg.Type == tea.MouseLeft {
+			m.ShowHelp = false
 		}
-		if zoneID == "tab_Body" {
-			return m, func() tea.Msg { return tabClickMsg{tab: requesteditor.TabBody} }
+		return m, nil
+	}
+	if m.ActiveFile == "" {
+		return m, nil
+	}
+	switch msg.Type {
+	case tea.MouseWheelUp, tea.MouseWheelDown:
+		if m.ViewMode == ViewText {
+			return m, m.TextEd.Update(m.editorRelative(msg))
 		}
-		if zoneID == "toggle_runner" {
-			return m, func() tea.Msg { return toggleViewMsg{mode: ViewRunner} }
+		if m.Zones.Get("response").InBounds(msg) {
+			m.Response.Scroll(msg.Type == tea.MouseWheelUp)
+		} else if m.Zones.Get("editor").InBounds(msg) {
+			if m.Focus != FocusBody {
+				m.Focus = FocusBody
+				m.focusCurrent()
+			}
+			return m, m.handleBodyMouse(m.editorRelative(msg))
 		}
-		if zoneID == "toggle_text" {
-			return m, func() tea.Msg { return toggleViewMsg{mode: ViewText} }
+		return m, nil
+	case tea.MouseMotion:
+		m.HoverZone = m.findZoneAt(msg)
+		return m, nil
+	case tea.MouseLeft:
+		if !press {
+			return m, nil
 		}
+	default:
+		return m, nil
+	}
+
+	m.StatusBar = ""
+	m.setExplorerFocused(false)
+	m.leaveTerminal()
+	if m.URLBar.DropdownOpen {
+		zoneID := m.findZoneAt(msg)
+		m.URLBar.CloseDropdown()
+		m.Focus = FocusURLBar
+		m.URLBar.Focus()
 		if strings.HasPrefix(zoneID, "method_") {
 			method := strings.TrimPrefix(zoneID, "method_")
 			for i, met := range requesteditor.Methods {
@@ -103,85 +198,103 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		if zoneID == "search_icon" {
-			return m, func() tea.Msg { return searchIconClickMsg{} }
-		}
-		if zoneID == "method_badge" {
-			m.URLBar.ToggleDropdown()
-			if m.URLBar.DropdownOpen {
-				m.Focus = FocusMethodDropdown
-			}
-			return m, nil
-		}
+		return m, nil
 	}
 
-	if msg.Type == tea.MouseRight {
-		if x < m.ExplorerWidth {
-			clickRow := y - 1 + m.Explorer.GetScrollStart()
-			m.ExplorerFocused = true
-			m.Focus = FocusExplorerPane
-			if clickRow >= 0 && clickRow < len(m.Explorer.Visible) {
-				m.Explorer.Cursor = clickRow
-				m.Explorer.OpenContextMenuAtRow(clickRow)
-			}
-			return m, nil
+	switch zoneID := m.findZoneAt(msg); zoneID {
+	case "tab_Params":
+		return m, func() tea.Msg { return tabClickMsg{tab: requesteditor.TabParams} }
+	case "tab_Headers":
+		return m, func() tea.Msg { return tabClickMsg{tab: requesteditor.TabHeaders} }
+	case "tab_Body":
+		return m, func() tea.Msg { return tabClickMsg{tab: requesteditor.TabBody} }
+	case "toggle_runner":
+		return m, func() tea.Msg { return toggleViewMsg{mode: ViewRunner} }
+	case "toggle_text":
+		return m, func() tea.Msg { return toggleViewMsg{mode: ViewText} }
+	case "search_icon":
+		return m, func() tea.Msg { return searchIconClickMsg{} }
+	case "method_badge":
+		m.URLBar.ToggleDropdown()
+		m.Focus = FocusMethodDropdown
+		return m, nil
+	case "send_btn":
+		m.saveAndEnqueue()
+		return m, m.sendRequestAsync()
+	case "urlbar":
+		m.Focus = FocusURLBar
+		m.focusCurrent()
+		if z := m.Zones.Get("urlbar"); !z.IsZero() {
+			m.URLBar.ClickAt(msg.X - z.StartX - 1)
 		}
+		return m, nil
+	case "resp_mode":
+		m.Response.ShowHeaders = !m.Response.ShowHeaders
+		m.Response.ScrollY = 0
+		m.Focus = FocusResponse
+		m.blurAll()
+		return m, nil
+	case "response":
+		m.Focus = FocusResponse
+		m.blurAll()
+		return m, nil
+	case "editor":
+		if m.ViewMode == ViewText {
+			m.Focus = FocusTextEditor
+			m.focusCurrent()
+			return m, m.TextEd.Update(m.editorRelative(msg))
+		}
+		m.Focus = FocusBody
+		m.focusCurrent()
+		return m, m.handleBodyMouse(m.editorRelative(msg))
 	}
-
 	return m, nil
 }
 
-func (m *MainScreen) updateExplorerHover(y int) {
-	if !m.ExplorerFocused {
-		return
+func (m *MainScreen) handleBodyMouse(msg tea.MouseMsg) tea.Cmd {
+	switch m.ActiveTab {
+	case requesteditor.TabParams:
+		return m.Params.Update(msg)
+	case requesteditor.TabHeaders:
+		return m.Headers.Update(msg)
 	}
-	row := y - 1 + m.Explorer.GetScrollStart()
-	m.Explorer.HoverAtRow(row)
+	return m.Body.Update(msg)
 }
 
+// findZoneAt returns the innermost main-pane zone under the mouse.
 func (m *MainScreen) findZoneAt(msg tea.MouseMsg) string {
+	ids := []string{"tab_Params", "tab_Headers", "tab_Body", "toggle_runner", "toggle_text", "search_icon", "resp_mode", "method_badge", "send_btn"}
 	if m.URLBar.DropdownOpen {
-		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"} {
-			id := fmt.Sprintf("method_%s", method)
-			if !m.Zones.Get(id).IsZero() && m.Zones.Get(id).InBounds(msg) {
-				return id
-			}
+		for _, method := range requesteditor.Methods {
+			ids = append(ids, "method_"+method)
 		}
 	}
-
-	nodeCount := len(m.Explorer.Visible)
-	if nodeCount > 500 {
-		nodeCount = 500
-	}
-	for i := 0; i < nodeCount; i++ {
-		id := fmt.Sprintf("explorer_%d", i)
-		if !m.Zones.Get(id).IsZero() && m.Zones.Get(id).InBounds(msg) {
+	ids = append(ids, "urlbar", "response", "editor")
+	for _, id := range ids {
+		if z := m.Zones.Get(id); !z.IsZero() && z.InBounds(msg) {
 			return id
-		}
-	}
-	for _, id := range []string{"tab_Params", "tab_Headers", "tab_Body", "toggle_runner", "toggle_text", "search_icon", "method_badge"} {
-		if !m.Zones.Get(id).IsZero() && m.Zones.Get(id).InBounds(msg) {
-			return id
-		}
-	}
-	if !m.URLBar.DropdownOpen {
-		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"} {
-			id := fmt.Sprintf("method_%s", method)
-			if !m.Zones.Get(id).IsZero() && m.Zones.Get(id).InBounds(msg) {
-				return id
-			}
 		}
 	}
 	return ""
 }
 
-func (m *MainScreen) handleExplorerClick(idx int) {
-	m.ExplorerFocused = true
-	m.URLBar.Blur()
-	m.Params.Blur()
-	m.Headers.Blur()
-	m.Body.Blur()
-	m.TextEd.Blur()
-	m.Focus = FocusExplorerPane
-	m.Explorer.ClickAtRow(idx)
+// editorRelative converts screen coordinates to the code editor's content
+// cell grid (inside its border).
+func (m *MainScreen) editorRelative(msg tea.MouseMsg) tea.MouseMsg {
+	z := m.Zones.Get("editor")
+	if z.IsZero() {
+		return msg
+	}
+	msg.X -= z.StartX + 1
+	msg.Y -= z.StartY + 1
+	return msg
+}
+
+func (m *MainScreen) findTopZone(msg tea.MouseMsg) string {
+	for _, id := range []string{"top_git", "top_find", "top_term", "top_help", "top_branch"} {
+		if z := m.Zones.Get(id); z != nil && !z.IsZero() && z.InBounds(msg) {
+			return id
+		}
+	}
+	return ""
 }

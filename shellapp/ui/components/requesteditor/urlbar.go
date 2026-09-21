@@ -2,10 +2,12 @@ package requesteditor
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/hittable/shellapp/ui/theme"
 	zone "github.com/lrstanley/bubblezone"
 )
@@ -20,44 +22,56 @@ const (
 
 var Methods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 
+// URLBar is the method badge + URL input. The method picker renders inline
+// in place of the URL line (no layout shift) while DropdownOpen.
 type URLBar struct {
-	MethodInput textinput.Model
-	URLInput    textinput.Model
-	Width       int
-	Focused     bool
-	Method      string
+	URLInput textinput.Model
+	Width    int
+	Focused  bool
+	Method   string
 
 	DropdownOpen bool
 	DropdownIdx  int
-
-	OnMethodSelected func(method string)
-	OnDropdownClosed func()
 }
 
 func NewURLBar() *URLBar {
-	method := textinput.New()
-	method.Placeholder = "GET"
-	method.CharLimit = 10
-	method.Width = 10
 	url := textinput.New()
-	url.Placeholder = "https://api.example.com/endpoint"
-	url.CharLimit = 500
-	return &URLBar{
-		MethodInput: method,
-		URLInput:    url,
-		Method:      "GET",
-	}
+	url.Placeholder = "https://api.example.com/endpoint  (<<KEY>> resolves from env.json)"
+	url.CharLimit = 2000
+	url.Prompt = ""
+	return &URLBar{URLInput: url, Method: "GET"}
 }
+
+// badgeWidth is the rendered width of the method badge plus its gap; the URL
+// input starts at this column inside the bar.
+const badgeWidth = 10
+const sendLabel = " ▶ Send "
 
 func (u *URLBar) SetSize(w int) {
 	u.Width = w
-	u.URLInput.Width = w - 18
+	u.URLInput.Width = w - badgeWidth - len(sendLabel) - 3
+	if u.URLInput.Width < 10 {
+		u.URLInput.Width = 10
+	}
+}
+
+// ClickAt moves the input cursor to the clicked column (relative to the
+// bar's inner left edge).
+func (u *URLBar) ClickAt(x int) {
+	p := x - badgeWidth
+	if p < 0 {
+		p = 0
+	}
+	u.URLInput.SetCursor(p) // clamps to the value length
 }
 
 func (u *URLBar) SetContent(method, url string) {
-	u.Method = method
-	u.MethodInput.SetValue(method)
+	if method == "" {
+		method = "GET"
+	}
+	u.Method = strings.ToUpper(method)
 	u.URLInput.SetValue(url)
+	u.URLInput.CursorEnd()
 }
 
 func (u *URLBar) GetContent() (string, string) {
@@ -75,42 +89,37 @@ func (u *URLBar) Blur() {
 }
 
 func (u *URLBar) ToggleDropdown() {
-	u.DropdownOpen = !u.DropdownOpen
 	if u.DropdownOpen {
-		for i, m := range Methods {
-			if m == u.Method {
-				u.DropdownIdx = i
-				break
-			}
-		}
-	} else {
-		if u.OnDropdownClosed != nil {
-			u.OnDropdownClosed()
+		u.CloseDropdown()
+		return
+	}
+	u.DropdownOpen = true
+	u.DropdownIdx = 0
+	for i, m := range Methods {
+		if m == u.Method {
+			u.DropdownIdx = i
 		}
 	}
 }
 
-func (u *URLBar) CloseDropdown() {
-	if u.DropdownOpen {
-		u.DropdownOpen = false
-		if u.OnDropdownClosed != nil {
-			u.OnDropdownClosed()
-		}
-	}
-}
+func (u *URLBar) CloseDropdown() { u.DropdownOpen = false }
 
 func (u *URLBar) SelectMethod(idx int) {
 	if idx >= 0 && idx < len(Methods) {
 		u.Method = Methods[idx]
-		u.MethodInput.SetValue(Methods[idx])
-		if u.OnMethodSelected != nil {
-			u.OnMethodSelected(Methods[idx])
-		}
 	}
 	u.DropdownOpen = false
-	if u.OnDropdownClosed != nil {
-		u.OnDropdownClosed()
+}
+
+// CycleMethod steps the method without opening the picker.
+func (u *URLBar) CycleMethod(dir int) {
+	for i, m := range Methods {
+		if m == u.Method {
+			u.Method = Methods[(i+dir+len(Methods))%len(Methods)]
+			return
+		}
 	}
+	u.Method = Methods[0]
 }
 
 func (u *URLBar) HandleDropdownKey(msg tea.KeyMsg) bool {
@@ -118,31 +127,29 @@ func (u *URLBar) HandleDropdownKey(msg tea.KeyMsg) bool {
 		return false
 	}
 	switch msg.String() {
-	case "up", "k":
-		if u.DropdownIdx > 0 {
-			u.DropdownIdx--
-		}
-		return true
-	case "down", "j":
-		if u.DropdownIdx < len(Methods)-1 {
-			u.DropdownIdx++
-		}
-		return true
+	case "left", "up", "k", "h", "shift+tab":
+		u.DropdownIdx = (u.DropdownIdx + len(Methods) - 1) % len(Methods)
+	case "right", "down", "j", "l", "tab":
+		u.DropdownIdx = (u.DropdownIdx + 1) % len(Methods)
 	case "enter", " ":
 		u.SelectMethod(u.DropdownIdx)
-		return true
 	case "esc":
 		u.CloseDropdown()
-		return true
+	default:
+		// Typing a method's first letter jumps to it.
+		s := strings.ToUpper(msg.String())
+		for i, m := range Methods {
+			if strings.HasPrefix(m, s) && i != u.DropdownIdx {
+				u.DropdownIdx = i
+				break
+			}
+		}
 	}
 	return true
 }
 
 func (u *URLBar) Update(msg tea.Msg) tea.Cmd {
-	if u.DropdownOpen {
-		return nil
-	}
-	if !u.Focused {
+	if u.DropdownOpen || !u.Focused {
 		return nil
 	}
 	var cmd tea.Cmd
@@ -151,31 +158,34 @@ func (u *URLBar) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (u *URLBar) View(z *zone.Manager) string {
-	method := z.Mark("method_badge", theme.MethodStyle.Render(fmt.Sprintf(" %-6s ▾", u.Method)))
-	url := theme.URLStyle.Render(u.URLInput.View())
-	bar := lipgloss.JoinHorizontal(lipgloss.Top, method, " ", url)
+	badge := z.Mark("method_badge", theme.MethodStyle.Foreground(theme.MethodColor(u.Method)).
+		Render(fmt.Sprintf(" %-7s▾", u.Method)))
 
-	var result string
-	if u.Focused {
-		result = theme.FocusedBorderStyle.Width(u.Width).Render(bar)
-	} else {
-		result = theme.UnfocusedBorderStyle.Width(u.Width).Render(bar)
-	}
-
+	var bar string
 	if u.DropdownOpen {
-		var menuLines []string
+		// The picker replaces the whole bar so it never changes the row count.
+		items := []string{theme.MutedStyle.Render("▾")}
 		for i, m := range Methods {
-			style := theme.ContextMenuItemStyle
+			st := theme.MutedStyle
 			if i == u.DropdownIdx {
-				style = theme.ContextMenuItemHoverStyle
+				st = theme.CursorFocusedStyle.Foreground(theme.MethodColor(m))
 			}
-			item := style.Render(fmt.Sprintf(" %-8s ", m))
-			menuLines = append(menuLines, z.Mark(fmt.Sprintf("method_%s", m), item))
+			items = append(items, z.Mark("method_"+m, st.Render(m)))
 		}
-		menu := lipgloss.JoinVertical(lipgloss.Left, menuLines...)
-		dropdown := theme.ContextMenuStyle.Render(menu)
-		result = result + "\n" + dropdown
+		bar = ansi.Truncate(strings.Join(items, " "), u.Width, "…")
+	} else {
+		send := z.Mark("send_btn", theme.SendButtonStyle.Render(sendLabel))
+		url := theme.URLStyle.Render(u.URLInput.View())
+		gap := u.Width - badgeWidth - lipgloss.Width(url) - lipgloss.Width(send)
+		if gap < 1 {
+			gap = 1
+		}
+		bar = lipgloss.JoinHorizontal(lipgloss.Top, badge, " ", url, strings.Repeat(" ", gap), send)
 	}
 
-	return result
+	style := theme.UnfocusedBorderStyle
+	if u.Focused || u.DropdownOpen {
+		style = theme.FocusedBorderStyle
+	}
+	return style.Width(u.Width).Render(bar)
 }

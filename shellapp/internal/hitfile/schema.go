@@ -1,6 +1,9 @@
 package hitfile
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+)
 
 type HitFile struct {
 	Method   string            `json:"method"`
@@ -36,14 +39,13 @@ func Parse(data []byte) (*HitFile, error) {
 	return &h, nil
 }
 
-func Marshal(h *HitFile) ([]byte, error) {
-	return json.MarshalIndent(h, "", "  ")
-}
-
-func MarshalWithNewline(h *HitFile) ([]byte, error) {
-	data, err := json.MarshalIndent(h, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return append(data, '\n'), nil
+// Marshal renders h as indented JSON without HTML escaping, so <<KEY>>
+// templates stay readable and byte-compatible with the web app's files.
+func Marshal(h *HitFile) []byte {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(h) // Encode appends a trailing newline
+	return buf.Bytes()
 }

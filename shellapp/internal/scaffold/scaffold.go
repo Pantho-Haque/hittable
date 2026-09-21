@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -43,12 +44,14 @@ func Ensure(root string) error {
 		Body:     "",
 		Response: nil,
 	}
-	hitData, err := json.MarshalIndent(hit, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(hit); err != nil {
 		return err
 	}
-	hitData = append(hitData, '\n')
-	if err := os.WriteFile(filepath.Join(tcDir, "test.hit"), hitData, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tcDir, "test.hit"), buf.Bytes(), 0o644); err != nil {
 		return err
 	}
 

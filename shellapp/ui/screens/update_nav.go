@@ -1,14 +1,15 @@
 package screens
 
 import (
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hittable/shellapp/internal/document"
 	"github.com/hittable/shellapp/internal/hitfile"
-	"github.com/hittable/shellapp/ui/components/requesteditor"
 )
 
 func (m *MainScreen) handleEsc() (tea.Model, tea.Cmd) {
-	if m.ExplorerFocused {
+	if m.ShowHelp {
+		m.ShowHelp = false
 		return m, nil
 	}
 	if m.Focus == FocusResponse && m.Response.SearchOpen {
@@ -20,38 +21,16 @@ func (m *MainScreen) handleEsc() (tea.Model, tea.Cmd) {
 		m.Focus = FocusURLBar
 		return m, nil
 	}
-	if m.Explorer.ContextMenuOpen {
-		m.Explorer.CloseContextMenu()
-		return m, nil
-	}
-	if m.Explorer.Renaming {
-		m.Explorer.Renaming = false
-		return m, nil
-	}
-	if m.Explorer.AddingFile || m.Explorer.AddingFolder {
-		m.Explorer.AddingFile = false
-		m.Explorer.AddingFolder = false
-		return m, nil
-	}
-	if m.Explorer.Deleting {
-		m.Explorer.Deleting = false
-		return m, nil
-	}
-	if m.Focus == FocusTextEditor && m.ActiveFile != "" {
-		if m.isVimteaInsertOrVisual() {
-			return m, nil
-		}
-		m.closeFile()
-		return m, nil
-	}
 	if m.ActiveFile != "" {
 		m.closeFile()
-		return m, nil
 	}
 	return m, nil
 }
 
-func (m *MainScreen) handleTab() (tea.Model, tea.Cmd) {
+// runnerOrder is the Tab focus cycle in Runner view.
+var runnerOrder = []FocusArea{FocusURLBar, FocusTabBar, FocusBody, FocusResponse}
+
+func (m *MainScreen) cycleFocus(dir int) (tea.Model, tea.Cmd) {
 	if m.ActiveFile == "" {
 		return m, nil
 	}
@@ -60,119 +39,70 @@ func (m *MainScreen) handleTab() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if doc.Kind == document.KindHit && m.ViewMode == ViewRunner {
-		m.URLBar.Blur()
-		m.Params.Blur()
-		m.Headers.Blur()
-		m.Body.Blur()
-		switch m.Focus {
-		case FocusURLBar:
-			m.Focus = FocusTabBar
-		case FocusTabBar:
-			m.Focus = FocusBody
-		case FocusBody:
-			m.Focus = FocusResponse
-		case FocusResponse:
-			m.Focus = FocusURLBar
-		default:
-			m.Focus = FocusURLBar
-		}
-		switch m.Focus {
-		case FocusURLBar:
-			m.URLBar.Focus()
-		case FocusBody:
-			switch m.ActiveTab {
-			case requesteditor.TabParams:
-				m.Params.Focus()
-			case requesteditor.TabHeaders:
-				m.Headers.Focus()
-			case requesteditor.TabBody:
-				m.Body.Focus()
+		cur := 0
+		for i, f := range runnerOrder {
+			if f == m.Focus {
+				cur = i
 			}
 		}
+		m.Focus = runnerOrder[(cur+dir+len(runnerOrder))%len(runnerOrder)]
+		m.focusCurrent()
+		return m, nil
+	}
+	// Text view: Tab toggles editor <-> explorer.
+	if m.Focus == FocusTextEditor {
+		m.blurAll()
+		m.LastFocus = FocusTextEditor
+		m.Focus = FocusExplorerPane
+		m.setExplorerFocused(true)
 	} else {
-		m.TextEd.Blur()
-		if m.Focus == FocusTextEditor {
-			m.Focus = FocusExplorerPane
-			m.ExplorerFocused = true
-			m.Explorer.EnsureCursorValid()
-		} else {
-			m.Focus = FocusTextEditor
-			m.TextEd.Focus()
-		}
+		m.Focus = FocusTextEditor
+		m.focusCurrent()
 	}
 	return m, nil
 }
 
-func (m *MainScreen) handleShiftTab() (tea.Model, tea.Cmd) {
-	if m.ActiveFile == "" {
-		return m, nil
-	}
-	doc := m.Store.Get(m.ActiveFile)
-	if doc == nil {
-		return m, nil
-	}
-	if doc.Kind == document.KindHit && m.ViewMode == ViewRunner {
-		m.URLBar.Blur()
-		m.Params.Blur()
-		m.Headers.Blur()
-		m.Body.Blur()
-		switch m.Focus {
-		case FocusURLBar:
-			m.Focus = FocusResponse
-		case FocusTabBar:
-			m.Focus = FocusURLBar
-		case FocusBody:
-			m.Focus = FocusTabBar
-		case FocusResponse:
-			m.Focus = FocusBody
-		default:
-			m.Focus = FocusResponse
-		}
-		switch m.Focus {
-		case FocusURLBar:
-			m.URLBar.Focus()
-		case FocusBody:
-			switch m.ActiveTab {
-			case requesteditor.TabParams:
-				m.Params.Focus()
-			case requesteditor.TabHeaders:
-				m.Headers.Focus()
-			case requesteditor.TabBody:
-				m.Body.Focus()
-			}
-		}
-	} else {
-		m.TextEd.Blur()
-		if m.Focus == FocusTextEditor {
-			m.Focus = FocusExplorerPane
-			m.ExplorerFocused = true
-			m.Explorer.EnsureCursorValid()
-		} else {
-			m.Focus = FocusTextEditor
-			m.TextEd.Focus()
-		}
-	}
-	return m, nil
-}
+func (m *MainScreen) handleTab() (tea.Model, tea.Cmd)      { return m.cycleFocus(1) }
+func (m *MainScreen) handleShiftTab() (tea.Model, tea.Cmd) { return m.cycleFocus(-1) }
 
 func (m *MainScreen) handleCopyCurl() tea.Cmd {
-	if m.ActiveFile == "" {
+	h := m.currentHit()
+	if h == nil {
 		return nil
 	}
-	doc := m.Store.Get(m.ActiveFile)
-	if doc == nil || doc.Kind != document.KindHit {
+	curl := hitfile.Resolve(h, m.EnvData).AsCurl()
+	if err := clipboard.WriteAll(curl); err != nil {
+		m.StatusBar = curl
 		return nil
 	}
-	method, _ := m.URLBar.GetContent()
-	url := m.URLBar.URLInput.Value()
-	hdrs := m.Headers.GetContent()
-	params := m.Params.GetContent()
-	body := m.Body.GetContent()
-	h := &hitfile.HitFile{
-		Method: method, URL: url, Headers: hdrs, Params: params, Body: body,
-	}
-	resolved := hitfile.Resolve(h, m.EnvData)
-	curl := resolved.AsCurl()
-	m.StatusBar = curl
+	m.StatusBar = "Copied as curl"
 	return nil
+}
+
+func (m *MainScreen) copyResponseBody() tea.Cmd {
+	if m.Response.Empty() {
+		return nil
+	}
+	if err := clipboard.WriteAll(m.Response.BodyForClipboard()); err != nil {
+		m.StatusBar = "Clipboard unavailable"
+		return nil
+	}
+	m.StatusBar = "Response body copied"
+	return nil
+}
+
+func (m *MainScreen) closeFile() {
+	if m.ActiveFile == "" {
+		return
+	}
+	m.saveAndEnqueue()
+	m.ActiveFile = ""
+	m.ViewMode = ViewRunner
+	m.Focus = FocusExplorerPane
+	m.LastFocus = FocusURLBar
+	m.setExplorerFocused(true)
+	m.blurAll()
+	m.URLBar.CloseDropdown()
+	m.Response.CloseSearch()
+	m.Response.SetResponse(0, "", 0, 0, false, "")
 }

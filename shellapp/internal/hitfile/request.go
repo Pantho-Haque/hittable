@@ -4,22 +4,28 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
+	"strings"
 	"time"
 )
 
 type ResolvedRequest struct {
-	Method   string
-	URL      string
-	Headers  map[string]string
-	Params   map[string]string
-	Body     string
-	RawHTTP  string
+	Method  string
+	URL     string
+	Headers map[string]string
+	Params  map[string]string
+	Body    string
+	RawHTTP string
 }
 
 func Resolve(h *HitFile, env map[string]string) *ResolvedRequest {
-	url := interpolateString(h.URL, env)
+	u := strings.TrimSpace(interpolateString(h.URL, env))
+	if u != "" && !strings.Contains(u, "://") {
+		u = "http://" + u
+	}
 	headers := make(map[string]string, len(h.Headers))
 	for k, v := range h.Headers {
 		headers[k] = interpolateString(v, env)
@@ -32,7 +38,7 @@ func Resolve(h *HitFile, env map[string]string) *ResolvedRequest {
 
 	return &ResolvedRequest{
 		Method:  h.Method,
-		URL:     url,
+		URL:     u,
 		Headers: headers,
 		Params:  params,
 		Body:    body,
@@ -40,33 +46,11 @@ func Resolve(h *HitFile, env map[string]string) *ResolvedRequest {
 }
 
 func (r *ResolvedRequest) ToHTTPRequest() (*http.Request, error) {
-	url := r.URL
-	if len(r.Params) > 0 {
-		sep := "?"
-		for i := 0; i < len(url); i++ {
-			if url[i] == '?' {
-				sep = "&"
-				break
-			}
-		}
-		for k, v := range r.Params {
-			url += sep + k + "=" + v
-			sep = "&"
-		}
-	}
-
-	var bodyReader *bytes.Buffer
+	var body io.Reader
 	if r.Body != "" {
-		bodyReader = bytes.NewBufferString(r.Body)
+		body = strings.NewReader(r.Body)
 	}
-
-	var req *http.Request
-	var err error
-	if bodyReader != nil {
-		req, err = http.NewRequest(r.Method, url, bodyReader)
-	} else {
-		req, err = http.NewRequest(r.Method, url, nil)
-	}
+	req, err := http.NewRequest(r.Method, r.FullURL(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -89,30 +73,24 @@ func (r *ResolvedRequest) AsCurl() string {
 		parts = append(parts, "-d", fmt.Sprintf("'%s'", r.Body))
 	}
 
-	url := r.URL
-	if len(r.Params) > 0 {
-		sep := "?"
-		for i := 0; i < len(url); i++ {
-			if url[i] == '?' {
-				sep = "&"
-				break
-			}
-		}
-		for k, v := range r.Params {
-			url += sep + k + "=" + v
-			sep = "&"
-		}
-	}
-	parts = append(parts, fmt.Sprintf("'%s'", url))
+	parts = append(parts, fmt.Sprintf("'%s'", r.FullURL()))
+	return strings.Join(parts, " ")
+}
 
-	result := ""
-	for i, p := range parts {
-		if i > 0 {
-			result += " "
-		}
-		result += p
+// FullURL appends Params to URL as a URL-encoded query string.
+func (r *ResolvedRequest) FullURL() string {
+	if len(r.Params) == 0 {
+		return r.URL
 	}
-	return result
+	q := url.Values{}
+	for k, v := range r.Params {
+		q.Set(k, v)
+	}
+	sep := "?"
+	if strings.Contains(r.URL, "?") {
+		sep = "&"
+	}
+	return r.URL + sep + q.Encode()
 }
 
 func ExecuteAndCapture(h *HitFile, env map[string]string) (*Response, error) {
@@ -130,13 +108,13 @@ func ExecuteAndCapture(h *HitFile, env map[string]string) (*Response, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	duration := time.Since(start)
 
 	var buf bytes.Buffer
 	_, err = buf.ReadFrom(resp.Body)
 	if err != nil {
 		return nil, err
 	}
+	duration := time.Since(start)
 	bodyBytes := buf.Bytes()
 
 	respHeaders := make(map[string]string)

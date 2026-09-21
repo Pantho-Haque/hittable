@@ -237,7 +237,7 @@ modes. This is architected in from the start:
   viewport, table), `github.com/charmbracelet/lipgloss`
 - **Mouse hit-testing**: `github.com/lrstanley/bubblezone` for precise zone-based click detection
 - **Syntax highlighting**: `github.com/alecthomas/chroma` for JSON body/response
-- **Vim editor**: `github.com/kujtimiihoxha/vimtea` for modal text editing
+- **Code editor**: `bubbles/textarea` as the buffer + a custom Chroma (Dracula) renderer
 - **File icons**: `github.com/epilande/go-devicons` for Nerd Font file type icons
 - **CLI entry**: `github.com/spf13/cobra` — a single root command; no subcommands needed
   beyond accepting an optional path argument
@@ -379,38 +379,56 @@ send binding.
 | Action                | Binding         | Context              |
 |-----------------------|-----------------|----------------------|
 | Quit                  | `ctrl+c`        | Global               |
+| Help                  | `?` / `F1`      | Explorer / Global    |
 | Toggle Explorer       | `ctrl+b`        | Global               |
-| Send Request          | `ctrl+r`        | Runner mode, main pane |
-| Save                  | `ctrl+s`        | Global               |
-| Toggle Runner/Text    | `ctrl+t`        | .hit file open       |
-| Search Response       | `ctrl+f`        | Main pane            |
-| Close File            | `esc`           | Main pane (not in vim insert/visual mode) |
-| Next Tab Pane         | `tab`           | Main pane            |
-| Prev Tab Pane         | `shift+tab`     | Main pane            |
-| Move Up               | `↑` / `k`       | Explorer             |
-| Move Down             | `↓` / `j`       | Explorer             |
-| Open / Expand         | `enter`         | Explorer             |
-| Context Menu          | `x`             | Explorer             |
-| New File              | `ctrl+n`        | Explorer             |
-| New Folder            | `ctrl+shift+n`  | Explorer             |
-| Rename                | `ctrl+e`        | Explorer             |
-| Delete                | `ctrl+d`        | Explorer             |
-| Copy as Curl          | `ctrl+shift+c`  | Runner mode          |
-| Help                  | `?`             | Global               |
-| Select Method         | `enter`         | URL bar focused      |
-| Method Dropdown Up    | `↑` / `k`       | Method dropdown open |
-| Method Dropdown Down  | `↓` / `j`       | Method dropdown open |
-| Search Next           | `enter` / `n`   | Response search open |
-| Search Prev           | `shift+enter`   | Response search open |
+| Send Request          | `ctrl+r` / `ctrl+⏎` | Global (.hit open) |
+| Save now              | `ctrl+s`        | Global (autosave is always on) |
+| Toggle Runner/Text    | `ctrl+t`        | Global (.hit open)   |
+| Copy as curl / body   | `ctrl+y`        | Runner / Response    |
+| Close File            | `esc`           | Main pane            |
+| Next / Prev pane      | `tab` / `shift+tab` | Main pane        |
+| Move Up / Down        | `↑`/`k`, `↓`/`j` | Explorer            |
+| Top / Bottom          | `g` / `G`, `home` / `end` | Explorer, Response |
+| Page Up / Down        | `pgup`/`ctrl+u`, `pgdown`/`ctrl+d` | Explorer, Response |
+| Open / Expand         | `enter` / `l`   | Explorer             |
+| Collapse / Parent     | `h`             | Explorer             |
+| Context Menu          | `x` / right-click | Explorer           |
+| New File / Folder     | `ctrl+n` / `ctrl+f` | Explorer         |
+| Rename / Delete       | `ctrl+e` / `ctrl+d` | Explorer         |
+| Refresh tree          | `r`             | Explorer             |
+| Method picker         | `enter`         | URL bar focused      |
+| Cycle method          | `ctrl+←` / `ctrl+→` | URL bar focused  |
+| Pick method           | `←/→`, first letter, `enter` | Picker open |
+| Switch tab            | `←/→`, `1/2/3`  | Tab bar focused      |
+| Switch tab            | `alt+1/2/3`     | Editor focused       |
+| Format body JSON      | `ctrl+l`        | Body tab focused     |
+| Search Response       | `ctrl+f`        | Runner view          |
+| Search Next / Prev    | `enter`/`n`, `shift+enter`/`N` | Search |
+| Response headers      | `h`             | Response focused     |
 | Delete Confirm        | `y` / `n`       | Delete confirmation  |
-| Rename Confirm        | `enter`         | Inline rename        |
-| Add Confirm           | `enter`         | Inline add file/folder |
-| Click Tab             | `mouse left`    | Tab bar (Params/Headers/Body) |
-| Click Toggle          | `mouse left`    | Runner/Text toggle   |
-| Click Method Badge    | `mouse left`    | Method dropdown badge |
-| Click Search Icon     | `mouse left`    | Response panel header |
-
----
+| Editor: undo / redo   | `ctrl+z` / `ctrl+y` | Text editor      |
+| Editor: find / next   | `ctrl+f` / `⏎`, `F3` | Text editor     |
+| Editor: go to line    | `ctrl+g`        | Text editor          |
+| Editor: word jump     | `ctrl+←/→`, `alt+←/→` | Text editor    |
+| Editor: indent        | `tab` (2 spaces) | Text editor         |
+| Editor: leave         | `shift+tab`     | Text editor → Explorer |
+| Editor: select        | drag, `shift+←→↑↓`, double-click word, `ctrl+a` | Any editor |
+| Editor: copy/cut/paste| `ctrl+c` / `ctrl+x` / `ctrl+v` | Any editor (ctrl+c quits only without a selection) |
+| Send (mouse)          | click `▶ Send`  | URL bar              |
+| Terminal toggle/focus | `ctrl+j`, `ctrl+\``, click strip | Global (`ctrl+j` is the reliable one; ctrl+` only in terminals that emit NUL for it) |
+| Terminal leave        | `ctrl+b`        | Terminal focused (all other keys, incl. ctrl+c, go to the shell) |
+| Git panel             | `ctrl+g` (outside editors), `alt+g`, `F5`, `g` in explorer, click `⎇ Git` | Global |
+| Git: sections         | `1-5`, `tab`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
+| Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `d` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · discard · commit · stash · push · pull · fetch · open/collapse · filter |
+| Find file             | `ctrl+p`, `/` in explorer, click `Find` | Global (fuzzy, skips node_modules etc.) |
+| Live grep             | `alt+f`, `tab` inside the palette | Global (ripgrep → git grep → walk) |
+| Git: commits          | `f` `/` `y` `J/K` | file↔repo history · search · hash · scroll diff |
+| Git: branches         | `⏎` `n` `d` `f` | checkout · new · delete · fetch |
+| Git: stashes          | `⏎` `s` `d`     | pop · stash · drop |
+| Git: blame            | `⏎` `b`         | go to line · toggle inline blame in editor |
+| Click                 | mouse left      | Everything: files, folders, tabs, toggle, method, URL cursor, editor cursor, response, body/headers label |
+| Scroll                | wheel           | Explorer, editor, response |
+| Resize explorer       | drag `│`        | Separator            |
 
 ## 10. Changelog
 
@@ -516,3 +534,162 @@ send binding.
    content. Integration tests verify disk content matches what was typed.
 4. **Tests added**: JSON round-trip, invalid JSON indicator, pretty-print validation,
    live persist for params/headers/body (type → save → read disk → assert).
+
+### v1.6 — Bug-fix pass
+1. **Templates preserved**: `<<KEY>>` values are no longer interpolated into the
+   editor widgets and written back to disk; resolution happens only at send time.
+   `.hit` files are written without HTML escaping (`<<` stays `<<`, not `\u003c`).
+2. **No lost edits**: the outgoing file is committed before any file switch, close,
+   delete, rename, or quit. Re-opening a path reuses the in-memory document instead
+   of re-reading disk. Pending writes are cancelled on delete / flushed before rename.
+3. **Explorer**: directories load lazily on expand (startup no longer walks
+   `node_modules`/`.git`); folders toggle on single click; rename actually renames
+   and "new folder" makes a directory (both used to create an empty file); `x` /
+   right-click open a working context menu; rows are width-clamped.
+4. **Mouse**: separator drag works; clicking the URL bar / editor / response focuses
+   it and drops explorer focus; wheel scrolls the response and text editor.
+5. **Layout**: frame is exactly terminal height at any size; footer truncates.
+6. **Status bar**: send errors, "Saved", copy-as-curl, and file-op failures are now
+   shown in the footer. `ctrl+y` copies the curl command to the clipboard.
+7. **env.json** is edited as raw JSON (no lossy `KEY=value` transform); `EnvData`
+   refreshes on save.
+8. Query params are URL-encoded; response for a file that was switched away from is
+   dropped instead of written into the wrong file.
+
+### v1.7 — Production polish
+1. **Performance**: response highlighting is computed once per response (was on
+   every frame, including every mouse move); bodies over 256KB render plain so a
+   1MB response lands in ~30ms. Frame render is ~1ms.
+2. **Navigation**: `ctrl+r/s/t/y` and `F1` work from any focus. `alt+1/2/3` jump to
+   Params/Headers/Body; `ctrl+←/→` cycle the method; `g/G`, `pgup/pgdown` in the
+   explorer and response; `h` toggles response headers; `r` refreshes the tree;
+   `?`/`F1` open a keyboard reference overlay. Footer hints are per-focus.
+3. **Visuals**: method badge coloured per verb; status coloured 2xx/3xx/4xx+;
+   response shows size, scroll percentage and body/headers mode; the method picker
+   renders inline (no layout shift); the tab bar shows a focus marker and a ⚠ on
+   tabs with invalid JSON; explorer cursor is bright when focused and dim otherwise;
+   folders/.hit files are tinted; text editor has line numbers, cursor-line
+   highlight and a Ln/Col indicator; a spinner shows while sending.
+4. **Editing**: Params/Headers keep a fixed status row (invalid JSON never changes
+   the layout, and the last valid value is kept); `ctrl+l` formats the body; the
+   text editor scrolls with the mouse wheel; the URL bar accepts long URLs.
+5. **Sending**: env.json is re-read before each send if not open in-app; URLs
+   without a scheme get `http://`; double-send is guarded; duration includes the
+   body read; non-JSON responses (HTML, text) display verbatim; the search overlay
+   scrolls to the current match.
+
+### v1.8 — VS Code-style editor, Dracula theme, floating menu
+1. **Context menu** is a floating box anchored under the cursor row (above it near
+   the bottom), composited over the tree instead of pushing rows down. Mouse hover
+   moves the highlight; click selects; click elsewhere closes.
+2. **Code editor** (`ui/components/texteditor`): bubbles/textarea remains the editing
+   buffer, but the view is rendered by the package: Chroma syntax highlighting by
+   file extension (`.hit` as JSON) with the Dracula style, line-number gutter with
+   active-line emphasis, horizontal scroll instead of soft wrap, block cursor,
+   click-to-position, wheel scroll, undo/redo (`ctrl+z`/`ctrl+y`, 200 steps), find
+   (`ctrl+f`, `⏎` next, `F3`), go-to-line (`ctrl+g`), `tab` inserts two spaces,
+   `ctrl+←/→` word jumps, status row `Ln, Col · language`. Per-line highlight cache
+   keeps rendering O(visible lines).
+3. **Dracula palette** across the app (`ui/theme`), response highlighting uses
+   Chroma's `dracula` style.
+4. Explorer hides `.git`, `.svn`, `.hg`, `.DS_Store` like VS Code's `files.exclude`.
+5. Fira Code is a terminal font setting, not something the app can pick; set it in
+   the terminal profile (see README note in v1.8 delivery).
+
+### v1.9 — Mouse everywhere
+1. **Runner tabs** (Params / Headers / Body) are now instances of the code editor:
+   click-to-position, drag selection, wheel scroll, JSON highlighting, undo/redo,
+   find, go-to-line. Validity hint lives in the editor's status row.
+2. **Selection**: drag, shift+arrows, double-click word, `ctrl+a`; typing replaces
+   the selection (one undo step); `ctrl+c` copies when a selection exists (otherwise
+   quits, as before), `ctrl+x` cuts, `ctrl+v` pastes.
+3. **URL bar**: clicking places the input cursor; a `▶ Send` button sends.
+4. **Response**: the `body` / `headers` label is clickable.
+5. Drag detection: bubbletea reports a drag as a left-button event with a motion
+   action; the screen now distinguishes press vs. drag, which also makes the
+   explorer separator drag work in real terminals.
+
+### v2.0 — Integrated terminal + zone fix
+1. **Root-cause fix for main-pane mouse**: `ui.App.Update` returned the inner
+   `MainScreen` as the model, so bubbletea bypassed `App.View` (and its bubblezone
+   `Scan`) after the first message — no main-pane zone ever registered in the real
+   program. The App now returns itself. The explorer's hand-rolled hit-testing was a
+   workaround for this same bug.
+2. **End-to-end harness** (`ui/e2e`): runs the real program with piped input and a
+   vt10x emulator on its output, injecting SGR mouse sequences and asserting on the
+   rendered screen. Covers explorer clicks, editor click-to-position, tab clicks,
+   and the terminal panel.
+3. **Integrated terminal** (`ui/components/terminal`): `$SHELL -l` on a PTY
+   (`creack/pty`), parsed by `hinshun/vt10x`, rendered with 16/256/true-colour and
+   bold/italic/underline/reverse. A one-row `▸ TERMINAL` strip sits under the main
+   pane; click it (or press ctrl+`) to open + focus, click again while focused to
+   hide, click the panel to focus it. While focused every key goes to the shell
+   (`ctrl+c` included); `ctrl+b` returns to the explorer; clicking the editor leaves.
+   The panel takes a third of the height; the main pane shrinks accordingly. The
+   shell is killed on quit; if it exits, any key restarts it. `ctrl+v` pastes.
+
+### v2.1 — Icon pack
+1. Explorer icons come from `go-devicons` (nvim-web-devicons port): Nerd Font glyph
+   + colour per file name/extension, folder glyphs closed/open, `.hit` = bolt (cyan),
+   `env.json` = cog (orange). Highlighted rows render as one styled run so the row
+   background stays unbroken; plain rows colour the icon per type.
+2. `--icons emoji` restores the emoji set for terminals without a Nerd Font.
+   README documents installing FiraCode Nerd Font.
+
+### v2.2 — Brand mark
+1. `ui/theme/brand.go`: the web app's logo (rounded dark tile, bold italic "H") as a
+   block-art tile, the `H I T T A B L E` wordmark in brand cyan `#00e5cc`, and the
+   tagline. Shown centred on the welcome screen (wordmark-only on tiny terminals)
+   and as the help overlay title.
+2. `.hit` files use a one-cell "H" chip (white on the tile colour) as their icon in
+   nerd mode, matching the web app's file identity.
+
+### v2.2.1
+- `ctrl+j` toggles the terminal (VS Code panel binding) — ctrl+` is not delivered
+  by every macOS terminal. `HITTABLE_KEYLOG=<path>` logs delivered key names.
+
+### v2.3 — Git (GitLens-style)
+1. **Top navbar** (row 0): brand, root name, `⎇ Git`, `▤ Terminal`, `? Help` buttons
+   and a branch badge (`⎇ main ●3 ↑1 ↓0`). Explorer and main column shift down one row.
+2. **`internal/gitx`**: git CLI wrapper (status v2 with branch/ahead/behind, stage,
+   unstage, discard, commit, push/pull/fetch, diff, show, log, blame porcelain,
+   branches, checkout/create/delete, stashes push/pop/drop/show). Handles roots that
+   are sub-directories and macOS symlinked paths via `--show-prefix`.
+3. **`ui/components/gitpanel`**: main-pane panel with Status / Commits (repo or
+   file history, search) / Branches / Stashes / Blame lists plus a detail pane
+   (coloured unified diff, commit, stash, or the commit behind a blamed line).
+   Prompts for commit message, branch name, stash message, filter; y/n confirms for
+   discard, delete, drop, pop. Network ops run async with a busy indicator. Mouse:
+   tabs, rows (click selects, click again acts), wheel on list or detail.
+4. **Explorer decorations**: VS Code-style status colours and M/A/D/U/! badges on
+   files, `●` on folders containing changes. Refreshed on open, save (rate-limited),
+   explorer `r`, and after every git action.
+5. **Blame in the editor**: `b` in the Blame section toggles a GitLens-style gutter
+   annotation (author, age, summary) per line and a current-line blame note in the
+   status row. `⏎` on a blame row jumps the editor to that line.
+6. Not included (GitLens features without a terminal equivalent here): commit graph,
+   worktrees, GitHub/GitLab integrations, interactive rebase editor, line history,
+   compare refs, launchpad.
+
+### v2.4 — Navbar, status groups, split diff, edit-in-preview, find/grep
+1. **Navbar** restyled: brand block `H HITTABLE › project`, pill buttons (Git · Find ·
+   Terminal · Help) with hover and active states, branch pill on the right with
+   changed-file count and ahead/behind. Nerd Font icons in nerd mode, text fallback.
+2. **Status section**: two collapsible groups — `▾ Staged Changes` and `▾ Changes`
+   (untracked included). Each header has a right-hand `[ + stage all ]` /
+   `[ − unstage all ]` button; every file row has `[ + ]` / `[ − ]`. One click (or
+   `+`/`−`/`s`/`u`) moves the file; `⏎` on a header collapses it.
+3. **Inline ⇄ side-by-side diff**: `v` or the `[inline split]` toggle in the panel
+   header. Split view pairs removed/added runs with old/new line numbers.
+4. **Edit in preview**: `e` on an unstaged, non-conflicting file replaces the diff
+   pane with the code editor on the working copy; edits autosave through the
+   document store (so an open editor tab stays in sync); `esc` returns to the diff.
+   Staged or conflicted files refuse, matching the request.
+5. **Find palette** (`ui/components/palette`): `ctrl+p` / `/` fuzzy file finder over
+   the tree (skips node_modules, .git, .next, dist, build, vendor, target); `alt+f`
+   live grep (ripgrep, then git grep, then a Go walk) with `path:line` results;
+   `⏎` opens the file at the line; `tab` flips modes; results are async and stale
+   queries are dropped.
+6. Undo: verified through the real-terminal harness that `ctrl+z` (0x1a) undoes.
+   `cmd+z` never reaches a terminal program on macOS unless the terminal maps it
+   (iTerm2: Keys → Key Bindings → map ⌘Z to "Send Hex Codes: 0x1a").

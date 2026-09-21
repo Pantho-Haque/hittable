@@ -2,9 +2,12 @@
 package screens
 
 import (
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hittable/shellapp/ui/components/gitpanel"
+	"github.com/hittable/shellapp/ui/components/palette"
 	"github.com/hittable/shellapp/ui/components/requesteditor"
-	explorerui "github.com/hittable/shellapp/ui/components/explorer"
+	"github.com/hittable/shellapp/ui/components/terminal"
 )
 
 type tabClickMsg struct {
@@ -22,8 +25,19 @@ type methodSelectMsg struct {
 
 type searchIconClickMsg struct{}
 
-type explorerClickMsg struct {
-	idx int
+// renameConfirmMsg / deleteConfirmMsg / addConfirmMsg are emitted by the
+// explorer when the user confirms an inline prompt.
+type renameConfirmMsg struct {
+	oldPath string
+	newPath string
+}
+type deleteConfirmMsg struct {
+	path string
+}
+type addConfirmMsg struct {
+	parent string
+	name   string
+	isDir  bool
 }
 
 func (m *MainScreen) Init() tea.Cmd {
@@ -42,23 +56,34 @@ func (m *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case responseMsg:
 		m.handleResponseMsg(msg)
 		return m, nil
-	case explorerui.RenameConfirmMsg:
-		return m.handleRenameConfirm()
-	case explorerui.DeleteConfirmMsg:
-		return m.handleDeleteConfirm()
-	case explorerui.AddConfirmMsg:
-		return m.handleAddConfirm()
+	case terminal.OutputMsg:
+		return m, nil
+	case gitpanel.DoneMsg:
+		m.Git.Done(msg)
+		return m, nil
+	case palette.ResultsMsg:
+		m.Palette.Deliver(msg)
+		return m, nil
+	case spinner.TickMsg:
+		if !m.Sending {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.Spinner, cmd = m.Spinner.Update(msg)
+		return m, cmd
+	case renameConfirmMsg:
+		m.applyRename(msg.oldPath, msg.newPath)
+		return m, nil
+	case deleteConfirmMsg:
+		m.applyDelete(msg.path)
+		return m, nil
+	case addConfirmMsg:
+		m.applyAdd(msg.parent, msg.name, msg.isDir)
+		return m, nil
 	case tabClickMsg:
 		m.ActiveTab = msg.tab
 		m.Focus = FocusBody
-		switch msg.tab {
-		case requesteditor.TabParams:
-			m.Params.Focus()
-		case requesteditor.TabHeaders:
-			m.Headers.Focus()
-		case requesteditor.TabBody:
-			m.Body.Focus()
-		}
+		m.focusCurrent()
 		return m, nil
 	case toggleViewMsg:
 		if msg.mode == ViewRunner && m.ViewMode != ViewRunner {
@@ -70,17 +95,17 @@ func (m *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case methodSelectMsg:
 		m.URLBar.SelectMethod(msg.idx)
 		m.Focus = FocusURLBar
-		m.URLBar.Focus()
+		m.focusCurrent()
+		m.saveAndEnqueueDebounced()
 		return m, nil
 	case searchIconClickMsg:
 		m.Response.OpenSearch()
+		m.setExplorerFocused(false)
+		m.blurAll()
 		m.Focus = FocusResponse
 		return m, nil
 	case debounceSaveMsg:
 		m.saveAndEnqueue()
-		return m, nil
-	case explorerClickMsg:
-		m.handleExplorerClick(msg.idx)
 		return m, nil
 	}
 	return m, nil

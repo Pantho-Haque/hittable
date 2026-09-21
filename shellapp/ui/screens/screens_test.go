@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	zone "github.com/lrstanley/bubblezone"
 	"github.com/hittable/shellapp/ui/components/requesteditor"
+	zone "github.com/lrstanley/bubblezone"
 )
 
 func TestTabClickChangesTab(t *testing.T) {

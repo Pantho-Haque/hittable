@@ -2,63 +2,99 @@ package screens
 
 import (
 	"encoding/json"
-	"strings"
 
 	"github.com/hittable/shellapp/internal/document"
 	"github.com/hittable/shellapp/internal/hitfile"
 )
 
+// currentHit builds a HitFile from the Runner view widgets (raw, un-interpolated
+// values) for the active .hit file, or nil if none is open. Invalid JSON in the
+// Params/Headers tabs keeps the last good value instead of writing null.
+func (m *MainScreen) currentHit() *hitfile.HitFile {
+	if m.ActiveFile == "" {
+		return nil
+	}
+	doc := m.Store.Get(m.ActiveFile)
+	if doc == nil || doc.Kind != document.KindHit {
+		return nil
+	}
+	existing, _ := doc.HitContent.(*hitfile.HitFile)
+	if m.ViewMode == ViewText {
+		var h hitfile.HitFile
+		if err := json.Unmarshal([]byte(m.TextEd.GetContent()), &h); err != nil {
+			return existing
+		}
+		return &h
+	}
+	method, url := m.URLBar.GetContent()
+	h := &hitfile.HitFile{
+		Method: method, URL: url,
+		Headers: m.Headers.GetContent(), Params: m.Params.GetContent(),
+		Body: m.Body.GetContent(),
+	}
+	if existing != nil {
+		h.Response = existing.Response
+		if h.Headers == nil {
+			h.Headers = existing.Headers
+		}
+		if h.Params == nil {
+			h.Params = existing.Params
+		}
+	}
+	if h.Headers == nil {
+		h.Headers = map[string]string{}
+	}
+	if h.Params == nil {
+		h.Params = map[string]string{}
+	}
+	return h
+}
+
+// saveAndEnqueue commits the active view's content to its DocumentModel and
+// schedules a debounced disk write.
 func (m *MainScreen) saveAndEnqueue() {
 	if m.ActiveFile == "" {
 		return
 	}
 	doc := m.Store.Get(m.ActiveFile)
-	if doc == nil {
+	if doc == nil || doc.Kind == document.KindBinary {
 		return
 	}
-	doc.Lock()
-	defer doc.Unlock()
 
 	var content string
-	if doc.Kind == document.KindHit {
-		method, _ := m.URLBar.GetContent()
-		url := m.URLBar.URLInput.Value()
-		hdrs := m.Headers.GetContent()
-		params := m.Params.GetContent()
-		bodyContent := m.Body.GetContent()
-		h := &hitfile.HitFile{
-			Method: method, URL: url, Headers: hdrs, Params: params, Body: bodyContent,
-		}
-		if doc.HitContent != nil {
-			if existing, ok := doc.HitContent.(*hitfile.HitFile); ok && existing.Response != nil {
-				h.Response = existing.Response
+	switch doc.Kind {
+	case document.KindHit:
+		if m.ViewMode == ViewText {
+			content = m.TextEd.GetContent()
+			if h := m.currentHit(); h != nil {
+				doc.HitContent = h
 			}
-		}
-		data, _ := json.MarshalIndent(h, "", "  ")
-		content = string(data) + "\n"
-		doc.HitContent = h
-	} else if doc.Kind == document.KindEnv {
-		envText := m.TextEd.GetContent()
-		env := make(map[string]string)
-		for _, line := range strings.Split(envText, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
+		} else {
+			h := m.currentHit()
+			if h == nil {
+				return
 			}
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				env[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
-			}
+			content = string(hitfile.Marshal(h))
+			doc.HitContent = h
 		}
-		data, _ := json.MarshalIndent(env, "", "  ")
-		content = string(data) + "\n"
-		m.EnvData = env
-	} else {
+	case document.KindEnv:
+		content = m.TextEd.GetContent()
+		var env map[string]string
+		if json.Unmarshal([]byte(content), &env) == nil && env != nil {
+			m.EnvData = env
+		}
+	default:
 		content = m.TextEd.GetContent()
 	}
 
+	doc.Lock()
+	if content == doc.Content {
+		doc.Unlock()
+		return
+	}
 	doc.SetContent(content)
 	gen := doc.IncGeneration()
-	doc.SetLastFlushed(gen)
+	doc.Unlock()
 	m.WriteQueue.Update(doc.Path, content, gen)
+	m.refreshGit(false)
 }

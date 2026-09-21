@@ -13,57 +13,29 @@ type writeRequest struct {
 }
 
 type WriteQueue struct {
-	mu       sync.Mutex
-	queue    map[string]writeRequest
-	timers   map[string]*time.Timer
-	delay    time.Duration
-	inflight map[string]bool
+	mu     sync.Mutex
+	queue  map[string]writeRequest
+	timers map[string]*time.Timer
+	delay  time.Duration
 }
 
 func NewWriteQueue() *WriteQueue {
 	return &WriteQueue{
-		queue:    make(map[string]writeRequest),
-		timers:   make(map[string]*time.Timer),
-		delay:    200 * time.Millisecond,
-		inflight: make(map[string]bool),
+		queue:  make(map[string]writeRequest),
+		timers: make(map[string]*time.Timer),
+		delay:  200 * time.Millisecond,
 	}
 }
 
-func (w *WriteQueue) Enqueue(path, content string, generation uint64) {
+// Cancel drops any pending write for path (e.g. the file was deleted).
+func (w *WriteQueue) Cancel(path string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
-	w.queue[path] = writeRequest{
-		path:       path,
-		content:    content,
-		generation: generation,
-	}
-
 	if t, ok := w.timers[path]; ok {
 		t.Stop()
-	}
-
-	w.timers[path] = time.AfterFunc(w.delay, func() {
-		w.flush(path)
-	})
-}
-
-func (w *WriteQueue) flush(path string) {
-	w.mu.Lock()
-	req, ok := w.queue[path]
-	if !ok {
-		w.mu.Unlock()
-		return
+		delete(w.timers, path)
 	}
 	delete(w.queue, path)
-	delete(w.timers, path)
-	w.mu.Unlock()
-
-	_ = os.WriteFile(path, []byte(req.content), 0o644)
-
-	w.mu.Lock()
-	w.inflight[path] = false
-	w.mu.Unlock()
 }
 
 func (w *WriteQueue) FlushNow() {

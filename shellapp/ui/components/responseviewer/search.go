@@ -1,4 +1,3 @@
-// Package responseviewer implements search functionality for the response viewer.
 package responseviewer
 
 import (
@@ -9,6 +8,7 @@ import (
 
 func (r *ResponseViewer) OpenSearch() {
 	r.SearchOpen = true
+	r.ShowHeaders = false
 	r.SearchInput.SetValue("")
 	r.SearchInput.Focus()
 	r.SearchQuery = ""
@@ -18,11 +18,14 @@ func (r *ResponseViewer) OpenSearch() {
 
 func (r *ResponseViewer) CloseSearch() {
 	r.SearchOpen = false
+	r.SearchInput.Blur()
 	r.SearchQuery = ""
 	r.SearchMatches = nil
 	r.SearchIdx = -1
+	r.clampScroll()
 }
 
+// doSearch records byte offsets of every case-insensitive match in RawContent.
 func (r *ResponseViewer) doSearch() {
 	r.SearchMatches = nil
 	r.SearchIdx = -1
@@ -42,6 +45,7 @@ func (r *ResponseViewer) doSearch() {
 	}
 	if len(r.SearchMatches) > 0 {
 		r.SearchIdx = 0
+		r.scrollToMatch()
 	}
 }
 
@@ -50,81 +54,99 @@ func (r *ResponseViewer) NextMatch() {
 		return
 	}
 	r.SearchIdx = (r.SearchIdx + 1) % len(r.SearchMatches)
+	r.scrollToMatch()
 }
 
 func (r *ResponseViewer) PrevMatch() {
 	if len(r.SearchMatches) == 0 {
 		return
 	}
-	r.SearchIdx--
-	if r.SearchIdx < 0 {
-		r.SearchIdx = len(r.SearchMatches) - 1
+	r.SearchIdx = (r.SearchIdx + len(r.SearchMatches) - 1) % len(r.SearchMatches)
+	r.scrollToMatch()
+}
+
+// scrollToMatch centres the current match's line in the viewport.
+func (r *ResponseViewer) scrollToMatch() {
+	if r.SearchIdx < 0 || r.SearchIdx >= len(r.SearchMatches) {
+		return
 	}
+	off := r.SearchMatches[r.SearchIdx]
+	if off > len(r.RawContent) {
+		off = len(r.RawContent)
+	}
+	line := strings.Count(r.RawContent[:off], "\n")
+	r.ScrollY = line - r.bodyRows()/2
+	r.clampScroll()
 }
 
 func (r *ResponseViewer) Update(msg tea.Msg) tea.Cmd {
 	if r.SearchOpen {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch km.String() {
 			case "esc":
 				r.CloseSearch()
 				return nil
-			case "enter":
+			case "enter", "ctrl+n", "down":
 				r.NextMatch()
 				return nil
-			case "shift+enter":
+			case "shift+enter", "ctrl+p", "up":
 				r.PrevMatch()
 				return nil
 			}
 		}
 		var cmd tea.Cmd
 		r.SearchInput, cmd = r.SearchInput.Update(msg)
-		newQuery := r.SearchInput.Value()
-		if newQuery != r.SearchQuery {
-			r.SearchQuery = newQuery
+		if q := r.SearchInput.Value(); q != r.SearchQuery {
+			r.SearchQuery = q
 			r.doSearch()
 		}
 		return cmd
 	}
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "up", "k":
-			if r.ScrollY > 0 {
-				r.ScrollY--
-			}
-		case "down", "j":
-			r.ScrollY++
-		case "pgup":
-			if r.ScrollY > 0 {
-				r.ScrollY -= 5
-				if r.ScrollY < 0 {
-					r.ScrollY = 0
-				}
-			}
-		case "pgdown":
-			r.ScrollY += 5
-		}
-		r.clampScroll()
+	km, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return nil
 	}
+	page := r.bodyRows() - 1
+	if page < 1 {
+		page = 1
+	}
+	switch km.String() {
+	case "up", "k":
+		r.ScrollY--
+	case "down", "j":
+		r.ScrollY++
+	case "pgup", "ctrl+u", "b":
+		r.ScrollY -= page
+	case "pgdown", "ctrl+d", " ", "f":
+		r.ScrollY += page
+	case "home", "g":
+		r.ScrollY = 0
+	case "end", "G":
+		r.ScrollY = len(r.lines())
+	case "h":
+		r.ShowHeaders = !r.ShowHeaders
+		r.ScrollY = 0
+	case "n":
+		r.NextMatch()
+	case "N":
+		r.PrevMatch()
+	}
+	r.clampScroll()
 	return nil
 }
 
+// Scroll moves the viewport (mouse wheel).
+func (r *ResponseViewer) Scroll(up bool) {
+	if up {
+		r.ScrollY -= 3
+	} else {
+		r.ScrollY += 3
+	}
+	r.clampScroll()
+}
+
 func (r *ResponseViewer) clampScroll() {
-	if r.Content == "" {
-		r.ScrollY = 0
-		return
-	}
-	maxLines := r.Height - 4
-	if r.SearchOpen {
-		maxLines -= 2
-	}
-	if maxLines < 1 {
-		maxLines = 1
-	}
-	contentLines := strings.Split(r.Content, "\n")
-	maxScroll := len(contentLines) - maxLines
+	maxScroll := len(r.lines()) - r.bodyRows()
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
