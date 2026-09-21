@@ -284,21 +284,24 @@ func (p *Preview) View(focused bool) string {
 		border = theme.FocusedBorderStyle
 	}
 	inner := p.Width - 2
+	sb := theme.VScrollbar(p.rows(), len(p.lines), p.ScrollY)
+	textW := inner
+	if sb != nil {
+		textW = inner - 1
+	}
 	var out []string
 	for i := p.ScrollY; i < p.ScrollY+p.rows(); i++ {
-		if i >= len(p.lines) {
-			out = append(out, "")
-			continue
+		line := ""
+		if i < len(p.lines) {
+			line = ansi.Truncate(p.lines[i], textW, "…")
 		}
-		out = append(out, ansi.Truncate(p.lines[i], inner, "…"))
-	}
-	if len(p.lines) > p.rows() {
-		pct := 100 * (p.ScrollY + p.rows()) / len(p.lines)
-		if pct > 100 {
-			pct = 100
+		if sb != nil {
+			if w := lipgloss.Width(line); w < textW {
+				line += strings.Repeat(" ", textW-w)
+			}
+			line += sb[i-p.ScrollY]
 		}
-		out[len(out)-1] = ansi.Truncate(out[len(out)-1], inner-6, "") +
-			strings.Repeat(" ", max(0, inner-6-lipgloss.Width(out[len(out)-1]))) + theme.MutedStyle.Render(fmt.Sprintf("%3d%%", pct))
+		out = append(out, line)
 	}
 	return border.Width(inner).Height(p.rows()).MaxHeight(p.Height).Render(strings.Join(out, "\n"))
 }

@@ -53,10 +53,10 @@ func TestStatusStageCommitLogBlame(t *testing.T) {
 	if !mod.Unstaged() || mod.Badge() != "M" || !unt.Untracked() || unt.Badge() != "U" {
 		t.Errorf("badges: %+v %+v", mod, unt)
 	}
-	if d := r.Diff(mod, false); !contains(d, "+three") {
+	if d := r.Diff(mod, false, false); !contains(d, "+three") {
 		t.Errorf("diff: %s", d)
 	}
-	if d := r.Diff(unt, false); !contains(d, "+x") {
+	if d := r.Diff(unt, false, false); !contains(d, "+x") {
 		t.Errorf("untracked diff: %s", d)
 	}
 

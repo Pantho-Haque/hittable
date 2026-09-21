@@ -31,9 +31,17 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if drag {
-		// Text selection drag inside the focused editor.
+		// Text selection drag inside the focused editor or the git pane.
 		if ed := m.focusedEditor(); ed != nil {
 			return m, ed.Update(m.editorRelative(msg))
+		}
+		if m.GitOpen {
+			if z := m.Zones.Get("git_panel"); z != nil && z.InBounds(msg) {
+				rel := msg
+				rel.X -= z.StartX
+				rel.Y -= z.StartY
+				m.Git.HandleMouse(rel)
+			}
 		}
 		return m, nil
 	}
@@ -174,6 +182,11 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch msg.Type {
+	case tea.MouseWheelLeft, tea.MouseWheelRight:
+		if ed := m.focusedEditor(); ed != nil {
+			return m, ed.Update(m.editorRelative(msg))
+		}
+		return m, nil
 	case tea.MouseWheelUp, tea.MouseWheelDown:
 		if z := m.Zones.Get("md_pane"); z != nil && !z.IsZero() && z.InBounds(msg) {
 			if msg.Type == tea.MouseWheelUp {

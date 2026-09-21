@@ -10,6 +10,10 @@ import (
 
 var teaProgram *tea.Program
 
+// InitialStatus is shown in the footer on the first frame (e.g. an import
+// summary from the CLI).
+var InitialStatus string
+
 func SetTeaProgram(p *tea.Program) {
 	teaProgram = p
 }

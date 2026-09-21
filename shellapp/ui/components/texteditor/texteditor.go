@@ -529,9 +529,21 @@ func (t *TextEditor) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	b := t.cur
 	switch msg.Type {
 	case tea.MouseWheelUp:
-		b.scrollY -= 3
+		if msg.Shift && !t.Wrap {
+			b.scrollX -= 6
+		} else {
+			b.scrollY -= 3
+		}
 	case tea.MouseWheelDown:
-		b.scrollY += 3
+		if msg.Shift && !t.Wrap {
+			b.scrollX += 6
+		} else {
+			b.scrollY += 3
+		}
+	case tea.MouseWheelLeft:
+		b.scrollX -= 6
+	case tea.MouseWheelRight:
+		b.scrollX += 6
 	case tea.MouseLeft:
 		// msg.X / msg.Y are relative to the editor's top-left content cell.
 		row := b.scrollY + msg.Y
@@ -618,6 +630,16 @@ func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "ctrl+a":
 		t.SelectAll()
+		return nil
+	case "alt+z":
+		t.Wrap = !t.Wrap
+		t.cur.scrollX = 0
+		t.followCursor()
+		if t.Wrap {
+			t.status = "word wrap on"
+		} else {
+			t.status = "word wrap off"
+		}
 		return nil
 	case "ctrl+c":
 		t.Copy()
@@ -788,8 +810,9 @@ func (t *TextEditor) gutterWidth() int {
 	return w
 }
 
+// avail is the text width: pane minus gutter minus the scrollbar column.
 func (t *TextEditor) avail() int {
-	a := t.Width - t.gutterWidth()
+	a := t.Width - t.gutterWidth() - 1
 	if a < 1 {
 		a = 1
 	}
@@ -837,9 +860,26 @@ func (t *TextEditor) clampScroll() {
 	if b.scrollY < 0 {
 		b.scrollY = 0
 	}
+	if !t.Wrap {
+		if max := t.longestLine() - t.avail(); b.scrollX > max {
+			b.scrollX = max
+		}
+	}
 	if b.scrollX < 0 {
 		b.scrollX = 0
 	}
+}
+
+// longestLine is the display width of the widest line in the buffer.
+func (t *TextEditor) longestLine() int {
+	w := 0
+	for _, l := range strings.Split(t.TextArea.Value(), "\n") {
+		r := []rune(l)
+		if n := displayCol(r, len(r)); n > w {
+			w = n
+		}
+	}
+	return w
 }
 
 // ---------- View ----------
@@ -877,17 +917,17 @@ func (t *TextEditor) View() string {
 	lines := strings.Split(t.TextArea.Value(), "\n")
 	row, col := t.TextArea.Line(), t.TextArea.LineInfo().ColumnOffset
 	gw := t.gutterWidth()
-	avail := t.Width - gw
-	if avail < 1 {
-		avail = 1
-	}
+	_ = gw
+	avail := t.avail() // reserves the scrollbar column
 	rows := t.contentRows()
 	t.clampScroll()
 	selS, selE, hasSel := t.Selection()
 
 	vrows := t.layout(lines, avail)
 	numW := len(strconv.Itoa(t.TextArea.LineCount())) + 1
+	sb := theme.VScrollbar(rows, len(vrows), b.scrollY)
 	var out []string
+	cut := false // any visible line truncated on the right
 	for vi := b.scrollY; vi < b.scrollY+rows; vi++ {
 		if vi >= len(vrows) {
 			out = append(out, "")
@@ -943,15 +983,32 @@ func (t *TextEditor) View() string {
 			segEnd = segStart + avail
 		}
 		text := ansi.Cut(full, segStart, segEnd)
+		if !t.Wrap && displayCol(raw, len(raw)) > segStart+avail {
+			cut = true
+		}
 		if i == row && t.Focused && col >= v.start && (col < v.end || (col == v.end && (vi+1 >= len(vrows) || vrows[vi+1].line != i))) {
 			c := displayCol(raw, col) - segStart
-			cell := " "
-			if col < len(raw) && raw[col] != '\t' {
-				cell = string(raw[col])
+			if c >= 0 && c < avail { // cursor scrolled out of view: don't draw it
+				cell := " "
+				if col < len(raw) && raw[col] != '\t' {
+					cell = string(raw[col])
+				}
+				text = ansi.Cut(text, 0, c) + theme.CursorCellStyle.Render(cell) + ansi.Cut(text, c+1, avail)
 			}
-			text = ansi.Cut(text, 0, c) + theme.CursorCellStyle.Render(cell) + ansi.Cut(text, c+1, avail)
+		}
+		if w := lipgloss.Width(text); w < avail {
+			text += strings.Repeat(" ", avail-w)
 		}
 		out = append(out, num+text)
+	}
+	// Scrollbar column on the right.
+	for i := range out {
+		if sb != nil {
+			if w := lipgloss.Width(out[i]); w < t.Width-1 {
+				out[i] += strings.Repeat(" ", t.Width-1-w)
+			}
+			out[i] += sb[i]
+		}
 	}
 
 	var status string
@@ -974,6 +1031,8 @@ func (t *TextEditor) View() string {
 		}
 		if hasSel {
 			note = fmt.Sprintf("%d selected · ctrl+c copy · ctrl+x cut", len([]rune(t.SelectedText())))
+		} else if cut || b.scrollX > 0 {
+			note = fmt.Sprintf("⟷ col %d · shift+wheel scrolls · alt+z wraps", b.scrollX+1)
 		}
 		status = theme.MutedStyle.Render(fmt.Sprintf(" Ln %d, Col %d  ·  %s  ·  %s", row+1, col+1, lang, note))
 	}

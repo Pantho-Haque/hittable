@@ -47,6 +47,10 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.GitOpen {
 		if key == "ctrl+c" {
+			if m.Git.HasSelection() {
+				m.Git.CopySelection()
+				return m, nil
+			}
 			m.saveAndEnqueue()
 			return m, tea.Quit
 		}

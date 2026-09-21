@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,19 +48,45 @@ func (r *Repo) Abs(rel string) string {
 	return filepath.Join(r.Root, filepath.FromSlash(rel))
 }
 
+// gitMu serialises git invocations: the background status poll and a user
+// action must never race for .git/index.lock.
+var gitMu sync.Mutex
+
 // Run executes git in the repo and returns stdout (stderr in the error).
+// A transient "index.lock" collision (another git process) is retried.
 func (r *Repo) Run(args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", r.Root}, args...)...)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
-		if msg == "" {
-			msg = err.Error()
+	return r.RunEnv(nil, args...)
+}
+
+// RunEnv is Run with extra environment variables.
+func (r *Repo) RunEnv(env []string, args ...string) (string, error) {
+	gitMu.Lock()
+	defer gitMu.Unlock()
+	var out string
+	var err error
+	for attempt := 0; attempt < 6; attempt++ {
+		cmd := exec.Command("git", append([]string{"-C", r.Root}, args...)...)
+		if env != nil {
+			cmd.Env = append(os.Environ(), env...)
 		}
-		return out.String(), errors.New(msg)
+		var ob, eb bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &ob, &eb
+		runErr := cmd.Run()
+		out = ob.String()
+		if runErr == nil {
+			return out, nil
+		}
+		msg := strings.TrimSpace(eb.String())
+		if msg == "" {
+			msg = runErr.Error()
+		}
+		err = errors.New(msg)
+		if !strings.Contains(msg, "index.lock") {
+			break
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
 	}
-	return out.String(), nil
+	return out, err
 }
 
 // Rel converts an absolute path (under Dir) into a repo-relative one.
@@ -123,7 +150,9 @@ type Status struct {
 
 // Status runs `git status --porcelain=v2 --branch`.
 func (r *Repo) Status() (*Status, error) {
-	out, err := r.Run("status", "--porcelain=v2", "--branch", "--untracked-files=all")
+	// --no-optional-locks: status must never write the index (and take
+	// index.lock) while the user runs another git command.
+	out, err := r.Run("--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=all")
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +229,8 @@ func (r *Repo) Fetch() (string, error) { return r.Run("fetch", "--prune") }
 // ---------- diffs ----------
 
 // Diff returns the unified diff for a path (staged compares index to HEAD).
-func (r *Repo) Diff(f FileStatus, staged bool) string {
+// ignoreWS passes -w so whitespace-only changes disappear.
+func (r *Repo) Diff(f FileStatus, staged, ignoreWS bool) string {
 	if f.Untracked() {
 		out, _ := r.Run("diff", "--no-index", "--", "/dev/null", f.Path)
 		return out
@@ -208,6 +238,9 @@ func (r *Repo) Diff(f FileStatus, staged bool) string {
 	args := []string{"diff"}
 	if staged {
 		args = append(args, "--cached")
+	}
+	if ignoreWS {
+		args = append(args, "-w")
 	}
 	out, _ := r.Run(append(args, "--", f.Path)...)
 	return out
@@ -462,22 +495,6 @@ func (r *Repo) MergeContinue(kind string) error {
 	}
 	_, err := r.Run("commit", "--no-edit")
 	return err
-}
-
-// RunEnv is Run with extra environment variables.
-func (r *Repo) RunEnv(env []string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", r.Root}, args...)...)
-	cmd.Env = append(os.Environ(), env...)
-	var out, errb bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errb
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return out.String(), errors.New(msg)
-	}
-	return out.String(), nil
 }
 
 // Conflict is one <<<<<<< / ======= / >>>>>>> block: line indexes into the

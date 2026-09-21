@@ -167,6 +167,7 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 		Spinner:         spinner.New(spinner.WithSpinner(spinner.Dot)),
 	}
 	explorerComp.Focused = true
+	m.StatusBar = InitialStatus
 	m.wireGit()
 	m.refreshGit(true)
 	pal.OnOpen = func(r palette.Result) {

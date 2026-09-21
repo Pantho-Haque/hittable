@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -106,6 +107,11 @@ type Panel struct {
 
 	// Split renders diffs side by side; Editing edits the working file in
 	// the detail pane.
+	// IgnoreWS diffs with -w (whitespace-only changes hidden).
+	IgnoreWS bool
+	// Detail-pane text selection (line range), -1 = none.
+	selAnchor, selEnd int
+
 	Split     bool
 	Editing   bool
 	Editor    *texteditor.TextEditor
@@ -131,7 +137,7 @@ type Panel struct {
 }
 
 func New(repo *gitx.Repo) *Panel {
-	return &Panel{Repo: repo, Width: 80, Height: 24}
+	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1}
 }
 
 func (p *Panel) SetSize(w, h int) { p.Width, p.Height = w, h; p.clamp() }
@@ -307,6 +313,7 @@ func (p *Panel) loadDetail() {
 	}
 	p.detail, p.detailSplit = nil, nil
 	p.detailScroll = 0
+	p.selAnchor, p.selEnd = -1, -1
 	r := p.current()
 	if r == nil || p.Repo == nil {
 		return
@@ -318,9 +325,12 @@ func (p *Panel) loadDetail() {
 		n := len(gitx.ParseConflicts(string(b)))
 		text = fmt.Sprintf("%d conflict block(s) — press ⏎ or [ resolve ] to resolve here, o to open in the editor", n)
 	case r.file != nil:
-		text = p.Repo.Diff(*r.file, r.staged)
+		text = p.Repo.Diff(*r.file, r.staged, p.IgnoreWS)
 		if strings.TrimSpace(text) == "" {
 			text = "(no diff)"
+			if p.IgnoreWS {
+				text = "(no diff — only whitespace changed; press w to show it)"
+			}
 		}
 	case r.commit != nil:
 		text = p.Repo.Show(r.commit.Hash)
@@ -338,7 +348,7 @@ func (p *Panel) loadDetail() {
 	}
 	p.detail = strings.Split(strings.TrimRight(text, "\n"), "\n")
 	if p.Split && r.file != nil || p.Split && r.commit != nil || p.Split && r.stash != nil {
-		p.detailSplit = splitDiff(p.detail, p.Width-2)
+		p.detailSplit = splitDiff(p.detail, p.Width-3) // room for the scrollbar column
 	}
 }
 
@@ -598,6 +608,11 @@ func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 	case "v":
 		p.Split = !p.Split
 		p.loadDetail()
+	case "w":
+		p.IgnoreWS = !p.IgnoreWS
+		p.loadDetail()
+	case "ctrl+c":
+		p.CopySelection()
 	case "e":
 		if p.Section == SecStatus {
 			p.startEdit()
@@ -823,6 +838,22 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 	listTop := 2 // border + tabs row
 	switch msg.Type {
 	case tea.MouseLeft:
+		// Text selection in the diff / commit pane: press + drag over rows.
+		if !p.Resolving && !p.Editing && msg.Y >= listTop+p.listRows()+1 {
+			line := p.detailScroll + msg.Y - (listTop + p.listRows() + 1)
+			if line >= len(p.detailLines()) {
+				line = len(p.detailLines()) - 1
+			}
+			if line < 0 {
+				return
+			}
+			if msg.Action == tea.MouseActionPress {
+				p.selAnchor, p.selEnd = line, line
+			} else if msg.Action == tea.MouseActionMotion && p.selAnchor >= 0 {
+				p.selEnd = line
+			}
+			return
+		}
 		if p.Resolving && msg.Action == tea.MouseActionPress && msg.Y >= listTop+p.listRows()+1 {
 			// Map the clicked row back to a conflict block (headers add rows).
 			line := p.detailScroll + msg.Y - (listTop + p.listRows() + 1)
@@ -1086,6 +1117,9 @@ func (p *Panel) View(z *zone.Manager) string {
 	if !p.Split {
 		mode = theme.TabActiveStyle.Render("inline") + " " + theme.MutedStyle.Render("split")
 	}
+	if p.IgnoreWS {
+		mode += " " + theme.HashStyle.Render("-w")
+	}
 	mode = z.Mark("git_diffmode", "["+mode+"]")
 	right := branch + "  " + z.Mark("git_sync", theme.SendButtonStyle.Render(p.SyncLabel())) + "  " + mode
 	if gap := inner - lipgloss.Width(head) - lipgloss.Width(right); gap > 0 {
@@ -1125,16 +1159,35 @@ func (p *Panel) View(z *zone.Manager) string {
 		lines = append(lines, strings.Split(p.Editor.View(), "\n")...)
 	} else {
 		dl := p.detailLines()
+		s0, s1 := p.selRange()
+		sb := theme.VScrollbar(p.detailRows(), len(dl), p.detailScroll)
+		textW := inner
+		if sb != nil {
+			textW = inner - 1
+		}
 		for i := p.detailScroll; i < p.detailScroll+p.detailRows(); i++ {
-			if i >= len(dl) {
-				lines = append(lines, "")
-				continue
+			var line string
+			if i < len(dl) {
+				if p.Split && p.detailSplit != nil {
+					line = ansi.Truncate(dl[i], textW, "")
+				} else {
+					line = ansi.Truncate(diffLine(showWhitespace(dl[i])), textW, "…")
+				}
+				if s0 >= 0 && i >= s0 && i <= s1 {
+					plain := ansi.Strip(line)
+					if w := lipgloss.Width(plain); w < textW {
+						plain += strings.Repeat(" ", textW-w)
+					}
+					line = theme.SelectionStyle.Render(plain)
+				}
 			}
-			if p.Split && p.detailSplit != nil {
-				lines = append(lines, dl[i])
-			} else {
-				lines = append(lines, ansi.Truncate(diffLine(dl[i]), inner, "…"))
+			if sb != nil {
+				if w := lipgloss.Width(line); w < textW {
+					line += strings.Repeat(" ", textW-w)
+				}
+				line += sb[i-p.detailScroll]
 			}
+			lines = append(lines, line)
 		}
 	}
 
@@ -1188,7 +1241,7 @@ func (p *Panel) SyncAction() {
 func (p *Panel) hints() string {
 	switch p.Section {
 	case SecStatus:
-		return "+/− stage/unstage · e edit here · v split · c commit · y sync/push · S stash · d discard · P pull · f fetch · ⏎ open"
+		return "+/− stage/unstage · e edit · v split · w ignore-ws · drag+ctrl+c copy · c commit · y sync · S stash · d discard · P pull · f fetch"
 	case SecCommits:
 		return "⏎/jk browse · J/K scroll diff · f file↔repo history · / search · y hash"
 	case SecBranches:
@@ -1264,6 +1317,52 @@ func (p *Panel) renderRow(r *row, selected bool, width int) string {
 		action = st.Render(action)
 	}
 	return text + pad + action
+}
+
+// selRange returns the ordered selected detail lines (-1,-1 if none).
+func (p *Panel) selRange() (int, int) {
+	if p.selAnchor < 0 || p.selEnd < 0 {
+		return -1, -1
+	}
+	if p.selAnchor <= p.selEnd {
+		return p.selAnchor, p.selEnd
+	}
+	return p.selEnd, p.selAnchor
+}
+
+// HasSelection reports whether detail lines are selected.
+func (p *Panel) HasSelection() bool { a, _ := p.selRange(); return a >= 0 }
+
+// CopySelection puts the selected detail lines (plain text) on the clipboard.
+func (p *Panel) CopySelection() bool {
+	s0, s1 := p.selRange()
+	if s0 < 0 {
+		return false
+	}
+	dl := p.detailLines()
+	var out []string
+	for i := s0; i <= s1 && i < len(dl); i++ {
+		out = append(out, strings.TrimRight(ansi.Strip(dl[i]), " "))
+	}
+	if err := clipboard.WriteAll(strings.Join(out, "\n")); err != nil {
+		p.Message = "clipboard unavailable"
+		return false
+	}
+	p.Message = fmt.Sprintf("copied %d line(s)", len(out))
+	return true
+}
+
+// showWhitespace makes tabs and trailing spaces visible in diff lines, so a
+// tab→spaces change is not an invisible "everything changed" diff.
+func showWhitespace(l string) string {
+	if l == "" || (l[0] != '+' && l[0] != '-' && l[0] != ' ') {
+		return l
+	}
+	body := strings.ReplaceAll(l[1:], "\t", "→   ")
+	if trimmed := strings.TrimRight(body, " "); len(trimmed) < len(body) {
+		body = trimmed + strings.Repeat("·", len(body)-len(trimmed))
+	}
+	return l[:1] + body
 }
 
 // diffLine colours unified-diff lines.

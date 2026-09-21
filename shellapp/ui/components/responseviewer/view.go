@@ -115,6 +115,7 @@ func (r *ResponseViewer) View(z *zone.Manager, focused bool) string {
 	if r.SearchQuery != "" && !r.ShowHeaders {
 		matches = r.findAllMatches(r.rawLines)
 	}
+	sb := theme.VScrollbar(r.bodyRows(), len(all), start)
 	for i := start; i < end; i++ {
 		line := all[i]
 		if len(matches) > 0 {
@@ -128,7 +129,14 @@ func (r *ResponseViewer) View(z *zone.Manager, focused bool) string {
 				line = r.applySearchHighlight(line, r.rawLines[i], lm)
 			}
 		}
-		rows = append(rows, ansi.Truncate(line, r.Width-1, "…"))
+		line = ansi.Truncate(line, r.Width-2, "…")
+		if sb != nil {
+			if w := lipgloss.Width(line); w < r.Width-2 {
+				line += strings.Repeat(" ", r.Width-2-w)
+			}
+			line += sb[i-start]
+		}
+		rows = append(rows, line)
 	}
 	if len(all) > r.bodyRows() {
 		pct := 100 * end / len(all)

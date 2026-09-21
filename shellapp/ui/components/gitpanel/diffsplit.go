@@ -25,7 +25,11 @@ func splitDiff(unified []string, width int) []string {
 		if blank {
 			return strings.Repeat(" ", half)
 		}
-		s := fmt.Sprintf("%4d %s", n, strings.ReplaceAll(text, "\t", "    "))
+		vis := strings.ReplaceAll(text, "\t", "→   ")
+		if tr := strings.TrimRight(vis, " "); len(tr) < len(vis) {
+			vis = tr + strings.Repeat("·", len(vis)-len(tr))
+		}
+		s := fmt.Sprintf("%4d %s", n, vis)
 		s = ansi.Truncate(s, half, "…")
 		if w := lipgloss.Width(s); w < half {
 			s += strings.Repeat(" ", half-w)

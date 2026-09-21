@@ -35,11 +35,14 @@ exactly, field for field. This is a hard constraint, not a preference.
 
 ## 2. Directory scaffolding
 
-On launch, resolve the working root (CWD or the given path) and check it for a `hittable/`
-subfolder:
+Scaffolding is explicit (v2.8): `hittable init [path]` creates the `hittable/` template
+below; plain `hittable [path]` opens the directory as-is and never writes anything.
+`hittable -i <file>` imports a Postman v2.1 / Insomnia export into `hittable/<Collection>/`
+(folders → directories, requests → `.hit`, variables merged into `env.json`), then opens.
+`hittable -e [postman|insomnia] [-o file]` exports `hittable/` as a collection.
+`hittable uninstall` removes the binary (refuses while another instance runs).
 
-- **Present** → use it as-is, no changes.
-- **Absent** → create it, idempotently, with this exact default structure:
+The `init` template:
 
 ```
 <root>/
@@ -412,6 +415,7 @@ send binding.
 | Editor: word jump     | `ctrl+←/→`, `alt+←/→` | Text editor    |
 | Editor: indent        | `tab` (2 spaces) | Text editor         |
 | Editor: leave         | `shift+tab`     | Text editor → Explorer |
+| Editor: wrap / h-scroll | `alt+z`, `shift+wheel`, wheel-left/right | Any editor |
 | Editor: select        | drag, `shift+←→↑↓`, double-click word, `ctrl+a` | Any editor |
 | Editor: copy/cut/paste| `ctrl+c` / `ctrl+x` / `ctrl+v` | Any editor (ctrl+c quits only without a selection) |
 | Send (mouse)          | click `▶ Send`  | URL bar              |
@@ -725,3 +729,36 @@ send binding.
    cycles; the header toggle is clickable; the choice is remembered across files.
 3. Dependencies added: `charmbracelet/glamour`, `AlexanderGrooff/mermaid-ascii`
    (only its `pkg/render` + `pkg/diagram` packages are compiled in).
+
+### v2.8 — CLI helpers: init / import / export / uninstall
+1. Scaffolding is opt-in via `hittable init`; opening a directory no longer creates
+   `hittable/`. The welcome screen lists the shell commands and notes when no
+   `hittable/` folder exists.
+2. `internal/collection`: Postman v2.1 and Insomnia v4 importers/exporters mirroring
+   the web app's mapping (`{{var}}` / `{{ _.var }}` ⇄ `<<var>>`, url.query ⇄ params,
+   raw/urlencoded/formdata bodies, bearer/basic/apikey auth with inheritance and
+   `noauth` opt-out, collection/folder/environment variables → env.json without
+   overwriting, dropped features reported). Export walks `hittable/` recursively.
+   Round-trip tested.
+3. `hittable -i <file>` prints the report, sets it as the initial status and opens
+   the TUI; `hittable -e` writes `<folder>.postman_collection.json` (or
+   `.insomnia.json`) and exits.
+4. `hittable uninstall` checks `pgrep -x hittable` for other instances (refuses with
+   their pids), else deletes this executable and every `hittable` on PATH,
+   `~/.local/bin`, `~/go/bin`. Project files are untouched.
+
+### v2.8.1
+- git: all invocations serialised behind a mutex, status polled with
+  `--no-optional-locks`, transient `index.lock` collisions retried — fixes
+  "Unable to create .git/index.lock" on discard/stage while the poll ran.
+- diff: tabs shown as `→`, trailing spaces as `·` (a tab→space reindent is no
+  longer an invisible all-red/all-green diff); `w` toggles `-w` (ignore whitespace).
+- git pane: drag selects detail lines, `ctrl+c` copies them (quits only with no
+  selection). Help/README export wording made consistent (`-e postman`, `-e insomnia`).
+
+### v2.8.2
+- Vertical scrollbars (`theme.VScrollbar`) on the editor, markdown preview, git
+  detail pane and response viewer. Editor: `shift+wheel` / horizontal wheel scroll
+  sideways, `alt+z` toggles word wrap, status row shows `⟷ col n` when lines are
+  cut off. README explains cmd+c / cmd+z terminal remapping (ctrl+c copy verified
+  end-to-end through a real terminal).

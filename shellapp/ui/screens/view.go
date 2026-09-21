@@ -2,6 +2,7 @@ package screens
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -56,10 +57,32 @@ func (m *MainScreen) View() string {
 
 func (m *MainScreen) renderEmptyMain() string {
 	inner, h := m.MainWidth-2, m.MainH-2
-	hints := theme.MutedStyle.Render("↑↓ move · ⏎ open · ctrl+n new file · ctrl+j terminal · ? help")
-	content := lipgloss.JoinVertical(lipgloss.Center, theme.Logo(), "", hints)
+	hints := theme.MutedStyle.Render("↑↓ move · ⏎ open · ctrl+n new file · ctrl+p find · ctrl+j terminal · ? help")
+	cmd := func(c, d string) string {
+		return theme.HelpKeyStyle.Width(30).Render(c) + theme.HelpDescStyle.Render(d)
+	}
+	commands := lipgloss.JoinVertical(lipgloss.Left,
+		theme.HelpTitle.Render("Get started from the shell"),
+		cmd("hittable init", "create the hittable/ template here"),
+		cmd("hittable -i <file>", "import a Postman or Insomnia collection"),
+		cmd("hittable -e postman", "export hittable/ as a Postman collection"),
+		cmd("hittable -e insomnia", "export hittable/ as an Insomnia collection"),
+		cmd("hittable uninstall", "remove hittable from this machine"),
+		cmd("hittable -h", "all options"),
+	)
+	if _, err := os.Stat(m.HittableDir); err != nil {
+		commands = lipgloss.JoinVertical(lipgloss.Left, commands, "",
+			theme.MutedStyle.Render("No hittable/ folder here yet — `hittable init` or import a collection, or just create a .hit file."))
+	}
+	if lipgloss.Width(commands) > inner {
+		commands = "" // narrow pane: keep the logo only
+	}
+	content := lipgloss.JoinVertical(lipgloss.Center, theme.Logo(), "", hints, "", commands)
 	if lipgloss.Height(content) > h {
-		content = lipgloss.JoinVertical(lipgloss.Center, theme.Wordmark(), "", hints) // small terminals
+		content = lipgloss.JoinVertical(lipgloss.Center, theme.Wordmark(), "", hints, "", commands)
+	}
+	if lipgloss.Height(content) > h {
+		content = lipgloss.JoinVertical(lipgloss.Center, theme.Wordmark(), "", hints) // tiny terminals
 	}
 	body := lipgloss.Place(inner, h, lipgloss.Center, lipgloss.Center, content)
 	return theme.UnfocusedBorderStyle.Width(inner).Height(h).Render(body)

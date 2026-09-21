@@ -7,7 +7,23 @@ hittable .            # current directory
 hittable ~/code/app   # explicit path
 ```
 
-On first launch it creates `hittable/` with a sample request, `env.json`, and a notes file. Press `?` inside the app for the keyboard reference.
+Press `?` inside the app for the keyboard reference.
+
+## Commands
+
+```sh
+hittable init                  # create the hittable/ template (sample request, env.json, notes)
+hittable -i collection.json    # import a Postman v2.1 or Insomnia export, then open
+hittable -e postman            # export hittable/ as a Postman collection (<folder>.postman_collection.json)
+hittable -e insomnia           # export hittable/ as an Insomnia collection (<folder>.insomnia.json)
+hittable -e postman -o x.json  # choose the output file
+hittable uninstall             # remove hittable from this machine
+hittable -h                    # all options
+```
+
+Opening a directory never creates files. Import puts the collection under `hittable/<Collection name>/` with folders as directories, requests as `.hit` files, and variables merged into `hittable/env.json` (existing keys are kept). Postman `{{var}}` and Insomnia `{{ _.var }}` become `<<var>>`; scripts, unsupported auth types, and cookie jars are dropped and reported.
+
+`hittable uninstall` refuses while another hittable is running; otherwise it deletes the binary from `~/.local/bin`, `~/go/bin`, and anywhere else on your PATH. Your project folders are left untouched.
 
 ## Install
 
@@ -105,9 +121,13 @@ Open any `.md` file and press `ctrl+t` (or click `[ Text | Preview | Split ]` in
 - `ctrl+p` (or `/` in the explorer, or the `Find` button) opens the fuzzy file finder. Type part of a name, `⏎` opens.
 - `alt+f` opens live grep: type at least two characters and matching `path:line` results stream in (uses ripgrep when installed). `⏎` opens the file at that line. `tab` switches between the two modes.
 
-## Undo on macOS
+## cmd+z / cmd+c on macOS
 
-`ctrl+z` undoes in every editor. `cmd+z` is swallowed by the terminal app itself and never reaches programs; to use it, map it in your terminal to send `0x1a` (iTerm2: Settings → Keys → Key Bindings → `⌘Z` → Send Hex Codes `0x1a`).
+`ctrl+z` undoes and `ctrl+c` copies a selection in every editor and in the Git diff pane. The cmd key combinations never reach a terminal program: the terminal app handles `cmd+c` (it copies the terminal's own selection, which is empty while hittable owns the mouse) and `cmd+z` itself. To use them anyway, map them in your terminal to send the control bytes. In iTerm2: Settings → Keys → Key Bindings → add `⌘C` → "Send Hex Codes" `0x03` and `⌘Z` → `0x1a`. Ghostty: `keybind = super+c=text:\x03` and `keybind = super+z=text:\x1a`.
+
+## Scrolling
+
+Every pane has a vertical scrollbar on its right edge. Code files do not wrap: `shift+wheel` (or a horizontal wheel/trackpad swipe) scrolls sideways, and `alt+z` toggles word wrap, as in VS Code. Markdown files wrap by default.
 
 ## Git
 
@@ -124,6 +144,8 @@ The explorer colours changed files and shows M/A/D/U badges; the top bar shows t
 **Merge conflicts.** When a merge, rebase, or cherry-pick stops on conflicts, Status shows a `⚠ merge in progress` group with the conflicted files. `⏎` (or the `resolve` button) opens the resolver: each block is highlighted, `c` accepts current, `i` incoming, `b` both, `n`/`p` move between blocks, `a` marks the file resolved, `o` opens it in the editor. The group header commits the merge once everything is resolved, or aborts it.
 
 **Sidebar.** `alt+b` or the `☰` button hides the file explorer; `ctrl+b` brings it back.
+
+**Copying text.** Drag to select in any editor or in the Git diff pane, then `ctrl+c` (it only quits when nothing is selected). To use your terminal's own selection instead, hold the key your terminal reserves for it while dragging: Option in iTerm2, Fn in Terminal.app, Shift in most Linux terminals.
 
 ## Troubleshooting keys
 

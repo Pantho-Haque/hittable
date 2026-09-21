@@ -228,3 +228,37 @@ func GitStatusColor(badge string) lipgloss.Color {
 func GitBadgeStyle(badge string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(GitStatusColor(badge)).Bold(true)
 }
+
+// VScrollbar returns one glyph per row for a vertical scrollbar (track "░",
+// thumb "█") or nil when everything fits.
+func VScrollbar(rows, total, offset int) []string {
+	if rows <= 0 || total <= rows {
+		return nil
+	}
+	thumb := rows * rows / total
+	if thumb < 1 {
+		thumb = 1
+	}
+	maxOff := total - rows
+	if offset > maxOff {
+		offset = maxOff
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	pos := 0
+	if maxOff > 0 {
+		pos = offset * (rows - thumb) / maxOff
+	}
+	out := make([]string, rows)
+	track := lipgloss.NewStyle().Foreground(lipgloss.Color("#343746")).Render("░")
+	bar := lipgloss.NewStyle().Foreground(MutedColor).Render("█")
+	for i := range out {
+		if i >= pos && i < pos+thumb {
+			out[i] = bar
+		} else {
+			out[i] = track
+		}
+	}
+	return out
+}
