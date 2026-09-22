@@ -50,7 +50,7 @@ func (m *MainScreen) View() string {
 		mainCol = lipgloss.JoinVertical(lipgloss.Left, mainCol, m.Zones.Mark("term_view", m.Term.View()))
 	}
 	split := lipgloss.JoinHorizontal(lipgloss.Top, explorerView, separator, mainCol)
-	if m.ExplorerHidden {
+	if m.explorerHidden() {
 		split = mainCol
 	}
 	footer := m.renderFooter()

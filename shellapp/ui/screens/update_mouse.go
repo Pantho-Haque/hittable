@@ -82,13 +82,13 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Separator column between explorer and main pane.
-	if press && !m.ExplorerHidden && x == m.ExplorerWidth {
+	if press && !m.explorerHidden() && x == m.ExplorerWidth {
 		m.Dragging = true
 		m.DragStartX = x
 		return m, nil
 	}
 
-	if !m.ExplorerHidden && x < m.ExplorerWidth {
+	if !m.explorerHidden() && x < m.ExplorerWidth {
 		if m.ShowHelp && msg.Type == tea.MouseLeft {
 			m.ShowHelp = false
 		}

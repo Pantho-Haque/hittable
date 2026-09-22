@@ -206,7 +206,7 @@ func (m *MainScreen) renderTopBar() string {
 		gitIcon, findIcon, termIcon = "⑂", "🔍", "▤"
 	}
 
-	sidebar := btn("top_sidebar", "☰", !m.ExplorerHidden)
+	sidebar := btn("top_sidebar", "☰", !m.explorerHidden())
 	left := sidebar + sp(1) + theme.HitMarkStyle.Render(" H ") + sp(1) + theme.TopBarBrandStyle.Render("HITTABLE") +
 		theme.TopBarDimStyle.Render("  ›  ") + theme.TopBarTextStyle.Render(filepath.Base(m.RootDir)) + sp(4)
 	buttons := btn("top_git", gitIcon+" Git", m.GitOpen) + sp(1) +

@@ -75,34 +75,35 @@ type MainScreen struct {
 	Preview  *mdpreview.Preview
 	MdMode   MdMode
 
-	Focus           FocusArea
-	LastFocus       FocusArea
-	ActiveFile      string
-	ViewMode        ViewMode
-	ActiveTab       requesteditor.Tab
-	Width           int
-	Height          int
-	ExplorerWidth   int
-	MainWidth       int
-	MainH           int // rows of the main pane above the terminal strip
-	EditorHeight    int
-	TermFocused     bool
-	GitOpen         bool
-	ExplorerHidden  bool
-	BlameOn         bool
-	lastGitRefresh  time.Time
-	blame           []gitx.BlameLine
-	gitPolling      bool
-	gitKey          string
-	Sending         bool
-	StatusBar       string
-	ExplorerFocused bool
-	Dragging        bool
-	DragStartX      int
-	HoverZone       string
-	HelpScroll      int // the help overlay scrolls when it outgrows the pane
-	ShowHelp        bool
-	Spinner         spinner.Model
+	Focus            FocusArea
+	LastFocus        FocusArea
+	ActiveFile       string
+	ViewMode         ViewMode
+	ActiveTab        requesteditor.Tab
+	Width            int
+	Height           int
+	ExplorerWidth    int
+	MainWidth        int
+	MainH            int // rows of the main pane above the terminal strip
+	EditorHeight     int
+	TermFocused      bool
+	GitOpen          bool
+	ExplorerHidden   bool // the user's preference (alt+b, ☰)
+	sidebarWasHidden bool // last laid-out value of explorerHidden()
+	BlameOn          bool
+	lastGitRefresh   time.Time
+	blame            []gitx.BlameLine
+	gitPolling       bool
+	gitKey           string
+	Sending          bool
+	StatusBar        string
+	ExplorerFocused  bool
+	Dragging         bool
+	DragStartX       int
+	HoverZone        string
+	HelpScroll       int // the help overlay scrolls when it outgrows the pane
+	ShowHelp         bool
+	Spinner          spinner.Model
 }
 
 var rootDirGlobal string
@@ -210,9 +211,10 @@ func (m *MainScreen) SetSize(w, h int) {
 		m.ExplorerWidth = w - 20
 	}
 	m.MainWidth = w - m.ExplorerWidth - 1
-	if m.ExplorerHidden {
+	if m.explorerHidden() {
 		m.MainWidth = w
 	}
+	m.sidebarWasHidden = m.explorerHidden()
 
 	// Main column: main pane (MainH rows) + terminal strip (1) + terminal
 	// panel when open; footer takes the last row.
@@ -287,4 +289,12 @@ func (m *MainScreen) termRows() int {
 
 func (m *MainScreen) OpenFile(path string) {
 	m.openFileRaw(path)
+}
+
+// explorerHidden reports whether the sidebar is off screen. The Git panel and
+// the find palette take the full width while they are up, so the file tree
+// gets out of the way and comes back when they close; ExplorerHidden itself
+// stays the user's own preference.
+func (m *MainScreen) explorerHidden() bool {
+	return m.ExplorerHidden || m.GitOpen || m.Palette.Open
 }

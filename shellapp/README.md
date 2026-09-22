@@ -131,7 +131,7 @@ Every pane has a vertical scrollbar on its right edge. Code files do not wrap: `
 
 ## Git
 
-Click `⎇ Git` in the top bar (or press `F5`, `alt+g`, or `g` in the explorer). The panel has five sections:
+Click `⎇ Git` in the top bar (or press `F5`, `alt+g`, or `g` in the explorer). The panel takes the full window width — the file tree steps aside while it is up and comes back when you close it with `esc`, `ctrl+b`, or the same button. It has five sections:
 
 - **Status** — two collapsible groups, *Staged Changes* and *Changes*. Click `[ + ]` / `[ − ]` on a row to stage or unstage it, or the `[ + stage all ]` / `[ − unstage all ]` button on the group header. Unstaged rows also carry `[ ⟲ ]`, and the *Changes* header `[ ⟲ undo all ]`, to throw the edits away (confirmed first; `d` and `D` do the same). The selected file's diff shows below; `v` (or the `[inline split]` toggle) switches to side-by-side. Diff lines wrap to the pane in both modes; `z` (or the `[wrap]` toggle) turns wrapping off and clips them instead, as VS Code's word wrap does. In split view, drag the `│` divider to give one side more room. `e` edits the working copy right in the preview (unstaged files only), `d` discard, `c` commit, `S` stash, `p` push, `P` pull, `f` fetch, `⏎` open in the main editor.
 - **Commits** — repo history, or `f` for the active file's history; `/` searches message, author, or hash. The selected commit's full diff shows below.

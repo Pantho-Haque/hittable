@@ -758,6 +758,14 @@ send binding.
 - git pane: drag selects detail lines, `ctrl+c` copies them (quits only with no
   selection). Help/README export wording made consistent (`-e postman`, `-e insomnia`).
 
+### v2.8.5
+- The Git panel and the find palette take the full window width; the sidebar
+  hides while either is open and returns when it closes. Visibility is derived
+  (explorerHidden() = user preference OR a panel is up) rather than saved and
+  restored, so every close path restores it, and a sidebar the user hid stays
+  hidden. The layout is recomputed once at the end of Update when that value
+  changes instead of at each of the many places that flip the flags.
+
 ### v2.8.4
 - macOS terminals send the composed rune `Ω` for ⌥z rather than a meta-modified
   key, so the wrap toggle accepts `alt+z`, `Ω` (and `z` in the Git panel).

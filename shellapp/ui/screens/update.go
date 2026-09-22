@@ -45,6 +45,17 @@ func (m *MainScreen) Init() tea.Cmd {
 }
 
 func (m *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.update(msg)
+	// Opening or closing a full-width panel changes the layout. Too many
+	// paths flip GitOpen / Palette.Open to re-lay out at each of them, so the
+	// change is picked up here instead.
+	if hidden := m.explorerHidden(); hidden != m.sidebarWasHidden {
+		m.SetSize(m.Width, m.Height)
+	}
+	return model, cmd
+}
+
+func (m *MainScreen) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.SetSize(msg.Width, msg.Height)
