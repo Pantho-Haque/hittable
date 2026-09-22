@@ -100,6 +100,7 @@ type MainScreen struct {
 	Dragging        bool
 	DragStartX      int
 	HoverZone       string
+	HelpScroll      int // the help overlay scrolls when it outgrows the pane
 	ShowHelp        bool
 	Spinner         spinner.Model
 }

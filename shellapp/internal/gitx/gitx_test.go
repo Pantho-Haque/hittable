@@ -187,3 +187,26 @@ func TestMergeConflictFlow(t *testing.T) {
 		t.Errorf("log after merge: %+v", log)
 	}
 }
+
+func TestDiscardAll(t *testing.T) {
+	r := newRepo(t)
+	os.WriteFile(filepath.Join(r.Root, "a.txt"), []byte("clobbered\n"), 0o644)
+	os.WriteFile(filepath.Join(r.Root, "new.txt"), []byte("x\n"), 0o644)
+
+	if err := r.DiscardAll(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(r.Root, "a.txt")); string(b) != "one\ntwo\n" {
+		t.Fatalf("tracked file not reverted: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(r.Root, "new.txt")); !os.IsNotExist(err) {
+		t.Fatal("untracked file not removed")
+	}
+	st, err := r.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Files) != 0 {
+		t.Fatalf("expected clean tree, got %v", st.Files)
+	}
+}

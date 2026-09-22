@@ -15,6 +15,9 @@ import (
 const maxHighlightBytes = 256 * 1024
 
 type ResponseViewer struct {
+	// Hover is the zone id the mouse is over, fed by the screen each frame.
+	Hover string
+
 	Content    string // pretty body shown to the user
 	RawContent string // same as Content; kept for search coordinate mapping
 	Status     int

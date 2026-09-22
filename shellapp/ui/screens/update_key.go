@@ -28,6 +28,18 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch key {
 		case "?", "esc", "q":
 			m.ShowHelp = false
+		case "down", "j":
+			m.HelpScroll++
+		case "up", "k":
+			m.HelpScroll--
+		case "pgdown", " ":
+			m.HelpScroll += 10
+		case "pgup":
+			m.HelpScroll -= 10
+		case "home", "g":
+			m.HelpScroll = 0
+		case "end", "G":
+			m.HelpScroll = 1 << 20 // clamped when rendering
 		case "ctrl+c":
 			m.saveAndEnqueue()
 			return m, tea.Quit
@@ -67,12 +79,22 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "shift+down", "shift+pgdown":
 			m.Term.Scroll(-m.Term.Rows / 2)
 			return m, nil
+		case "ctrl+c":
+			// Copies a mouse selection, otherwise interrupts the shell.
+			if n := m.Term.CopySelection(); n > 0 {
+				m.Term.ClearSelection()
+				m.StatusBar = fmt.Sprintf("copied %d line(s)", n)
+				return m, nil
+			}
+			m.Term.SendKey(msg)
+			return m, nil
 		case "ctrl+b":
 			m.TermFocused = false
 			m.LastFocus = m.Focus
 			m.Focus = FocusExplorerPane
 			m.setExplorerFocused(true)
 		default:
+			m.Term.ClearSelection()
 			m.Term.SendKey(msg)
 		}
 		return m, nil
@@ -565,6 +587,7 @@ func (m *MainScreen) openPalette(mode palette.Mode) {
 
 // toggleHelp shows / hides the keyboard reference.
 func (m *MainScreen) toggleHelp() {
+	m.HelpScroll = 0
 	if m.ShowHelp {
 		m.ShowHelp = false
 		return

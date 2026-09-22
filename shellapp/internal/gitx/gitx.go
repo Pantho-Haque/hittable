@@ -217,6 +217,15 @@ func (r *Repo) Discard(f FileStatus) error {
 	return err
 }
 
+// DiscardAll throws away every unstaged change and deletes untracked files.
+func (r *Repo) DiscardAll() error {
+	if _, err := r.Run("checkout", "--", "."); err != nil {
+		return err
+	}
+	_, err := r.Run("clean", "-fd")
+	return err
+}
+
 func (r *Repo) Commit(msg string) error {
 	_, err := r.Run("commit", "-m", msg)
 	return err

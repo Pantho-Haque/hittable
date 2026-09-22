@@ -51,6 +51,7 @@ type row struct {
 	header bool
 	group  int    // 0 staged, 1 changes, 2 conflicts (status section)
 	action string // "+" stage, "−" unstage (files); "+ stage all" / "− unstage all" (headers)
+	undo   string // "⟲" discard file / "⟲ undo all" header button (unstaged rows only)
 	file   *gitx.FileStatus
 	staged bool
 	commit *gitx.Commit
@@ -67,6 +68,13 @@ type DoneMsg struct {
 }
 
 type Panel struct {
+	// Hover is the zone id the mouse is over, fed by the screen each frame.
+	// HoverRow / HoverBtn track the list row and button under the mouse,
+	// which are hit-tested by coordinate rather than by zone.
+	Hover    string
+	HoverRow int
+	HoverBtn string
+
 	Repo    *gitx.Repo
 	Width   int // outer box width
 	Height  int // outer box height
@@ -85,13 +93,14 @@ type Panel struct {
 	BlameSrc []string // file lines shown beside blame entries
 	Filter   string
 
-	rows         []row
-	Cursor       int
-	listScroll   int
-	detail       []string
-	detailSplit  []string
-	detailScroll int
-	collapsed    [2]bool // status groups
+	rows           []row
+	Cursor         int
+	listScroll     int
+	detail         []string
+	detailCache    []string // detailLines() memo
+	detailCacheKey string   // width/divider/split/wrap it was built for
+	detailScroll   int
+	collapsed      [2]bool // status groups
 
 	// Merge state (merge / rebase / cherry-pick waiting on conflicts).
 	Merge     bool
@@ -104,6 +113,13 @@ type Panel struct {
 	ResolveContent string
 	Conflicts      []gitx.Conflict
 	ConflictIdx    int
+
+	// SplitPos is the width of the diff's old-side column (0 = centred),
+	// moved by dragging the divider. Wrap controls whether long diff lines
+	// continue on the next row or are clipped.
+	SplitPos  int
+	Wrap      bool
+	dragSplit bool
 
 	// Split renders diffs side by side; Editing edits the working file in
 	// the detail pane.
@@ -137,7 +153,7 @@ type Panel struct {
 }
 
 func New(repo *gitx.Repo) *Panel {
-	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1}
+	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1, HoverRow: -1, Wrap: true}
 }
 
 func (p *Panel) SetSize(w, h int) { p.Width, p.Height = w, h; p.clamp() }
@@ -255,13 +271,20 @@ func (p *Panel) buildRows() {
 			h := row{text: fmt.Sprintf("%s %s (%d)", arrow, g.title, len(g.files)), header: true, group: gi}
 			if len(g.files) > 0 {
 				h.action = g.action
+				if !g.staged {
+					h.undo = "⟲ undo all"
+				}
 			}
 			p.rows = append(p.rows, h)
 			if p.collapsed[gi] {
 				continue
 			}
 			for i := range g.files {
-				p.rows = append(p.rows, row{file: &g.files[i], staged: g.staged, group: gi, action: g.row})
+				r := row{file: &g.files[i], staged: g.staged, group: gi, action: g.row}
+				if !g.staged {
+					r.undo = "⟲"
+				}
+				p.rows = append(p.rows, r)
 			}
 		}
 	case SecCommits:
@@ -311,7 +334,7 @@ func (p *Panel) loadDetail() {
 	if p.Editing {
 		p.stopEdit()
 	}
-	p.detail, p.detailSplit = nil, nil
+	p.detail, p.detailCache = nil, nil
 	p.detailScroll = 0
 	p.selAnchor, p.selEnd = -1, -1
 	r := p.current()
@@ -346,18 +369,77 @@ func (p *Panel) loadDetail() {
 			text = p.Repo.Show(b.Hash)
 		}
 	}
-	p.detail = strings.Split(strings.TrimRight(text, "\n"), "\n")
-	if p.Split && r.file != nil || p.Split && r.commit != nil || p.Split && r.stash != nil {
-		p.detailSplit = splitDiff(p.detail, p.Width-3) // room for the scrollbar column
-	}
+	p.detail, p.detailCache = strings.Split(strings.TrimRight(text, "\n"), "\n"), nil
 }
 
-func (p *Panel) detailLines() []string {
-	if p.Split && p.detailSplit != nil {
-		return p.detailSplit
-	}
-	return p.detail
+// detailWidth is the usable width of the detail pane (the scrollbar column is
+// always reserved, so the content never shifts when one appears).
+func (p *Panel) detailWidth() int {
+	return max(p.Width-3, 1)
 }
+
+// detailLines renders the detail pane for the current width: side by side when
+// split, otherwise the unified diff. Either way long lines wrap rather than
+// being cut off at the border. Memoised, and recomputed on resize or a mode
+// flip, so a stale width can never survive a SetSize.
+func (p *Panel) detailLines() []string {
+	w, half := p.detailWidth(), p.splitHalf()
+	key := fmt.Sprintf("%d/%d/%v/%v", w, half, p.Split, p.Wrap)
+	if p.detailCache != nil && p.detailCacheKey == key {
+		return p.detailCache
+	}
+	out := []string{}
+	if p.Split {
+		out = append(out, splitDiff(p.detail, w, half, p.Wrap)...)
+	} else {
+		for _, l := range p.detail {
+			out = append(out, fullWidth(diffLine(showWhitespace(l)), w, p.Wrap)...)
+		}
+	}
+	p.detailCache, p.detailCacheKey = out, key
+	return out
+}
+
+// EndDrag releases the split divider. The screen calls it on mouse-up, which
+// never reaches HandleMouse.
+func (p *Panel) EndDrag() { p.dragSplit = false }
+
+// ToggleWrap flips between wrapping long diff lines and clipping them.
+func (p *Panel) ToggleWrap() {
+	p.Wrap = !p.Wrap
+	p.detailScroll = 0
+	p.clamp()
+}
+
+// ResetSplit re-centres the divider.
+func (p *Panel) ResetSplit() { p.SplitPos = 0 }
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// splitHalf is the old-side column width, clamped so both sides stay usable.
+func (p *Panel) splitHalf() int {
+	w := p.detailWidth()
+	half := (w - 1) / 2
+	if p.SplitPos > 0 {
+		half = p.SplitPos
+	}
+	if lo, hi := 8, w-9; hi >= lo {
+		half = min(max(half, lo), hi)
+	}
+	return half
+}
+
+// dividerX is the panel-relative column of the split divider (1 = inside the
+// left border).
+func (p *Panel) dividerX() int { return 1 + p.splitHalf() }
+
+// detailTop is the first panel-relative row of the detail pane.
+func (p *Panel) detailTop() int { return listTop + p.listRows() + 1 }
 
 // ---------- edit in preview ----------
 
@@ -611,6 +693,8 @@ func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 	case "w":
 		p.IgnoreWS = !p.IgnoreWS
 		p.loadDetail()
+	case "z", "alt+z", "Ω": // Option+z arrives as Ω on macOS
+		p.ToggleWrap()
 	case "ctrl+c":
 		p.CopySelection()
 	case "e":
@@ -658,6 +742,20 @@ func (p *Panel) rowAction(r *row) {
 	}
 }
 
+// rowUndo discards the working-tree changes of a row (one file, or the whole
+// unstaged group for a header). Always confirmed — it destroys work.
+func (p *Panel) rowUndo(r *row) {
+	if r == nil || r.undo == "" {
+		return
+	}
+	if r.header {
+		p.confirm("undo all changes", func() { p.run("undo all", p.Repo.DiscardAll) })
+		return
+	}
+	f := *r.file
+	p.confirm("discard changes in "+f.Path, func() { p.run("discard "+f.Path, func() error { return p.Repo.Discard(f) }) })
+}
+
 func (p *Panel) primary() {
 	r := p.current()
 	if r == nil {
@@ -698,6 +796,8 @@ func (p *Panel) sectionKey(key string) {
 				f := *r.file
 				p.confirm("discard changes in "+f.Path, func() { p.run("discard "+f.Path, func() error { return p.Repo.Discard(f) }) })
 			}
+		case "D":
+			p.confirm("undo all changes", func() { p.run("undo all", p.Repo.DiscardAll) })
 		case "c":
 			p.prompt, p.promptTitle, p.promptText = promptCommit, "commit message", ""
 		case "S":
@@ -833,14 +933,59 @@ func (p *Panel) handlePromptKey(msg tea.KeyMsg) {
 	}
 }
 
+const listTop = 2 // border + tabs row
+
+// rowAtY maps a panel-relative row to a list index, or -1 if it is not a row.
+func (p *Panel) rowAtY(y int) int {
+	if y -= listTop; y < 0 || y >= p.listRows() {
+		return -1
+	}
+	if i := p.listScroll + y; i < len(p.rows) {
+		return i
+	}
+	return -1
+}
+
+// rowHit names the part of a row the cursor is on: "action" for the
+// stage/unstage button, "undo" for the discard button, "" for the row body.
+// Click and hover share it so they can never disagree about where a button is.
+func (p *Panel) rowHit(r *row, x int) string {
+	aLeft := p.Width - 2 - lipgloss.Width(r.action) - 3
+	switch {
+	case r.action != "" && x >= aLeft:
+		return "action"
+	case r.undo != "" && x >= aLeft-lipgloss.Width(r.undo)-4:
+		return "undo"
+	}
+	return ""
+}
+
 // HandleMouse takes coordinates relative to the panel's top-left corner.
 func (p *Panel) HandleMouse(msg tea.MouseMsg) {
-	listTop := 2 // border + tabs row
 	switch msg.Type {
+	case tea.MouseMotion:
+		p.HoverRow, p.HoverBtn = p.rowAtY(msg.Y), ""
+		if p.HoverRow >= 0 {
+			p.HoverBtn = p.rowHit(&p.rows[p.HoverRow], msg.X)
+		}
 	case tea.MouseLeft:
+		// Drag the split divider to rebalance the two diff columns.
+		if p.Split && !p.Resolving && !p.Editing && msg.Y >= p.detailTop() {
+			if msg.Action == tea.MouseActionPress && abs(msg.X-p.dividerX()) <= 1 {
+				p.dragSplit = true
+				return
+			}
+			if p.dragSplit && msg.Action == tea.MouseActionMotion {
+				p.SplitPos = msg.X - 1
+				return
+			}
+		}
+		if msg.Action == tea.MouseActionPress {
+			p.dragSplit = false
+		}
 		// Text selection in the diff / commit pane: press + drag over rows.
-		if !p.Resolving && !p.Editing && msg.Y >= listTop+p.listRows()+1 {
-			line := p.detailScroll + msg.Y - (listTop + p.listRows() + 1)
+		if !p.Resolving && !p.Editing && msg.Y >= p.detailTop() {
+			line := p.detailScroll + msg.Y - p.detailTop()
 			if line >= len(p.detailLines()) {
 				line = len(p.detailLines()) - 1
 			}
@@ -878,13 +1023,17 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 		if msg.Action != tea.MouseActionPress {
 			return
 		}
-		if y := msg.Y - listTop; y >= 0 && y < p.listRows() {
-			if i := p.listScroll + y; i < len(p.rows) {
+		if i := p.rowAtY(msg.Y); i >= 0 {
+			{
 				r := &p.rows[i]
-				// Click on the right-hand action column: stage / unstage.
-				if r.action != "" && msg.X >= p.Width-2-lipgloss.Width(r.action)-3 {
+				switch p.rowHit(r, msg.X) {
+				case "action":
 					p.Cursor = i
 					p.rowAction(r)
+					return
+				case "undo":
+					p.Cursor = i
+					p.rowUndo(r)
 					return
 				}
 				if i == p.Cursor {
@@ -1103,7 +1252,8 @@ func (p *Panel) View(z *zone.Manager) string {
 		if Section(i) == SecCommits && p.FileHistory {
 			label = "File History"
 		}
-		tabs = append(tabs, z.Mark(fmt.Sprintf("git_tab_%d", i), st.Render("["+label+"]")))
+		id := fmt.Sprintf("git_tab_%d", i)
+		tabs = append(tabs, z.Mark(id, theme.Hoverable(p.Hover == id, st).Render("["+label+"]")))
 	}
 	head := strings.Join(tabs, " ")
 	branch := ""
@@ -1120,8 +1270,14 @@ func (p *Panel) View(z *zone.Manager) string {
 	if p.IgnoreWS {
 		mode += " " + theme.HashStyle.Render("-w")
 	}
-	mode = z.Mark("git_diffmode", "["+mode+"]")
-	right := branch + "  " + z.Mark("git_sync", theme.SendButtonStyle.Render(p.SyncLabel())) + "  " + mode
+	mode = z.Mark("git_diffmode", theme.Hoverable(p.Hover == "git_diffmode", lipgloss.NewStyle()).Render("["+mode+"]"))
+	wrapSt := theme.MutedStyle
+	if p.Wrap {
+		wrapSt = theme.TabActiveStyle
+	}
+	mode = z.Mark("git_wrap", theme.Hoverable(p.Hover == "git_wrap", wrapSt).Render("[wrap]")) + " " + mode
+	right := branch + "  " +
+		z.Mark("git_sync", theme.Hoverable(p.Hover == "git_sync", theme.SendButtonStyle).Render(p.SyncLabel())) + "  " + mode
 	if gap := inner - lipgloss.Width(head) - lipgloss.Width(right); gap > 0 {
 		head += strings.Repeat(" ", gap)
 	}
@@ -1133,7 +1289,7 @@ func (p *Panel) View(z *zone.Manager) string {
 			lines = append(lines, "")
 			continue
 		}
-		lines = append(lines, p.renderRow(&p.rows[i], i == p.Cursor, inner))
+		lines = append(lines, p.renderRow(&p.rows[i], i == p.Cursor, i == p.HoverRow, inner))
 	}
 	lines = append(lines, theme.MutedStyle.Render(strings.Repeat("─", inner)))
 
@@ -1168,11 +1324,7 @@ func (p *Panel) View(z *zone.Manager) string {
 		for i := p.detailScroll; i < p.detailScroll+p.detailRows(); i++ {
 			var line string
 			if i < len(dl) {
-				if p.Split && p.detailSplit != nil {
-					line = ansi.Truncate(dl[i], textW, "")
-				} else {
-					line = ansi.Truncate(diffLine(showWhitespace(dl[i])), textW, "…")
-				}
+				line = dl[i] // already styled and wrapped to width
 				if s0 >= 0 && i >= s0 && i <= s1 {
 					plain := ansi.Strip(line)
 					if w := lipgloss.Width(plain); w < textW {
@@ -1241,7 +1393,7 @@ func (p *Panel) SyncAction() {
 func (p *Panel) hints() string {
 	switch p.Section {
 	case SecStatus:
-		return "+/− stage/unstage · e edit · v split · w ignore-ws · drag+ctrl+c copy · c commit · y sync · S stash · d discard · P pull · f fetch"
+		return "+/− stage/unstage · e edit · v split · z wrap · w ignore-ws · drag+ctrl+c copy · c commit · y sync · S stash · d discard · P pull · f fetch"
 	case SecCommits:
 		return "⏎/jk browse · J/K scroll diff · f file↔repo history · / search · y hash"
 	case SecBranches:
@@ -1254,7 +1406,7 @@ func (p *Panel) hints() string {
 	return ""
 }
 
-func (p *Panel) renderRow(r *row, selected bool, width int) string {
+func (p *Panel) renderRow(r *row, selected, hovered bool, width int) string {
 	var text string
 	switch {
 	case r.header:
@@ -1292,19 +1444,26 @@ func (p *Panel) renderRow(r *row, selected bool, width int) string {
 	default:
 		text = r.text
 	}
-	// Right-aligned action button (stage / unstage) for status rows.
-	action := ""
+	// Right-aligned buttons (undo, then stage / unstage) for status rows.
+	action, undo := "", ""
 	if r.action != "" {
 		action = "[ " + r.action + " ]"
 	}
-	text = ansi.Truncate(text, width-lipgloss.Width(action)-1, "…")
+	if r.undo != "" {
+		undo = "[ " + r.undo + " ]"
+	}
+	btns := undo + action
+	text = ansi.Truncate(text, width-lipgloss.Width(btns)-1, "…")
 	pad := ""
-	if w := lipgloss.Width(text) + lipgloss.Width(action); w < width {
+	if w := lipgloss.Width(text) + lipgloss.Width(btns); w < width {
 		pad = strings.Repeat(" ", width-w)
 	}
 	if selected {
-		plain := ansi.Strip(text) + pad + action
+		plain := ansi.Strip(text) + pad + btns
 		return theme.CursorFocusedStyle.Render(plain)
+	}
+	if undo != "" {
+		undo = theme.Hoverable(hovered && p.HoverBtn == "undo", theme.HashStyle).Render(undo)
 	}
 	if action != "" {
 		st := theme.DiffAddStyle
@@ -1314,9 +1473,14 @@ func (p *Panel) renderRow(r *row, selected bool, width int) string {
 		case r.action == "resolve":
 			st = theme.HashStyle
 		}
-		action = st.Render(action)
+		action = theme.Hoverable(hovered && p.HoverBtn == "action", st).Render(action)
 	}
-	return text + pad + action
+	if hovered && p.HoverBtn == "" {
+		// Hovering the row body: tint the text, leave the buttons alone so
+		// their own hover state stays distinguishable.
+		text = theme.HoverStyle.Render(ansi.Strip(text))
+	}
+	return text + pad + undo + action
 }
 
 // selRange returns the ordered selected detail lines (-1,-1 if none).
@@ -1352,17 +1516,21 @@ func (p *Panel) CopySelection() bool {
 	return true
 }
 
-// showWhitespace makes tabs and trailing spaces visible in diff lines, so a
-// tab→spaces change is not an invisible "everything changed" diff.
+// visibleWhitespace expands tabs and marks trailing spaces, so a tab→spaces
+// reindent is not an invisible "everything changed" diff.
+func visibleWhitespace(body string) string {
+	if trimmed := strings.TrimRight(body, " "); len(trimmed) < len(body) {
+		body = trimmed + strings.Repeat("·", len(body)-len(trimmed))
+	}
+	return theme.ExpandTabs(body)
+}
+
+// showWhitespace applies it to a unified-diff line, keeping the +/- marker.
 func showWhitespace(l string) string {
 	if l == "" || (l[0] != '+' && l[0] != '-' && l[0] != ' ') {
 		return l
 	}
-	body := strings.ReplaceAll(l[1:], "\t", "→   ")
-	if trimmed := strings.TrimRight(body, " "); len(trimmed) < len(body) {
-		body = trimmed + strings.Repeat("·", len(body)-len(trimmed))
-	}
-	return l[:1] + body
+	return l[:1] + visibleWhitespace(l[1:])
 }
 
 // diffLine colours unified-diff lines.

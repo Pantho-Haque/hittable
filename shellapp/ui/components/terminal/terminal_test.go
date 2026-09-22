@@ -95,3 +95,55 @@ func TestScrollbackAndPaste(t *testing.T) {
 		t.Fatal("Paste blocked the caller")
 	}
 }
+
+func TestSelectionText(t *testing.T) {
+	// Not running: the view is the placeholder line plus blank rows, which is
+	// enough to exercise the row/col maths.
+	term := &Terminal{Cols: 20, Rows: 3}
+
+	if term.HasSelection() {
+		t.Fatal("fresh terminal reports a selection")
+	}
+	term.SelectStart(0, 0)
+	if term.HasSelection() {
+		t.Fatal("zero-width selection counts as one")
+	}
+
+	term.SelectTo(8, 0)
+	if !term.HasSelection() {
+		t.Fatal("drag did not select")
+	}
+	if got := term.SelectionText(); got != "starting" {
+		t.Fatalf("got %q, want %q", got, "starting")
+	}
+
+	// Backwards drag selects the same span.
+	term.SelectStart(8, 0)
+	term.SelectTo(0, 0)
+	if got := term.SelectionText(); got != "starting" {
+		t.Fatalf("reversed drag: got %q", got)
+	}
+
+	// Spanning rows: to the end of row 0, then all of the blank row 1.
+	term.SelectStart(0, 0)
+	term.SelectTo(0, 1)
+	if got := term.SelectionText(); got != "starting shell…\n" {
+		t.Fatalf("multi-row: got %q", got)
+	}
+
+	term.Scroll(1)
+	if term.HasSelection() {
+		t.Fatal("scrolling did not drop the selection")
+	}
+}
+
+func TestHighlight(t *testing.T) {
+	got := highlight("abcdef", 2, 4, 6)
+	if want := "ab\x1b[7mcd\x1b[27mef"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	// Past the end of a short row: blank cells still highlight.
+	if got := highlight("ab", 0, 4, 4); got != "\x1b[7mab  \x1b[27m" {
+		t.Fatalf("padding: got %q", got)
+	}
+}

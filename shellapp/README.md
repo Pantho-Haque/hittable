@@ -99,7 +99,7 @@ If you see boxes or `?` where icons should be, either install the font or fall b
 hittable --icons emoji .
 ```
 
-**Mouse.** Requires a terminal that reports mouse events, which every modern terminal does.
+**Mouse.** Requires a terminal that reports mouse events, which every modern terminal does. Everything clickable highlights under the cursor: navbar pills, tabs, mode toggles, the method badge and its dropdown, Send, the response mode and search icons, the terminal strip, and every row in the explorer, the Git panel (including its per-row stage and undo buttons) and the find palette.
 
 ## Layout of this repo
 
@@ -110,7 +110,7 @@ hittable --icons emoji .
 
 ## Integrated terminal
 
-Click the `▸ TERMINAL` strip under the main pane, or press `ctrl+j` (VS Code's panel toggle; `ctrl+`` also works in terminals that send it). While the panel has focus every key goes to the shell; `ctrl+b` returns to the explorer.
+Click the `▸ TERMINAL` strip under the main pane, or press `ctrl+j` (VS Code's panel toggle; `ctrl+`` also works in terminals that send it). While the panel has focus every key goes to the shell; `ctrl+b` returns to the explorer. Drag over the output to select it and `ctrl+c` to copy — with nothing selected `ctrl+c` still interrupts the shell, as in VS Code.
 
 ## Markdown
 
@@ -127,13 +127,13 @@ Open any `.md` file and press `ctrl+t` (or click `[ Text | Preview | Split ]` in
 
 ## Scrolling
 
-Every pane has a vertical scrollbar on its right edge. Code files do not wrap: `shift+wheel` (or a horizontal wheel/trackpad swipe) scrolls sideways, and `alt+z` toggles word wrap, as in VS Code. Markdown files wrap by default.
+Every pane has a vertical scrollbar on its right edge. Code files do not wrap: `shift+wheel` (or a horizontal wheel/trackpad swipe) scrolls sideways, and `alt+z` (or ⌥z on macOS, which sends `Ω`) toggles word wrap, as in VS Code. Markdown files wrap by default.
 
 ## Git
 
 Click `⎇ Git` in the top bar (or press `F5`, `alt+g`, or `g` in the explorer). The panel has five sections:
 
-- **Status** — two collapsible groups, *Staged Changes* and *Changes*. Click `[ + ]` / `[ − ]` on a row to stage or unstage it, or the `[ + stage all ]` / `[ − unstage all ]` button on the group header. The selected file's diff shows below; `v` (or the `[inline split]` toggle) switches to side-by-side. `e` edits the working copy right in the preview (unstaged files only), `d` discard, `c` commit, `S` stash, `p` push, `P` pull, `f` fetch, `⏎` open in the main editor.
+- **Status** — two collapsible groups, *Staged Changes* and *Changes*. Click `[ + ]` / `[ − ]` on a row to stage or unstage it, or the `[ + stage all ]` / `[ − unstage all ]` button on the group header. Unstaged rows also carry `[ ⟲ ]`, and the *Changes* header `[ ⟲ undo all ]`, to throw the edits away (confirmed first; `d` and `D` do the same). The selected file's diff shows below; `v` (or the `[inline split]` toggle) switches to side-by-side. Diff lines wrap to the pane in both modes; `z` (or the `[wrap]` toggle) turns wrapping off and clips them instead, as VS Code's word wrap does. In split view, drag the `│` divider to give one side more room. `e` edits the working copy right in the preview (unstaged files only), `d` discard, `c` commit, `S` stash, `p` push, `P` pull, `f` fetch, `⏎` open in the main editor.
 - **Commits** — repo history, or `f` for the active file's history; `/` searches message, author, or hash. The selected commit's full diff shows below.
 - **Branches** — `⏎` checkout, `n` new, `d` delete.
 - **Stashes** — `⏎` pop, `s` stash, `d` drop.
@@ -145,7 +145,7 @@ The explorer colours changed files and shows M/A/D/U badges; the top bar shows t
 
 **Sidebar.** `alt+b` or the `☰` button hides the file explorer; `ctrl+b` brings it back.
 
-**Copying text.** Drag to select in any editor or in the Git diff pane, then `ctrl+c` (it only quits when nothing is selected). To use your terminal's own selection instead, hold the key your terminal reserves for it while dragging: Option in iTerm2, Fn in Terminal.app, Shift in most Linux terminals.
+**Copying text.** Drag to select in any editor, in the Git diff pane, or in the integrated terminal, then `ctrl+c` (it only quits when nothing is selected). To use your terminal's own selection instead, hold the key your terminal reserves for it while dragging: Option in iTerm2, Fn in Terminal.app, Shift in most Linux terminals.
 
 ## Troubleshooting keys
 

@@ -89,8 +89,8 @@ func (r *ResponseViewer) View(z *zone.Manager, focused bool) string {
 	}
 	status := statusStyle.Render(fmt.Sprintf(" %d %s", r.Status, r.StatusText)) +
 		theme.MutedStyle.Render(fmt.Sprintf(" · %dms · %s · ", r.DurationMs, humanBytes(r.SizeBytes))) +
-		z.Mark("resp_mode", theme.LinkStyle.Render(view))
-	rows := []string{z.Mark("search_icon", theme.MutedStyle.Render("🔍")) + " " + status}
+		z.Mark("resp_mode", theme.Hoverable(r.Hover == "resp_mode", theme.LinkStyle).Render(view))
+	rows := []string{z.Mark("search_icon", theme.Hoverable(r.Hover == "search_icon", theme.MutedStyle).Render("🔍")) + " " + status}
 	if r.SearchOpen {
 		info := ""
 		if len(r.SearchMatches) > 0 {

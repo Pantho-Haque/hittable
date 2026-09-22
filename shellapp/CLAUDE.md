@@ -382,7 +382,7 @@ send binding.
 | Action                | Binding         | Context              |
 |-----------------------|-----------------|----------------------|
 | Quit                  | `ctrl+c`        | Global               |
-| Help                  | `?` / `F1`      | Explorer / Global    |
+| Help                  | `?` / `F1`; `↑↓`/wheel scroll it | Explorer / Global (full keyboard reference) |
 | Toggle Explorer       | `ctrl+b`        | Global               |
 | Send Request          | `ctrl+r` / `ctrl+⏎` | Global (.hit open) |
 | Save now              | `ctrl+s`        | Global (autosave is always on) |
@@ -415,15 +415,17 @@ send binding.
 | Editor: word jump     | `ctrl+←/→`, `alt+←/→` | Text editor    |
 | Editor: indent        | `tab` (2 spaces) | Text editor         |
 | Editor: leave         | `shift+tab`     | Text editor → Explorer |
-| Editor: wrap / h-scroll | `alt+z`, `shift+wheel`, wheel-left/right | Any editor |
+| Editor: wrap / h-scroll | `alt+z` (`⌥z` on macOS, which sends `Ω`), `shift+wheel`, wheel-left/right | Any editor |
 | Editor: select        | drag, `shift+←→↑↓`, double-click word, `ctrl+a` | Any editor |
 | Editor: copy/cut/paste| `ctrl+c` / `ctrl+x` / `ctrl+v` | Any editor (ctrl+c quits only without a selection) |
 | Send (mouse)          | click `▶ Send`  | URL bar              |
 | Terminal toggle/focus | `ctrl+j`, `ctrl+\``, click strip | Global (`ctrl+j` is the reliable one; ctrl+` only in terminals that emit NUL for it) |
-| Terminal leave        | `ctrl+b`        | Terminal focused (all other keys, incl. ctrl+c, go to the shell) |
+| Terminal leave        | `ctrl+b`        | Terminal focused (all other keys go to the shell) |
+| Terminal select/copy  | drag, `ctrl+c`  | Terminal focused (ctrl+c interrupts the shell only with no selection) |
 | Git panel             | `ctrl+g` (outside editors), `alt+g`, `F5`, `g` in explorer, click `⎇ Git` | Global |
 | Git: sections         | `1-5`, `tab`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
-| Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `d` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · discard · commit · stash · push · pull · fetch · open/collapse · filter |
+| Git: diff layout      | drag `│`, `z`/`alt+z`/`⌥z`, `v`, `w` | resize split columns · wrap lines · inline⇄split · ignore whitespace |
+| Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `z` `d` `D` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · wrap lines · discard · undo all · commit · stash · push · pull · fetch · open/collapse · filter |
 | Markdown view         | `ctrl+t` cycles Text → Preview → Split; click `[ Text | Preview | Split ]` | .md file open |
 | Preview scroll        | `jk` `↑↓` `pgup/pgdown` `g/G`, wheel | Preview focused (tab ⇄ editor in split) |
 | Find file             | `ctrl+p`, `/` in explorer, click `Find` | Global (fuzzy, skips node_modules etc.) |
@@ -751,10 +753,30 @@ send binding.
 - git: all invocations serialised behind a mutex, status polled with
   `--no-optional-locks`, transient `index.lock` collisions retried — fixes
   "Unable to create .git/index.lock" on discard/stage while the poll ran.
-- diff: tabs shown as `→`, trailing spaces as `·` (a tab→space reindent is no
+- diff: tabs expanded to spaces, trailing spaces as `·` (a tab→space reindent is no
   longer an invisible all-red/all-green diff); `w` toggles `-w` (ignore whitespace).
 - git pane: drag selects detail lines, `ctrl+c` copies them (quits only with no
   selection). Help/README export wording made consistent (`-e postman`, `-e insomnia`).
+
+### v2.8.4
+- macOS terminals send the composed rune `Ω` for ⌥z rather than a meta-modified
+  key, so the wrap toggle accepts `alt+z`, `Ω` (and `z` in the Git panel).
+- Help overlay (`?`/`F1`) now lists every shortcut — Editor and Terminal
+  sections were missing entirely. It balances into as many columns as the pane
+  fits and scrolls (`↑↓`, `pgup/pgdn`, `g/G`, wheel) when the reference
+  outgrows the screen, instead of being silently clipped by MaxHeight. Help
+  rows are built as single lines; the old fixed-width key style wrapped the
+  longer chords and slid the columns out of step.
+
+### v2.8.3
+- input: mouse reports are no longer split across reads (`ui/input.go`).
+  Bubble Tea carries a partial *key* sequence over to the next read but not a
+  partial mouse one — its mouse branch falls through to key parsing, so a
+  scroll burst that filled the 256-byte read buffer mid-report had the tail
+  typed in as literal `[<66;51;23M` text (and flooded the 200-entry undo
+  history, which is why ctrl+z stopped reaching real edits). The program's
+  input is wrapped so a partial report is held back until the rest arrives.
+  Covered by a unit test on the reader and an e2e scroll burst.
 
 ### v2.8.2
 - Vertical scrollbars (`theme.VScrollbar`) on the editor, markdown preview, git

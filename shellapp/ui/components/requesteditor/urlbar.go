@@ -25,6 +25,9 @@ var Methods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS
 // URLBar is the method badge + URL input. The method picker renders inline
 // in place of the URL line (no layout shift) while DropdownOpen.
 type URLBar struct {
+	// Hover is the zone id the mouse is over, fed by the screen each frame.
+	Hover string
+
 	URLInput textinput.Model
 	Width    int
 	Focused  bool
@@ -158,7 +161,8 @@ func (u *URLBar) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (u *URLBar) View(z *zone.Manager) string {
-	badge := z.Mark("method_badge", theme.MethodStyle.Foreground(theme.MethodColor(u.Method)).
+	badge := z.Mark("method_badge", theme.Hoverable(u.Hover == "method_badge",
+		theme.MethodStyle.Foreground(theme.MethodColor(u.Method))).
 		Render(fmt.Sprintf(" %-7s▾", u.Method)))
 
 	var bar string
@@ -170,11 +174,11 @@ func (u *URLBar) View(z *zone.Manager) string {
 			if i == u.DropdownIdx {
 				st = theme.CursorFocusedStyle.Foreground(theme.MethodColor(m))
 			}
-			items = append(items, z.Mark("method_"+m, st.Render(m)))
+			items = append(items, z.Mark("method_"+m, theme.Hoverable(u.Hover == "method_"+m, st).Render(m)))
 		}
 		bar = ansi.Truncate(strings.Join(items, " "), u.Width, "…")
 	} else {
-		send := z.Mark("send_btn", theme.SendButtonStyle.Render(sendLabel))
+		send := z.Mark("send_btn", theme.Hoverable(u.Hover == "send_btn", theme.SendButtonStyle).Render(sendLabel))
 		url := theme.URLStyle.Render(u.URLInput.View())
 		gap := u.Width - badgeWidth - lipgloss.Width(url) - lipgloss.Width(send)
 		if gap < 1 {

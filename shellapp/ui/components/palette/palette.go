@@ -51,6 +51,11 @@ var skipDirs = map[string]bool{".git": true, "node_modules": true, ".next": true
 const maxFiles = 30000
 
 type Palette struct {
+	// Hover is the zone id the mouse is over, fed by the screen each frame;
+	// HoverRow is the result row under it (hit-tested by coordinate).
+	Hover    string
+	HoverRow int
+
 	Root    string
 	Mode    Mode
 	Open    bool
@@ -71,7 +76,7 @@ type Palette struct {
 }
 
 func New(root string, send func(tea.Msg)) *Palette {
-	return &Palette{Root: root, send: send, Width: 80, Height: 20}
+	return &Palette{Root: root, send: send, Width: 80, Height: 20, HoverRow: -1}
 }
 
 func (p *Palette) SetSize(w, h int) { p.Width, p.Height = w, h }
@@ -89,7 +94,7 @@ func (p *Palette) Show(mode Mode) {
 	}
 }
 
-func (p *Palette) Close() { p.Open = false }
+func (p *Palette) Close() { p.Open, p.HoverRow = false, -1 }
 
 // indexFiles walks the root once per 30s (skipping vendor-ish folders).
 func (p *Palette) indexFiles() {
@@ -352,15 +357,26 @@ func (p *Palette) HandleKey(msg tea.KeyMsg) bool {
 	return true
 }
 
+const listTop = 3 // border + input + blank
+
+// rowAtY maps a box-relative row to a result index, or -1.
+func (p *Palette) rowAtY(y int) int {
+	if i := y - listTop + p.scroll(); i >= 0 && i < len(p.Results) {
+		return i
+	}
+	return -1
+}
+
 // HandleMouse takes coordinates relative to the palette box.
 func (p *Palette) HandleMouse(msg tea.MouseMsg) {
-	const listTop = 3 // border + input + blank
 	switch msg.Type {
+	case tea.MouseMotion:
+		p.HoverRow = p.rowAtY(msg.Y)
 	case tea.MouseLeft:
 		if msg.Action != tea.MouseActionPress {
 			return
 		}
-		if i := msg.Y - listTop + p.scroll(); i >= 0 && i < len(p.Results) {
+		if i := p.rowAtY(msg.Y); i >= 0 {
 			if i == p.Cursor {
 				p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
 			} else {
@@ -423,12 +439,16 @@ func (p *Palette) View(z *zone.Manager) string {
 			row = " " + highlightMatch(base, p.Query) + "  " + theme.MutedStyle.Render(dir)
 		}
 		row = ansi.Truncate(row, inner, "…")
-		if i == p.Cursor {
+		if i == p.Cursor || i == p.HoverRow {
 			plain := ansi.Strip(row)
 			if w := lipgloss.Width(plain); w < inner {
 				plain += strings.Repeat(" ", inner-w)
 			}
-			row = theme.CursorFocusedStyle.Render(plain)
+			st := theme.HoverStyle
+			if i == p.Cursor {
+				st = theme.CursorFocusedStyle
+			}
+			row = st.Render(plain)
 		}
 		lines = append(lines, z.Mark(fmt.Sprintf("pal_%d", i), row))
 	}

@@ -39,7 +39,8 @@ func start(t *testing.T, cols, rows int) (*harness, string) {
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	app := ui.NewApp(tmp)
-	p := tea.NewProgram(app, tea.WithInput(inR), tea.WithOutput(outW), tea.WithMouseAllMotion(), tea.WithoutSignals())
+	p := tea.NewProgram(app, tea.WithInput(&ui.MouseSafeReader{R: inR}), tea.WithOutput(outW),
+		tea.WithMouseAllMotion(), tea.WithoutSignals())
 	screens.SetTeaProgram(p)
 	vt := vt10x.New(vt10x.WithSize(cols, rows))
 	go func() {
@@ -215,5 +216,40 @@ func TestUndoThroughRealTerminal(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	if _, _, ok := h.find("ZZZalpha"); ok {
 		t.Fatalf("ctrl+z did not undo:\n%s", strings.Join(h.screen(), "\n"))
+	}
+}
+
+// A scroll burst that fills Bubble Tea's 256-byte read buffer used to be cut
+// mid mouse-report; the tail was re-parsed as keystrokes and typed into the
+// editor as literal "[<66;51;23M" text, which also flooded the undo history.
+func TestScrollBurstIsNotTypedIntoTheEditor(t *testing.T) {
+	h, _ := start(t, 120, 40)
+	x, y, _ := h.find("hittable/")
+	h.click(x, y)
+	x, y, _ = h.find("notes.md")
+	h.click(x, y)
+	x, y, ok := h.find("alpha beta")
+	if !ok {
+		t.Fatal("editor not open")
+	}
+	h.click(x, y)
+
+	// Wheel reports over the editor, enough to cross the read buffer several
+	// times over so a split inside a report is unavoidable.
+	var burst strings.Builder
+	for i := 0; i < 200; i++ {
+		fmt.Fprintf(&burst, "\x1b[<65;%d;%dM", x+1, y+1)
+	}
+	fmt.Fprint(h.in, burst.String())
+	time.Sleep(300 * time.Millisecond)
+
+	screen := strings.Join(h.screen(), "\n")
+	for _, garbage := range []string{"[<65", "<65;", ";65;", "65;" + fmt.Sprint(x+1)} {
+		if strings.Contains(screen, garbage) {
+			t.Fatalf("mouse report %q was typed into the editor:\n%s", garbage, screen)
+		}
+	}
+	if !strings.Contains(screen, "alpha beta") {
+		t.Fatalf("editor content lost:\n%s", screen)
 	}
 }

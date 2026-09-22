@@ -229,7 +229,8 @@ func (m *MainScreen) renderTopBar() string {
 		if m.Git.Busy != "" {
 			syncSt = theme.TopBarActiveStyle
 		}
-		right = m.Zones.Mark("top_branch", theme.TopBarBranchStyle.Render(badge)) + sp(1) +
+		right = m.Zones.Mark("top_branch",
+			theme.Hoverable(m.HoverZone == "top_branch", theme.TopBarBranchStyle).Render(badge)) + sp(1) +
 			m.Zones.Mark("top_sync", syncSt.Render(strings.TrimSpace(m.Git.SyncLabel()))) + sp(1)
 	case m.Repo == nil:
 		right = theme.TopBarDimStyle.Render("not a git repo") + sp(1)

@@ -17,8 +17,15 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	press := msg.Type == tea.MouseLeft && msg.Action == tea.MouseActionPress
 	drag := msg.Action == tea.MouseActionMotion && msg.Button == tea.MouseButtonLeft
 
+	// Hover feedback: one lookup for every clickable zone in the app, so the
+	// branches below only have to deal with clicks.
+	if msg.Type == tea.MouseMotion {
+		m.HoverZone = m.findZoneAt(msg)
+	}
+
 	if msg.Type == tea.MouseRelease {
 		m.Dragging = false
+		m.Git.EndDrag()
 		if ed := m.focusedEditor(); ed != nil {
 			ed.Update(m.editorRelative(msg))
 		}
@@ -31,9 +38,13 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if drag {
-		// Text selection drag inside the focused editor or the git pane.
+		// Text selection drag inside the focused editor, terminal or git pane.
 		if ed := m.focusedEditor(); ed != nil {
 			return m, ed.Update(m.editorRelative(msg))
+		}
+		if z := m.Zones.Get("term_view"); m.Term.Open && z != nil && z.InBounds(msg) {
+			m.Term.SelectTo(msg.X-z.StartX, msg.Y-z.StartY)
+			return m, nil
 		}
 		if m.GitOpen {
 			if z := m.Zones.Get("git_panel"); z != nil && z.InBounds(msg) {
@@ -66,13 +77,8 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			case "top_help":
 				m.toggleHelp()
 			}
-		} else if msg.Type == tea.MouseMotion {
-			m.HoverZone = m.findTopZone(msg)
 		}
 		return m, nil
-	}
-	if m.HoverZone != "" && strings.HasPrefix(m.HoverZone, "top_") && msg.Type == tea.MouseMotion {
-		m.HoverZone = ""
 	}
 
 	// Separator column between explorer and main pane.
@@ -125,6 +131,7 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if z := m.Zones.Get("term_view"); m.Term.Open && z != nil && z.InBounds(msg) {
 			m.focusTerminal()
+			m.Term.SelectStart(msg.X-z.StartX, msg.Y-z.StartY)
 			return m, nil
 		}
 	}
@@ -138,6 +145,8 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.Palette.HandleMouse(rel)
 		} else if press {
 			m.Palette.Close()
+		} else if msg.Type == tea.MouseMotion {
+			m.Palette.HoverRow = -1
 		}
 		return m, nil
 	}
@@ -148,6 +157,10 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if press {
 				if tz := m.Zones.Get("git_diffmode"); tz != nil && tz.InBounds(msg) {
 					m.Git.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+					return m, nil
+				}
+				if tz := m.Zones.Get("git_wrap"); tz != nil && tz.InBounds(msg) {
+					m.Git.ToggleWrap()
 					return m, nil
 				}
 				if tz := m.Zones.Get("git_sync"); tz != nil && tz.InBounds(msg) {
@@ -167,13 +180,20 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			rel.X -= z.StartX
 			rel.Y -= z.StartY
 			m.Git.HandleMouse(rel)
+		} else if msg.Type == tea.MouseMotion {
+			m.Git.HoverRow = -1
 		}
 		return m, nil
 	}
 
 	// ---- main pane ----
 	if m.ShowHelp {
-		if msg.Type == tea.MouseLeft {
+		switch msg.Type {
+		case tea.MouseWheelUp:
+			m.HelpScroll -= 3
+		case tea.MouseWheelDown:
+			m.HelpScroll += 3
+		case tea.MouseLeft:
 			m.ShowHelp = false
 		}
 		return m, nil
@@ -210,7 +230,6 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseMotion:
-		m.HoverZone = m.findZoneAt(msg)
 		return m, nil
 	case tea.MouseLeft:
 		if !press {
@@ -313,17 +332,32 @@ func (m *MainScreen) handleBodyMouse(msg tea.MouseMsg) tea.Cmd {
 	return m.Body.Update(msg)
 }
 
-// findZoneAt returns the innermost main-pane zone under the mouse.
+// findZoneAt names the clickable zone under the mouse. Zones are tested
+// innermost first — the small buttons before the panes containing them — so
+// the first hit wins. It drives both click dispatch and hover styling, which
+// is what keeps the two from disagreeing about what the mouse is over.
 func (m *MainScreen) findZoneAt(msg tea.MouseMsg) string {
-	ids := []string{"tab_Params", "tab_Headers", "tab_Body", "toggle_runner", "toggle_text", "search_icon", "resp_mode", "method_badge", "send_btn"}
-	if m.URLBar.DropdownOpen {
-		for _, method := range requesteditor.Methods {
-			ids = append(ids, "method_"+method)
+	ids := topZoneIDs()
+	switch {
+	case m.Palette.Open: // its rows are hit-tested inside the component
+	case m.GitOpen:
+		ids = append(ids, "git_diffmode", "git_wrap", "git_sync")
+		for i := range gitpanel.SectionNames {
+			ids = append(ids, fmt.Sprintf("git_tab_%d", i))
 		}
+	default:
+		ids = append(ids, "tab_Params", "tab_Headers", "tab_Body", "toggle_runner", "toggle_text",
+			"search_icon", "resp_mode", "method_badge", "send_btn")
+		if m.URLBar.DropdownOpen {
+			for _, method := range requesteditor.Methods {
+				ids = append(ids, "method_"+method)
+			}
+		}
+		ids = append(ids, "md_text", "md_preview", "md_split", "md_pane", "urlbar", "response", "editor")
 	}
-	ids = append(ids, "md_text", "md_preview", "md_split", "md_pane", "urlbar", "response", "editor")
+	ids = append(ids, "term_strip")
 	for _, id := range ids {
-		if z := m.Zones.Get(id); !z.IsZero() && z.InBounds(msg) {
+		if z := m.Zones.Get(id); z != nil && !z.IsZero() && z.InBounds(msg) {
 			return id
 		}
 	}
@@ -342,8 +376,12 @@ func (m *MainScreen) editorRelative(msg tea.MouseMsg) tea.MouseMsg {
 	return msg
 }
 
+func topZoneIDs() []string {
+	return []string{"top_sidebar", "top_git", "top_find", "top_term", "top_help", "top_branch", "top_sync"}
+}
+
 func (m *MainScreen) findTopZone(msg tea.MouseMsg) string {
-	for _, id := range []string{"top_sidebar", "top_git", "top_find", "top_term", "top_help", "top_branch", "top_sync"} {
+	for _, id := range topZoneIDs() {
 		if z := m.Zones.Get(id); z != nil && !z.IsZero() && z.InBounds(msg) {
 			return id
 		}

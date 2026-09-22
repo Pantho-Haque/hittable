@@ -13,6 +13,9 @@ import (
 )
 
 func (m *MainScreen) View() string {
+	// Components that mark their own zones render their own hover state.
+	m.Git.Hover, m.Palette.Hover, m.URLBar.Hover, m.Response.Hover = m.HoverZone, m.HoverZone, m.HoverZone, m.HoverZone
+
 	explorerView := m.Explorer.View()
 
 	var mainView string
@@ -262,37 +265,59 @@ var helpSections = []struct {
 	{"Global", []helpRow{
 		{"ctrl+b", "toggle explorer / main pane"},
 		{"ctrl+r  ctrl+⏎", "send request"},
-		{"ctrl+s", "save now (autosave is always on)"},
+		{"ctrl+s", "save now (autosave is on)"},
 		{"ctrl+t", "runner ⇄ text view (.hit)"},
-		{"ctrl+y", "copy as curl (or response body)"},
-		{"esc", "close file / dismiss"},
+		{"ctrl+y", "copy as curl / response body"},
+		{"ctrl+p  alt+f", "find file · live grep"},
 		{"ctrl+j  ctrl+`", "toggle integrated terminal"},
+		{"ctrl+g  alt+g  F5", "toggle Git panel"},
+		{"alt+b", "hide / show the sidebar"},
+		{"esc", "close file / dismiss"},
 		{"?  F1", "this help"},
-		{"ctrl+c", "quit"},
+		{"ctrl+c", "quit (copies a selection first)"},
+	}},
+	{"Editor", []helpRow{
+		{"ctrl+z  ctrl+y", "undo · redo"},
+		{"ctrl+c  ctrl+x  ctrl+v", "copy · cut · paste"},
+		{"ctrl+a", "select all"},
+		{"drag  shift+←→↑↓", "select · double-click a word"},
+		{"ctrl+f  ⏎  F3", "find · next match"},
+		{"ctrl+g", "go to line"},
+		{"ctrl+l", "format JSON body"},
+		{"alt+z  ⌥z", "word wrap on / off"},
+		{"shift+wheel", "scroll sideways (wrap off)"},
+		{"ctrl+←/→  alt+←/→", "jump by word"},
+		{"tab  shift+tab", "indent 2 spaces · leave"},
 	}},
 	{"Explorer", []helpRow{
 		{"↑↓  j k", "move"},
-		{"⏎  l  h", "open / expand / collapse"},
+		{"⏎  l  h", "open · expand · collapse"},
 		{"g  G", "top / bottom"},
-		{"x", "context menu"},
+		{"pgup pgdn", "page up / down"},
+		{"x  right-click", "context menu"},
 		{"ctrl+n  ctrl+f", "new file / new folder"},
 		{"ctrl+e  ctrl+d", "rename / delete"},
 		{"r", "refresh tree"},
+		{"/", "find file by name"},
 	}},
-	{"Markdown", []helpRow{
-		{"ctrl+t", "Text → Preview → Split (mermaid diagrams rendered)"},
-		{"tab", "editor ⇄ preview in split view"},
+	{"Terminal (ctrl+j)", []helpRow{
+		{"ctrl+b", "back to the explorer"},
+		{"ctrl+c", "copy selection, else interrupt"},
+		{"drag", "select output text"},
+		{"wheel  shift+↑↓", "scroll back (5000 lines)"},
+		{"ctrl+v", "paste"},
+		{"any key", "restart the shell after exit"},
 	}},
-	{"Find", []helpRow{
-		{"ctrl+p  /", "find file by name (fuzzy)"},
-		{"alt+f", "live grep file contents"},
-		{"tab", "switch between the two"},
-	}},
-	{"Git (ctrl+g / alt+g / F5)", []helpRow{
-		{"1-5  tab", "Status · Commits · Branches · Stashes · Blame"},
-		{"s u a d", "stage · unstage · stage all · discard"},
+	{"Git (ctrl+g)", []helpRow{
+		{"1-5  tab", "switch section"},
+		{"s u  a A", "stage · unstage · all · all"},
+		{"d  D", "discard file · undo all changes"},
 		{"c  S", "commit · stash"},
-		{"p P f", "push · pull · fetch"},
+		{"p P f  y", "push · pull · fetch · sync"},
+		{"e", "edit working copy in preview"},
+		{"v  z  w", "inline⇄split · wrap · ignore ws"},
+		{"drag │", "resize the diff columns"},
+		{"drag  ctrl+c", "select diff lines · copy"},
 		{"n d", "new / delete branch"},
 		{"b", "inline blame in the editor"},
 		{"/", "search commits / filter files"},
@@ -306,40 +331,100 @@ var helpSections = []struct {
 		{"ctrl+f", "search response"},
 		{"h", "response headers"},
 	}},
+	{"Markdown", []helpRow{
+		{"ctrl+t", "Text → Preview → Split"},
+		{"tab", "editor ⇄ preview in split view"},
+		{"jk ↑↓ g G", "scroll the preview"},
+	}},
+	{"Find (ctrl+p)", []helpRow{
+		{"ctrl+p  /", "find file by name (fuzzy)"},
+		{"alt+f", "live grep file contents"},
+		{"tab", "switch between the two"},
+		{"↑↓  ⏎", "move · open at that line"},
+	}},
+}
+
+// helpBody lays the reference out in as many columns as the pane fits,
+// filling the shortest column each time so they come out even. Every entry is
+// built to exactly one line — a styled fixed-width key column would wrap the
+// longer chords and slide the two halves out of step.
+func (m *MainScreen) helpBody(inner int) []string {
+	keyW := 0
+	for _, sec := range helpSections {
+		for _, r := range sec.rows {
+			keyW = max(keyW, lipgloss.Width(r.key))
+		}
+	}
+	keyW += 2
+
+	pad := func(s string, w int) string {
+		return s + strings.Repeat(" ", max(w-lipgloss.Width(s), 0))
+	}
+	var blocks [][]string
+	colWidth := 0
+	for _, sec := range helpSections {
+		lines := []string{"", theme.HelpTitle.Render(sec.title)}
+		for _, r := range sec.rows {
+			lines = append(lines, theme.HelpKeyStyle.Render(pad(r.key, keyW))+theme.HelpDescStyle.Render(r.desc))
+		}
+		for _, l := range lines {
+			colWidth = max(colWidth, lipgloss.Width(l))
+		}
+		blocks = append(blocks, lines)
+	}
+
+	const gap = 3
+	n := min(max((inner+gap)/(colWidth+gap), 1), len(blocks))
+	cols := make([][]string, n)
+	for _, b := range blocks {
+		i := 0
+		for j := range cols {
+			if len(cols[j]) < len(cols[i]) {
+				i = j
+			}
+		}
+		cols[i] = append(cols[i], b...)
+	}
+
+	rows := 0
+	for _, c := range cols {
+		rows = max(rows, len(c))
+	}
+	out := make([]string, rows)
+	for y := range out {
+		var line string
+		for _, c := range cols {
+			cell := ""
+			if y < len(c) {
+				cell = c[y]
+			}
+			line += pad(cell, colWidth+gap)
+		}
+		out[y] = strings.TrimRight(line, " ")
+	}
+	return out
 }
 
 func (m *MainScreen) renderHelp() string {
-	var cols []string
-	for _, sec := range helpSections {
-		rows := []string{theme.HelpTitle.Render(sec.title)}
-		for _, r := range sec.rows {
-			rows = append(rows, theme.HelpKeyStyle.Render(r.key)+theme.HelpDescStyle.Render(r.desc))
-		}
-		cols = append(cols, strings.Join(rows, "\n"))
-	}
-	inner := m.MainWidth - 2
-	var body string
-	if inner >= 2*52 {
-		var left, right []string
-		for i, c := range cols {
-			if i%2 == 0 {
-				left = append(left, c)
-			} else {
-				right = append(right, c)
-			}
-		}
-		body = lipgloss.JoinHorizontal(lipgloss.Top,
-			lipgloss.JoinVertical(lipgloss.Left, left...), "  ",
-			lipgloss.JoinVertical(lipgloss.Left, right...))
+	inner, h := m.MainWidth-2, m.MainH-2
+	head := theme.Wordmark() + theme.MutedStyle.Render("   keyboard reference")
+	body := m.helpBody(inner - 2) // the padding below eats two columns
+
+	// Taller than the pane: scroll it rather than silently cutting shortcuts.
+	avail := max(h-lipgloss.Height(head)-2, 1)
+	foot := "press ? or esc to close"
+	if len(body) > avail {
+		m.HelpScroll = min(max(m.HelpScroll, 0), len(body)-avail)
+		body = body[m.HelpScroll : m.HelpScroll+avail]
+		foot = "↑↓ / wheel scroll · ? or esc to close"
 	} else {
-		body = lipgloss.JoinVertical(lipgloss.Left, cols...)
+		m.HelpScroll = 0
 	}
-	body = lipgloss.JoinVertical(lipgloss.Left,
-		theme.Wordmark()+theme.MutedStyle.Render("   keyboard reference"),
-		body, "", theme.MutedStyle.Render("press ? or esc to close"))
-	h := m.MainH - 2
-	body = lipgloss.NewStyle().Padding(0, 1).MaxHeight(h).MaxWidth(inner).Render(body)
-	return theme.UnfocusedBorderStyle.Width(inner).Height(h).Render(body)
+
+	out := lipgloss.JoinVertical(lipgloss.Left,
+		head, strings.Join(body, "\n"), "", theme.MutedStyle.Render(foot))
+	out = lipgloss.NewStyle().Padding(0, 1).MaxHeight(h).MaxWidth(inner).Render(out)
+	return theme.UnfocusedBorderStyle.Width(inner).Height(h).Render(out)
 }
 
 // renderTermStrip is the one-row, clickable "TERMINAL" bar between the main
@@ -361,7 +446,8 @@ func (m *MainScreen) renderTermStrip() string {
 	if off := m.Term.ScrollOffset; off > 0 {
 		hint = fmt.Sprintf("  ↑ scrollback %d/%d · any key returns", off, m.Term.ScrollbackLen())
 	}
-	line := st.Render(label) + theme.MutedStyle.Background(theme.SurfaceColor).Render(hint)
+	line := theme.Hoverable(m.HoverZone == "term_strip", st).Render(label) +
+		theme.MutedStyle.Background(theme.SurfaceColor).Render(hint)
 	line = ansi.Truncate(line, m.MainWidth, "")
 	if w := lipgloss.Width(line); w < m.MainWidth {
 		line += lipgloss.NewStyle().Background(theme.SurfaceColor).Render(strings.Repeat(" ", m.MainWidth-w))

@@ -33,11 +33,10 @@ const (
 	noWrapWidth = 1 << 20 // textarea width large enough that it never soft-wraps
 	undoDepth   = 200
 	tabSpaces   = "  "
-	tabDisplay  = "    " // how an existing \t is drawn (VS Code default: 4)
 )
 
 // displayCol maps a rune column in raw to its on-screen column once tabs
-// are expanded to tabDisplay.
+// are expanded to theme.IndentWidth cells.
 func displayCol(raw []rune, col int) int {
 	if col > len(raw) {
 		col = len(raw)
@@ -45,7 +44,7 @@ func displayCol(raw []rune, col int) int {
 	n := col
 	for _, r := range raw[:col] {
 		if r == '\t' {
-			n += len(tabDisplay) - 1
+			n += theme.IndentWidth - 1
 		}
 	}
 	return n
@@ -140,7 +139,7 @@ func (t *TextEditor) layout(lines []string, avail int) []vrow {
 			for end < len(r) {
 				cw := 1
 				if r[end] == '\t' {
-					cw = len(tabDisplay)
+					cw = theme.IndentWidth
 				}
 				if w+cw > avail {
 					break
@@ -631,7 +630,9 @@ func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case "ctrl+a":
 		t.SelectAll()
 		return nil
-	case "alt+z":
+	// macOS terminals send the composed rune for Option+z rather than a
+	// meta-modified key, so both spellings toggle wrap.
+	case "alt+z", "Ω":
 		t.Wrap = !t.Wrap
 		t.cur.scrollX = 0
 		t.followCursor()
@@ -957,7 +958,7 @@ func (t *TextEditor) View() string {
 			num = st.Render(a) + " " + num
 		}
 		raw := []rune(lines[i])
-		shown := strings.ReplaceAll(lines[i], "\t", tabDisplay)
+		shown := theme.ExpandTabs(lines[i])
 		full := t.highlight(shown)
 		if hasSel && i >= selS.row && i <= selE.row {
 			sc, ec := 0, displayCol(raw, len(raw))

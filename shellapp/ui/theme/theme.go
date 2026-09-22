@@ -1,6 +1,10 @@
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
 	PrimaryColor   = lipgloss.Color("#8be9fd")
@@ -191,9 +195,9 @@ var (
 	CodeBlockStyle = lipgloss.NewStyle().Background(lipgloss.Color("#21222c"))
 
 	// Help overlay.
-	HelpKeyStyle  = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true).Width(16)
+	HelpKeyStyle  = lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
 	HelpDescStyle = lipgloss.NewStyle().Foreground(TextColor)
-	HelpTitle     = lipgloss.NewStyle().Foreground(AccentColor).Bold(true).MarginTop(1)
+	HelpTitle     = lipgloss.NewStyle().Foreground(AccentColor).Bold(true)
 )
 
 // MethodColor returns the badge colour for an HTTP method.
@@ -261,4 +265,30 @@ func VScrollbar(rows, total, offset int) []string {
 		}
 	}
 	return out
+}
+
+// IndentWidth is how many cells a literal tab occupies on screen (VS Code's
+// default).
+const IndentWidth = 4
+
+// ExpandTabs renders tabs as spaces so every caller measures the same width.
+func ExpandTabs(s string) string {
+	return strings.ReplaceAll(s, "\t", strings.Repeat(" ", IndentWidth))
+}
+
+// HoverBg tints a control the mouse is over.
+var HoverBg = lipgloss.Color("#44475a")
+
+// Hoverable returns st as it should render under the mouse. A control with no
+// background of its own takes the hover tint; one that is already a filled
+// button (Send, the top-bar pills) keeps its colours and is underlined
+// instead, so its dark foreground never lands on the dark hover tint.
+func Hoverable(on bool, st lipgloss.Style) lipgloss.Style {
+	if !on {
+		return st
+	}
+	if st.GetBackground() == lipgloss.TerminalColor(lipgloss.NoColor{}) {
+		return st.Background(HoverBg).Bold(true)
+	}
+	return st.Underline(true).Bold(true)
 }

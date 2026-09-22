@@ -17,6 +17,8 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 )
@@ -57,6 +59,11 @@ type Terminal struct {
 	prevPlain    []string
 	prevStyled   []string
 	prevCursorY  int
+
+	// Mouse text selection, in view coordinates {row, col}. Anchored on
+	// press and dropped whenever the view scrolls under it.
+	selecting  bool
+	selA, selB [2]int
 
 	// Bracketed paste: tracked from the shell's DECSET 2004 requests.
 	bracketed atomic.Bool
@@ -266,6 +273,7 @@ func equalRows(a, b []string) bool {
 func (t *Terminal) Scroll(delta int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.selecting = false // view coords move under the selection
 	t.ScrollOffset += delta
 	if t.ScrollOffset > len(t.scrollback) {
 		t.ScrollOffset = len(t.scrollback)
@@ -273,6 +281,87 @@ func (t *Terminal) Scroll(delta int) {
 	if t.ScrollOffset < 0 {
 		t.ScrollOffset = 0
 	}
+}
+
+// ---------- mouse selection ----------
+//
+// The app runs with mouse tracking on, so the host terminal's own selection
+// never sees these cells; the panel selects and copies them itself.
+
+// SelectStart anchors a selection at a view cell, dropping any previous one.
+func (t *Terminal) SelectStart(col, row int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.selecting = true
+	t.selA, t.selB = [2]int{row, col}, [2]int{row, col}
+}
+
+// SelectTo extends the live selection to a view cell.
+func (t *Terminal) SelectTo(col, row int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.selecting {
+		t.selB = [2]int{row, col}
+	}
+}
+
+func (t *Terminal) ClearSelection() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.selecting = false
+}
+
+// HasSelection reports a selection covering at least one cell.
+func (t *Terminal) HasSelection() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, _, ok := t.selOrderedLocked()
+	return ok
+}
+
+// selOrderedLocked returns the selection ends in reading order. t.mu held.
+func (t *Terminal) selOrderedLocked() (a, b [2]int, ok bool) {
+	if !t.selecting || t.selA == t.selB {
+		return a, b, false
+	}
+	a, b = t.selA, t.selB
+	if b[0] < a[0] || (b[0] == a[0] && b[1] < a[1]) {
+		a, b = b, a
+	}
+	return a, b, true
+}
+
+// SelectionText is the selected cells as plain text, one line per row.
+func (t *Terminal) SelectionText() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	a, b, ok := t.selOrderedLocked()
+	if !ok {
+		return ""
+	}
+	lines := t.viewLinesLocked()
+	var out []string
+	for y := max(a[0], 0); y <= b[0] && y < len(lines); y++ {
+		c0, c1 := 0, t.Cols
+		if y == a[0] {
+			c0 = a[1]
+		}
+		if y == b[0] {
+			c1 = b[1]
+		}
+		out = append(out, strings.TrimRight(ansi.Strip(ansi.Cut(lines[y], c0, c1)), " "))
+	}
+	return strings.Join(out, "\n")
+}
+
+// CopySelection puts the selection on the system clipboard and reports how
+// many lines were copied (0 = nothing selected, or no clipboard).
+func (t *Terminal) CopySelection() int {
+	s := t.SelectionText()
+	if s == "" || clipboard.WriteAll(s) != nil {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
 }
 
 // ScrollbackLen reports how many lines are available above the screen.
@@ -493,6 +582,36 @@ func (t *Terminal) renderRowLocked(y, cols, cursorX int) (string, string) {
 func (t *Terminal) View() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	lines := t.viewLinesLocked()
+	if a, b, ok := t.selOrderedLocked(); ok {
+		for y := max(a[0], 0); y <= b[0] && y < len(lines); y++ {
+			c0, c1 := 0, t.Cols
+			if y == a[0] {
+				c0 = a[1]
+			}
+			if y == b[0] {
+				c1 = b[1]
+			}
+			lines[y] = highlight(lines[y], c0, c1, t.Cols)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// highlight reverse-videos cells [c0,c1) of an already-styled row.
+func highlight(line string, c0, c1, cols int) string {
+	if c1 <= c0 {
+		return line
+	}
+	mid := ansi.Strip(ansi.Cut(line, c0, c1))
+	if n := c1 - c0 - lipgloss.Width(mid); n > 0 {
+		mid += strings.Repeat(" ", n) // blank cells still highlight
+	}
+	return ansi.Cut(line, 0, c0) + "\x1b[7m" + mid + "\x1b[27m" + ansi.Cut(line, c1, cols)
+}
+
+// viewLinesLocked builds the Rows visible lines. t.mu must be held.
+func (t *Terminal) viewLinesLocked() []string {
 	if !t.running || t.vt == nil {
 		msg := t.exitMsg
 		if msg == "" {
@@ -502,7 +621,7 @@ func (t *Terminal) View() string {
 		for len(lines) < t.Rows {
 			lines = append(lines, "")
 		}
-		return strings.Join(lines, "\n")
+		return lines
 	}
 	t.vt.Lock()
 	cur := t.vt.Cursor()
@@ -535,7 +654,7 @@ func (t *Terminal) View() string {
 	for len(out) < t.Rows {
 		out = append(out, "")
 	}
-	return strings.Join(out, "\n")
+	return out
 }
 
 // Snapshot returns the plain-text grid (for tests).
