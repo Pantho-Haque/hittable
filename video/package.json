@@ -1,0 +1,28 @@
+{
+  "name": "hittable-video",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "capture": "cd ../shellapp && go run ./tools/capture -out ../video/public/capture.json",
+    "music": "python3 scripts/music.py public/beat.wav 16 && python3 scripts/music.py public/beat-long.wav 61",
+    "studio": "remotion studio",
+    "build": "remotion render Walkthrough out/hittable.mp4 --concurrency=4",
+    "build:30s": "remotion render Teaser out/hittable-30s.mp4 --concurrency=4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.409",
+    "@remotion/media": "4.0.409",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.409"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5.6.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

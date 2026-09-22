@@ -621,6 +621,11 @@ func (t *Terminal) viewLinesLocked() []string {
 		for len(lines) < t.Rows {
 			lines = append(lines, "")
 		}
+		for i, l := range lines {
+			if n := t.Cols - lipgloss.Width(l); n > 0 {
+				lines[i] = l + strings.Repeat(" ", n)
+			}
+		}
 		return lines
 	}
 	t.vt.Lock()
@@ -653,6 +658,15 @@ func (t *Terminal) viewLinesLocked() []string {
 	}
 	for len(out) < t.Rows {
 		out = append(out, "")
+	}
+	// Every row is padded to the full width. A short last row would put the
+	// panel's closing zone marker at column 0, leaving the registered zone
+	// with EndX < StartX — which bubblezone rejects, so no click or drag in
+	// the panel would ever be recognised.
+	for i, l := range out {
+		if n := t.Cols - lipgloss.Width(l); n > 0 {
+			out[i] = l + strings.Repeat(" ", n)
+		}
 	}
 	return out
 }

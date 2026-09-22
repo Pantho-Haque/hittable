@@ -1,5 +1,8 @@
-# Binary
-hittable
+# Binary (Makefile builds it here). Anchored with a leading slash: an
+# unanchored "hittable" also matches the cmd/hittable/ directory, which kept
+# the whole entrypoint out of version control.
+/hittable
+/capture
 
 # Test binary
 *.test

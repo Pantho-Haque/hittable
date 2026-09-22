@@ -1,0 +1,7 @@
+node_modules/
+
+# Rendered output and generated assets: all reproducible with
+#   pnpm capture && pnpm music && pnpm build
+out/
+public/capture.json
+public/*.wav

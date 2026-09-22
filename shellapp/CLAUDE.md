@@ -773,6 +773,16 @@ send binding.
   matching what detailWidth() already assumed, so a tinted row is exactly as
   wide as the content area whether or not a scrollbar is showing.
 
+### v2.8.8
+- Terminal selection never worked from the UI. Two causes, both outside the
+  terminal package: focusedEditor() did not rule out the terminal, and
+  focusTerminal leaves m.Focus on whatever was focused before — so with a file
+  open a drag over the panel was handed to the editor. And Terminal.View()
+  padded with empty lines, which put the panel's closing zone marker at column
+  0 and left the registered zone with EndX < StartX; bubblezone rejects that,
+  so no click or drag in the panel registered at all. Rows are now padded to
+  the full width.
+
 ### v2.8.7
 - Zoomed-in (small) terminals no longer scroll the frame. Three panes rendered
   taller or wider than the space they were given: the welcome screen's height

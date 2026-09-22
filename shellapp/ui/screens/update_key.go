@@ -455,7 +455,10 @@ func (m *MainScreen) handleTextEditorKey(msg tea.KeyMsg) tea.Cmd {
 
 // focusedEditor returns the code editor that currently has keyboard focus.
 func (m *MainScreen) focusedEditor() *texteditor.TextEditor {
-	if m.ExplorerFocused || m.ActiveFile == "" {
+	// focusTerminal leaves m.Focus pointing at whatever was focused before, so
+	// the terminal has to be ruled out explicitly — otherwise a drag over the
+	// terminal panel is handed to the editor and selection never happens.
+	if m.TermFocused || m.ExplorerFocused || m.ActiveFile == "" {
 		return nil
 	}
 	switch m.Focus {
