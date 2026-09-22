@@ -24,7 +24,10 @@ const blameWidth = 34
 // wireGit connects the git panel's hooks to the screen.
 func (m *MainScreen) wireGit() {
 	g := m.Git
-	g.OnChanged = func() { m.refreshGit(true) }
+	// A discard / checkout / stash pop rewrites working-tree files, so the
+	// open documents have to pick that up before the next autosave writes the
+	// stale buffer back over it.
+	g.OnChanged = func() { m.reloadExternalEdits(); m.refreshGit(true) }
 	g.OnOpenFile = func(abs string) {
 		m.GitOpen = false
 		m.openFileRaw(abs)

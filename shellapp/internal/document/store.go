@@ -48,3 +48,14 @@ func (s *Store) Delete(path string) {
 	defer s.mu.Unlock()
 	delete(s.documents, path)
 }
+
+// Paths lists every open document, in no particular order.
+func (s *Store) Paths() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0, len(s.documents))
+	for p := range s.documents {
+		out = append(out, p)
+	}
+	return out
+}

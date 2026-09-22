@@ -61,8 +61,9 @@ func (m *MainScreen) View() string {
 func (m *MainScreen) renderEmptyMain() string {
 	inner, h := m.MainWidth-2, m.MainH-2
 	hints := theme.MutedStyle.Render("↑↓ move · ⏎ open · ctrl+n new file · ctrl+p find · ctrl+j terminal · ? help")
+	short := theme.MutedStyle.Render("↑↓ move · ⏎ open · ? help")
 	cmd := func(c, d string) string {
-		return theme.HelpKeyStyle.Width(30).Render(c) + theme.HelpDescStyle.Render(d)
+		return theme.HelpKeyStyle.Width(20).Render(c) + theme.HelpDescStyle.Render(d)
 	}
 	commands := lipgloss.JoinVertical(lipgloss.Left,
 		theme.HelpTitle.Render("Get started from the shell"),
@@ -75,20 +76,28 @@ func (m *MainScreen) renderEmptyMain() string {
 	)
 	if _, err := os.Stat(m.HittableDir); err != nil {
 		commands = lipgloss.JoinVertical(lipgloss.Left, commands, "",
-			theme.MutedStyle.Render("No hittable/ folder here yet — `hittable init` or import a collection, or just create a .hit file."))
+			theme.MutedStyle.Render("No hittable/ folder here yet — run hittable init, import a collection, or create a .hit file."))
 	}
-	if lipgloss.Width(commands) > inner {
-		commands = "" // narrow pane: keep the logo only
+
+	// Progressively poorer layouts; the first that fits the pane wins. A pane
+	// this one overflows would scroll the whole frame, so "fits" is checked in
+	// both directions rather than assumed.
+	joinc := func(parts ...string) string { return lipgloss.JoinVertical(lipgloss.Center, parts...) }
+	for _, content := range []string{
+		joinc(theme.Logo(), "", hints, "", commands),
+		joinc(theme.Wordmark(), "", hints, "", commands),
+		joinc(theme.Wordmark(), "", hints),
+		joinc(theme.Wordmark(), "", short),
+		theme.Wordmark(),
+		short,
+		"",
+	} {
+		if lipgloss.Height(content) <= h && lipgloss.Width(content) <= inner {
+			body := lipgloss.Place(inner, h, lipgloss.Center, lipgloss.Center, content)
+			return theme.UnfocusedBorderStyle.Width(inner).Height(h).Render(body)
+		}
 	}
-	content := lipgloss.JoinVertical(lipgloss.Center, theme.Logo(), "", hints, "", commands)
-	if lipgloss.Height(content) > h {
-		content = lipgloss.JoinVertical(lipgloss.Center, theme.Wordmark(), "", hints, "", commands)
-	}
-	if lipgloss.Height(content) > h {
-		content = lipgloss.JoinVertical(lipgloss.Center, theme.Wordmark(), "", hints) // tiny terminals
-	}
-	body := lipgloss.Place(inner, h, lipgloss.Center, lipgloss.Center, content)
-	return theme.UnfocusedBorderStyle.Width(inner).Height(h).Render(body)
+	return theme.UnfocusedBorderStyle.Width(inner).Height(h).Render("")
 }
 
 func (m *MainScreen) renderRunnerView() string {
@@ -120,11 +129,12 @@ func (m *MainScreen) renderRunnerView() string {
 	return theme.UnfocusedBorderStyle.
 		Width(m.MainWidth - 2).
 		Height(m.MainH - 2).
+		MaxHeight(m.MainH).
 		Render(content)
 }
 
 func (m *MainScreen) renderTextView() string {
-	breadcrumb := theme.BreadcrumbStyle.Render(m.relPath())
+	breadcrumb := theme.BreadcrumbStyle.Render(ansi.Truncate(m.relPath(), m.MainWidth, "…"))
 	if !m.isMarkdown() {
 		return lipgloss.JoinVertical(lipgloss.Left, breadcrumb, m.Zones.Mark("editor", m.TextEd.View()))
 	}
@@ -139,12 +149,26 @@ func (m *MainScreen) renderTextView() string {
 		}
 		return m.Zones.Mark(id, st.Render(label))
 	}
-	toggle := "[ " + seg("md_text", "Text", MdText) + " | " + seg("md_preview", "Preview", MdPreview) + " | " + seg("md_split", "Split", MdSplit) + " ]"
-	gap := m.MainWidth - lipgloss.Width(breadcrumb) - lipgloss.Width(toggle)
-	if gap < 1 {
-		gap = 1
+	// Widths are measured from the plain labels: the toggle carries zone
+	// markers, which lipgloss.Width counts but the terminal never draws. A
+	// narrow pane gets initials, and below that the toggle is dropped —
+	// overflowing here would wrap and scroll the whole frame.
+	text, preview, split := "Text", "Preview", "Split"
+	plain := "[ Text | Preview | Split ]"
+	if m.MainWidth < lipgloss.Width(plain)+8 {
+		text, preview, split = "T", "P", "S"
+		plain = "[ T | P | S ]"
 	}
-	header := breadcrumb + strings.Repeat(" ", gap) + toggle
+	header := ""
+	toggleW := lipgloss.Width(plain)
+	if toggleW <= m.MainWidth {
+		header = "[ " + seg("md_text", text, MdText) + " | " + seg("md_preview", preview, MdPreview) +
+			" | " + seg("md_split", split, MdSplit) + " ]"
+	}
+	if room := m.MainWidth - toggleW - 1; room > 0 {
+		crumb := theme.BreadcrumbStyle.Render(ansi.Truncate(m.relPath(), room, "…"))
+		header = crumb + strings.Repeat(" ", max(m.MainWidth-lipgloss.Width(crumb)-toggleW, 1)) + header
+	}
 
 	var body string
 	switch m.MdMode {

@@ -96,11 +96,11 @@ func splitDiff(unified []string, width, half int, wrap bool) []string {
 		for i := 0; i < max(len(dels), len(adds)); i++ {
 			var l, r []string
 			if i < len(dels) {
-				l = sideRows(oldN, dels[i], theme.DiffDelStyle, half, wrap)
+				l = sideRows(oldN, dels[i], theme.DiffDelLineStyle, half, wrap)
 				oldN++
 			}
 			if i < len(adds) {
-				r = sideRows(newN, adds[i], theme.DiffAddStyle, rhalf, wrap)
+				r = sideRows(newN, adds[i], theme.DiffAddLineStyle, rhalf, wrap)
 				newN++
 			}
 			emit(l, r)

@@ -1,6 +1,9 @@
 package document
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 type ViewMode int
 
@@ -29,18 +32,23 @@ type DocumentModel struct {
 	HitContent  interface{}
 	Generation  uint64
 	GenCounter  uint64
-	LastFlushed uint64
+	LastFlushed uint64 // last generation handed to the write queue
+
+	// DiskMod is the file mtime the content is known to match, so an edit
+	// made outside the app can be told from our own write. Caller locks.
+	DiskMod time.Time
 }
 
 func NewDocumentModel(path string, kind FileKind, content string, raw []byte) *DocumentModel {
 	return &DocumentModel{
-		Path:       path,
-		Kind:       kind,
-		Content:    content,
-		RawContent: raw,
-		ViewMode:   ViewRunner,
-		Generation: 1,
-		GenCounter: 1,
+		Path:        path,
+		Kind:        kind,
+		Content:     content,
+		RawContent:  raw,
+		ViewMode:    ViewRunner,
+		Generation:  1,
+		GenCounter:  1,
+		LastFlushed: 1,
 	}
 }
 

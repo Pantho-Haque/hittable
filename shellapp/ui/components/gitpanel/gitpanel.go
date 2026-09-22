@@ -393,7 +393,16 @@ func (p *Panel) detailLines() []string {
 		out = append(out, splitDiff(p.detail, w, half, p.Wrap)...)
 	} else {
 		for _, l := range p.detail {
-			out = append(out, fullWidth(diffLine(showWhitespace(l)), w, p.Wrap)...)
+			chunks := fullWidth(diffLine(showWhitespace(l)), w, p.Wrap)
+			if st, tinted := diffRowStyle(l); tinted {
+				// Fill the rest of the row so the tint reaches the edge.
+				for i, c := range chunks {
+					if n := w - lipgloss.Width(c); n > 0 {
+						chunks[i] = c + st.Render(strings.Repeat(" ", n))
+					}
+				}
+			}
+			out = append(out, chunks...)
 		}
 	}
 	p.detailCache, p.detailCacheKey = out, key
@@ -1317,10 +1326,7 @@ func (p *Panel) View(z *zone.Manager) string {
 		dl := p.detailLines()
 		s0, s1 := p.selRange()
 		sb := theme.VScrollbar(p.detailRows(), len(dl), p.detailScroll)
-		textW := inner
-		if sb != nil {
-			textW = inner - 1
-		}
+		textW := inner - 1 // detailWidth() always reserves the scrollbar column
 		for i := p.detailScroll; i < p.detailScroll+p.detailRows(); i++ {
 			var line string
 			if i < len(dl) {
@@ -1534,6 +1540,21 @@ func showWhitespace(l string) string {
 }
 
 // diffLine colours unified-diff lines.
+// diffRowStyle is the whole-row tint for an added / removed diff line. The
+// prefix tests mirror diffLine's, where +++ / --- are file headers rather than
+// changed lines.
+func diffRowStyle(l string) (lipgloss.Style, bool) {
+	switch {
+	case strings.HasPrefix(l, "+++"), strings.HasPrefix(l, "---"):
+		return lipgloss.Style{}, false
+	case strings.HasPrefix(l, "+"):
+		return theme.DiffAddLineStyle, true
+	case strings.HasPrefix(l, "-"):
+		return theme.DiffDelLineStyle, true
+	}
+	return lipgloss.Style{}, false
+}
+
 func diffLine(l string) string {
 	switch {
 	case strings.HasPrefix(l, "+++") || strings.HasPrefix(l, "---") || strings.HasPrefix(l, "diff ") || strings.HasPrefix(l, "index "):
@@ -1541,9 +1562,9 @@ func diffLine(l string) string {
 	case strings.HasPrefix(l, "@@"):
 		return theme.DiffHunkStyle.Render(l)
 	case strings.HasPrefix(l, "+"):
-		return theme.DiffAddStyle.Render(l)
+		return theme.DiffAddLineStyle.Render(l)
 	case strings.HasPrefix(l, "-"):
-		return theme.DiffDelStyle.Render(l)
+		return theme.DiffDelLineStyle.Render(l)
 	case strings.HasPrefix(l, "commit ") || strings.HasPrefix(l, "Author:") || strings.HasPrefix(l, "Date:"):
 		return theme.HashStyle.Render(l)
 	}

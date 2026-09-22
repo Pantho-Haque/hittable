@@ -213,7 +213,11 @@ modes. This is architected in from the start:
 
 - **One `DocumentModel` per open file path**, created the first time a path is opened in
   the session and kept in an in-memory `Store` for the rest of the session. Re-opening an
-  already-open path reuses its model — it is **never** re-read from disk mid-session.
+  already-open path reuses its model rather than re-reading it. The one exception is an
+  edit made *outside* the app (a git discard / checkout, the integrated terminal, another
+  editor): `reloadExternalEdits` compares each open file's mtime and size against what the
+  model last matched and adopts the disk content when they differ. A document with edits
+  that have not reached the write queue wins, so typing is never replaced.
 - A single `document.Update(path, fn)` function is the only way any view mutates a
   document's content: lock → apply `fn` → increment a `generation` counter → unlock →
   enqueue a debounced (~150–300ms), per-path serialized disk write carrying that
@@ -757,6 +761,44 @@ send binding.
   longer an invisible all-red/all-green diff); `w` toggles `-w` (ignore whitespace).
 - git pane: drag selects detail lines, `ctrl+c` copies them (quits only with no
   selection). Help/README export wording made consistent (`-e postman`, `-e insomnia`).
+
+### v2.8.8
+- Diff rows are tinted whole-width: theme.DiffAddLineStyle / DiffDelLineStyle
+  add a background to added / removed lines in both inline and split view. The
+  inline path pads each wrapped row with the row style so the tint reaches the
+  right edge; the split path already padded inside the style. Kept separate
+  from DiffAddStyle / DiffDelStyle, which also colour the stage / unstage
+  buttons in the file list. Tune the two colours in ui/theme/theme.go.
+- The detail pane now always reserves the scrollbar column in its text width,
+  matching what detailWidth() already assumed, so a tinted row is exactly as
+  wide as the content area whether or not a scrollbar is showing.
+
+### v2.8.7
+- Zoomed-in (small) terminals no longer scroll the frame. Three panes rendered
+  taller or wider than the space they were given: the welcome screen's height
+  fallbacks did not actually guarantee a fit, the markdown header put a
+  fixed-width [ Text | Preview | Split ] toggle next to the breadcrumb, and the
+  runner's `avail` floors broke its own 5+avail height identity. A wrapped or
+  over-tall frame makes the terminal scroll, which pushes the navbar off screen
+  and leaves every mouse coordinate out of step with the layout by the number
+  of scrolled rows — that is why hover landed a row above the cursor.
+- ui.App.View now clips the scanned frame to Width x Height as a backstop, so a
+  future overflow is confined to the pane that caused it. Clipping runs after
+  Zones.Scan so zone coordinates match what is drawn.
+- Regression test renders every view (welcome, text, markdown preview/split,
+  runner, git, palette, help, terminal, hidden sidebar) at seven sizes down to
+  50x16 and asserts the frame is exactly the terminal's rows and columns.
+
+### v2.8.6
+- The document store no longer goes stale against disk. Discarding a file in
+  the Git panel rewrote it on disk while the editor kept the old buffer — and
+  the next autosave wrote that buffer back, silently undoing the discard.
+  Open documents are now re-read when their mtime/size stops matching what the
+  model last saw: immediately after any Git mutation (OnChanged), and on the
+  existing 2s poll for changes made outside the app. Unflushed local edits are
+  never overwritten, and a pending write is cancelled before adopting disk
+  content. LastFlushed (previously dead) tracks the generation handed to the
+  write queue.
 
 ### v2.8.5
 - The Git panel and the find palette take the full window width; the sidebar

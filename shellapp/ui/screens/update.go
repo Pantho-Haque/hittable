@@ -73,6 +73,7 @@ func (m *MainScreen) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Git.Done(msg)
 		return m, nil
 	case gitTickMsg:
+		m.reloadExternalEdits() // files changed outside the app
 		return m, m.pollGit()
 	case gitStatusMsg:
 		m.applyStatus(msg)

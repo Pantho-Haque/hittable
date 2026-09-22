@@ -173,12 +173,18 @@ var (
 	GitHeaderStyle = lipgloss.NewStyle().Foreground(TextColor).Bold(true)
 	DiffAddStyle   = lipgloss.NewStyle().Foreground(AccentColor)
 	DiffDelStyle   = lipgloss.NewStyle().Foreground(ErrorColor)
-	DiffHunkStyle  = lipgloss.NewStyle().Foreground(PrimaryColor)
-	BlameStyle     = lipgloss.NewStyle().Foreground(MutedColor).Italic(true)
-	GitModified    = lipgloss.Color("#e2c08d")
-	GitAdded       = lipgloss.Color("#73c991")
-	GitDeleted     = lipgloss.Color("#f14c4c")
-	GitConflict    = lipgloss.Color("#e4676b")
+
+	// Whole-row tints for added / removed diff lines. Kept separate from the
+	// foreground-only styles above, which also colour the stage / unstage
+	// buttons in the file list.
+	DiffAddLineStyle = lipgloss.NewStyle().Foreground(AccentColor).Background(lipgloss.Color("#223a2b"))
+	DiffDelLineStyle = lipgloss.NewStyle().Foreground(ErrorColor).Background(lipgloss.Color("#3d2328"))
+	DiffHunkStyle    = lipgloss.NewStyle().Foreground(PrimaryColor)
+	BlameStyle       = lipgloss.NewStyle().Foreground(MutedColor).Italic(true)
+	GitModified      = lipgloss.Color("#e2c08d")
+	GitAdded         = lipgloss.Color("#73c991")
+	GitDeleted       = lipgloss.Color("#f14c4c")
+	GitConflict      = lipgloss.Color("#e4676b")
 
 	// Top bar: a dark strip with pill buttons.
 	TopBarBg          = lipgloss.Color("#21222c")

@@ -94,6 +94,7 @@ func (m *MainScreen) saveAndEnqueue() {
 	}
 	doc.SetContent(content)
 	gen := doc.IncGeneration()
+	doc.SetLastFlushed(gen) // in sync with disk once the queue flushes
 	doc.Unlock()
 	m.WriteQueue.Update(doc.Path, content, gen)
 	m.refreshGit(false)

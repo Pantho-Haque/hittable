@@ -239,18 +239,15 @@ func (m *MainScreen) SetSize(w, h int) {
 
 	// Inside the main pane's border: breadcrumb(1) + url bar(3) + tab bar(1)
 	// + editor box + response box.
-	avail := m.MainH - 7
-	if avail < 11 {
-		avail = 11
-	}
-	if avail < 8 {
-		avail = 8
-	}
-	m.EditorHeight = avail / 3 // outer rows of the editor box (incl. border)
-	if m.EditorHeight < 4 {
-		m.EditorHeight = 4
-	}
-	respInner := avail - m.EditorHeight - 2
+	// The runner stacks breadcrumb(1) + url bar(3) + tab bar(1) + editor box
+	// + response box, so its height is exactly 5+avail. Flooring avail above
+	// MainH-7 made that sum outgrow the pane, which wrapped the frame and
+	// scrolled the terminal; keep the identity and let the frame clip handle
+	// panes too short for any layout.
+	avail := max(m.MainH-7, 4)
+	m.EditorHeight = max(avail/3, 4) // outer rows of the editor box (incl. border)
+	m.EditorHeight = min(m.EditorHeight, avail-2)
+	respInner := max(avail-m.EditorHeight-2, 0)
 
 	m.Explorer.SetSize(m.ExplorerWidth, h-2)
 	m.Git.SetSize(m.MainWidth, m.MainH)
