@@ -43,17 +43,35 @@ type WorkspaceContextType = {
   envContent: TEnvFile;
   isRefreshing: boolean;
   isFileLoaded: boolean;
+  connectingStage: TConnectingStage | null;
   openFolder: () => Promise<void>;
   disconnectFolder: () => void;
   refreshTree: () => Promise<void>;
   refreshEnv: () => Promise<void>;
   setActiveFile: (file: { path: string[]; handle: FileSystemFileHandle } | null) => void;
   updateRawTextContent: (content: string) => void;
-  saveRawTextContent: () => void;
+  saveRawTextContent: (content?: string) => void;
   deleteEntry: (parentHandle: FileSystemDirectoryHandle, name: string) => Promise<void>;
   renameEntry: (parentHandle: FileSystemDirectoryHandle, oldName: string, newName: string, kind: "file" | "directory") => Promise<void>;
   createEntry: (parentHandle: FileSystemDirectoryHandle, name: string, kind: "file" | "directory") => Promise<void>;
 } | null;
+
+/**
+ * Opening a workspace is a multi-second job (scaffolding, then a full recursive
+ * walk of the folder). The stage is surfaced so the UI can say which part is
+ * running rather than showing an unexplained pause in local mode.
+ */
+export type TConnectingStage = "preparing" | "scanning" | "reconnecting";
+
+const CONNECTING_LABELS: Record<TConnectingStage, string> = {
+  preparing: "Preparing workspace…",
+  scanning: "Reading folder…",
+  reconnecting: "Reconnecting to your workspace…",
+};
+
+export function connectingLabel(stage: TConnectingStage): string {
+  return CONNECTING_LABELS[stage];
+}
 
 const WorkspaceContext = createContext<WorkspaceContextType>(null);
 
@@ -69,10 +87,11 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
   const [envContent, setEnvContent] = useState<TEnvFile>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFileLoaded, setIsFileLoaded] = useState(false);
+  const [connectingStage, setConnectingStage] = useState<TConnectingStage | null>(null);
 
   const hasLoadedRef = useRef(false);
   const activeFileRef = useRef<ActiveFileState>(null);
-  const writingRef = useRef(false);
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const hittableDirRef = useRef<FileSystemDirectoryHandle | null>(null);
 
   activeFileRef.current = activeFile;
@@ -124,8 +143,20 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const openFolder = useCallback(async () => {
+    // The OS picker is modal, so the loader only covers the work that follows
+    // it — otherwise a cancelled picker would leave a spinner on screen.
+    let handle: FileSystemDirectoryHandle;
     try {
-      const handle = await pickFolder();
+      handle = await pickFolder();
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        console.error("Failed to open folder:", err);
+      }
+      return;
+    }
+
+    setConnectingStage("preparing");
+    try {
       const hittable = await scaffoldHittable(handle);
       await saveDirectoryHandle(handle);
       setDirectoryHandle(handle);
@@ -135,15 +166,16 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
       setRawTextContent("");
       setIsFileLoaded(false);
       hasLoadedRef.current = false;
+      setConnectingStage("scanning");
       const newTree = await buildTree(handle);
       setTree(newTree);
       const env = await readEnvFile(hittable);
       setEnvContent(env);
       setMode("directory");
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        console.error("Failed to open folder:", err);
-      }
+      console.error("Failed to open folder:", err);
+    } finally {
+      setConnectingStage(null);
     }
   }, [setMode]);
 
@@ -176,6 +208,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
         setMode("local");
         return;
       }
+      setConnectingStage("reconnecting");
       try {
         const hittable = await validateHittable(savedHandle);
         setDirectoryHandle(savedHandle);
@@ -188,6 +221,8 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
       } catch {
         removeDirectoryHandle();
         setMode("local");
+      } finally {
+        setConnectingStage(null);
       }
     };
     tryReconnect();
@@ -232,23 +267,24 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     setRawTextContent(content);
   }, []);
 
-  const saveRawTextContent = useCallback(async () => {
-    if (!activeFileRef.current || !hasLoadedRef.current || writingRef.current) return;
-    writingRef.current = true;
-    try {
-      const handle = activeFileRef.current.handle;
-      const writable = await handle.createWritable();
-      await writable.write(rawTextContent);
+  const saveRawTextContent = useCallback((content = rawTextContent) => {
+    const file = activeFileRef.current;
+    const workspaceDir = hittableDirRef.current;
+    if (!file || !hasLoadedRef.current) return;
+    // Capture the destination before awaiting, and serialize writes instead of
+    // dropping keystrokes that arrive while a previous write is in flight.
+    writeQueueRef.current = writeQueueRef.current.then(async () => {
+      const writable = await file.handle.createWritable();
+      await writable.write(content);
       await writable.close();
-      if (activeFileRef.current.kind === "env" && hittableDirRef.current) {
-        const env = await readEnvFile(hittableDirRef.current);
+      if (file.kind === "env" && workspaceDir && workspaceDir === hittableDirRef.current) {
+        const env = await readEnvFile(workspaceDir);
         setEnvContent(env);
       }
-    } catch (err) {
+    }).catch((err) => {
       console.error("Failed to save file:", err);
-    } finally {
-      writingRef.current = false;
-    }
+    });
+    return writeQueueRef.current;
   }, [rawTextContent]);
 
   const deleteEntry = useCallback(async (parentHandle: FileSystemDirectoryHandle, name: string) => {
@@ -303,6 +339,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
         envContent,
         isRefreshing,
         isFileLoaded,
+        connectingStage,
         openFolder,
         disconnectFolder,
         refreshTree,

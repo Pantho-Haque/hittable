@@ -123,3 +123,76 @@ func TestClickMapsThroughAFold(t *testing.T) {
 		t.Errorf("clicked below a fold and landed on row %d, want 11", row)
 	}
 }
+
+func TestFoldAllCollapsesEveryBlock(t *testing.T) {
+	ed := openEditor(t)
+	before := len(strings.Split(ansi.Strip(ed.View()), "\n"))
+
+	ed.FoldAll()
+	if ed.FoldedCount() == 0 {
+		t.Fatal("FoldAll collapsed nothing")
+	}
+	body := ansi.Strip(ed.View())
+	if !strings.Contains(body, "⋯") {
+		t.Fatalf("expected a collapsed placeholder:\n%s", body)
+	}
+	if !ed.AnyFolded() {
+		t.Error("AnyFolded should report the collapsed blocks")
+	}
+
+	ed.UnfoldAll()
+	if ed.FoldedCount() != 0 {
+		t.Fatal("UnfoldAll left blocks collapsed")
+	}
+	if after := len(strings.Split(ansi.Strip(ed.View()), "\n")); after != before {
+		t.Errorf("expanding should restore the original row count: %d, want %d", after, before)
+	}
+}
+
+func TestToggleFoldAllFlipsBothWays(t *testing.T) {
+	ed := openEditor(t)
+	ed.ToggleFoldAll()
+	if !ed.AnyFolded() {
+		t.Fatal("first toggle should collapse")
+	}
+	ed.ToggleFoldAll()
+	if ed.AnyFolded() {
+		t.Fatal("second toggle should expand")
+	}
+}
+
+func TestAltOTogglesFoldAll(t *testing.T) {
+	ed := openEditor(t)
+	ed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o"), Alt: true})
+	if !ed.AnyFolded() {
+		t.Fatal("alt+o should collapse every block")
+	}
+	// macOS terminals send the composed rune instead of a meta-modified key.
+	ed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ø")})
+	if ed.AnyFolded() {
+		t.Fatal("⌥o should expand every block")
+	}
+}
+
+func TestFoldAllMovesTheCursorOutOfAFold(t *testing.T) {
+	ed := openEditor(t)
+	ed.GotoLine(3) // inside a block that FoldAll will hide
+	ed.FoldAll()
+
+	lines := strings.Split(ed.GetContent(), "\n")
+	hidden, _ := ed.cur.fold.hidden(lines)
+	if row := ed.GetCursorRow(); row < len(hidden) && hidden[row] {
+		t.Fatalf("cursor left on hidden row %d", row)
+	}
+}
+
+func TestFoldableReportsCollapsibleBlocks(t *testing.T) {
+	ed := openEditor(t)
+	if !ed.Foldable() {
+		t.Error("the fixture has indented blocks and should be foldable")
+	}
+	ed.SetContent("flat.txt", "one\ntwo\nthree\n")
+	if ed.Foldable() {
+		t.Error("a file with no indentation has nothing to fold")
+	}
+}

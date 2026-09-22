@@ -173,3 +173,63 @@ func (t *TextEditor) ToggleFold(line int) {
 
 // FoldedCount reports how many blocks are collapsed (used by tests).
 func (t *TextEditor) FoldedCount() int { return len(t.cur.fold.collapsed) }
+
+// AnyFolded reports whether at least one block is currently collapsed, so a
+// toggle can decide which way it should act.
+func (t *TextEditor) AnyFolded() bool { return len(t.cur.fold.collapsed) > 0 }
+
+// Foldable reports whether the buffer has any collapsible block at all.
+func (t *TextEditor) Foldable() bool {
+	return len(foldRegions(strings.Split(t.TextArea.Value(), "\n"))) > 0
+}
+
+// FoldAll collapses every block in the buffer. Nested regions are collapsed
+// too, so expanding an outer block does not reveal a fully open inner one.
+func (t *TextEditor) FoldAll() {
+	lines := strings.Split(t.TextArea.Value(), "\n")
+	regions := foldRegions(lines)
+	if len(regions) == 0 {
+		t.status = "nothing to fold"
+		return
+	}
+	outermost := -1
+	for _, r := range regions {
+		t.cur.fold.set(r.head, true)
+		if outermost < 0 {
+			outermost = r.head
+		}
+	}
+	// The cursor must not end up inside a fold; the first header is the
+	// nearest visible line to wherever it was.
+	if row := t.TextArea.Line(); row > outermost {
+		hidden, _ := t.cur.fold.hidden(lines)
+		if row < len(hidden) && hidden[row] {
+			moveTo(&t.TextArea, outermost, 0)
+		}
+	}
+	t.writeBack()
+	t.followCursor()
+	t.status = "folded all"
+}
+
+// UnfoldAll expands every collapsed block.
+func (t *TextEditor) UnfoldAll() {
+	if len(t.cur.fold.collapsed) == 0 {
+		t.status = "nothing to expand"
+		return
+	}
+	t.cur.fold.collapsed = map[int]bool{}
+	t.writeBack()
+	t.followCursor()
+	t.status = "expanded all"
+}
+
+// ToggleFoldAll collapses everything, or expands everything when any block is
+// already collapsed.
+func (t *TextEditor) ToggleFoldAll() {
+	if t.AnyFolded() {
+		t.UnfoldAll()
+		return
+	}
+	t.FoldAll()
+}

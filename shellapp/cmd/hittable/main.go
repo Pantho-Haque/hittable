@@ -26,6 +26,7 @@ var (
     flagIcons  string
 )
 
+
 var rootCmd = &cobra.Command{
     Use:   "hittable [path]",
     Short: "Terminal API client for .hit request files",

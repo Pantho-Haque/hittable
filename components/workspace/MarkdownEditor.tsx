@@ -25,7 +25,7 @@ export default function MarkdownEditor() {
     setIsUnsaved(true);
     updateRawTextContent(value);
     if (hasLoadedRef.current) {
-      saveRawTextContent();
+      saveRawTextContent(value);
     }
   }, [updateRawTextContent, saveRawTextContent]);
 

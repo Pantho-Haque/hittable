@@ -9,6 +9,7 @@ import TabEditor from "@/components/RequestForm/TabEditor";
 import ResponsePanel from "@/components/RequestForm/ResponsePanel";
 import { DataSource } from "@/types/workspace";
 import { parseHitFile, serializeHitFile } from "@/utils/workspace/hitFileParser";
+import SourceEditor from "./SourceEditor";
 
 export default function HitFileEditor() {
   const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile, envContent } = useWorkspace();
@@ -96,7 +97,7 @@ export default function HitFileEditor() {
     if (serialized === lastSerializedRef.current) return;
     lastSerializedRef.current = serialized;
     updateRawTextContent(serialized);
-    saveRawTextContent();
+    saveRawTextContent(serialized);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only save when form/response changes, not on every render
   }, [formInput, proxyResponse]);
 
@@ -132,7 +133,7 @@ export default function HitFileEditor() {
     };
     const serialized = serializeHitFile(content);
     updateRawTextContent(serialized);
-    saveRawTextContent();
+    saveRawTextContent(serialized);
   }, [formInput, proxyResponse, updateRawTextContent, saveRawTextContent]);
 
   const handleRevert = useCallback(() => {
@@ -165,22 +166,18 @@ export default function HitFileEditor() {
     setSelectorResponse: () => {},
   };
 
-  const lineCount = Math.max(rawTextContent.split("\n").length, 1);
-
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/5 bg-[#0a1628]">
+      <div className="flex shrink-0 items-center gap-1 px-3 py-2 border-b border-white/10 bg-[#101c2d]">
         <button
+          aria-pressed={viewMode === "text"}
           onClick={() => setViewMode("text")}
-          className={`px-3 py-1 text-[11px] font-medium rounded transition-colors ${
-            viewMode === "text"
-              ? "bg-white/10 text-white/80"
-              : "text-white/40 hover:text-white/60 hover:bg-white/5"
-          }`}
+          className="workspace-button"
         >
           Text
         </button>
         <button
+          aria-pressed={viewMode === "runner"}
           onClick={() => {
             if (parsedContent) {
               setFormInput({
@@ -194,32 +191,16 @@ export default function HitFileEditor() {
             }
             setViewMode("runner");
           }}
-          className={`px-3 py-1 text-[11px] font-medium rounded transition-colors ${
-            viewMode === "runner"
-              ? "bg-cyan-400/10 text-cyan-400"
-              : "text-white/40 hover:text-white/60 hover:bg-white/5"
-          }`}
+          className="workspace-button"
         >
           Runner
         </button>
       </div>
 
       {viewMode === "text" ? (
-        <div className="flex-1 min-h-0 overflow-hidden flex">
-          <div className="w-12 bg-[#0e1f35] border-r border-white/5 overflow-hidden select-none py-2 text-right shrink-0">
-            {Array.from({ length: lineCount }, (_, i) => (
-              <div key={i} className="px-2 text-[11px] text-white/20 leading-5">
-                {i + 1}
-              </div>
-            ))}
-          </div>
-          <textarea
-            value={rawTextContent}
-            onChange={(e) => updateRawTextContent(e.target.value)}
-            className="flex-1 bg-transparent px-4 py-2 text-[13px] font-mono text-white/60 leading-5 resize-none focus:outline-none"
-            spellCheck={false}
-          />
-        </div>
+        <SourceEditor key={activeFile?.path.join("/")} path={activeFile?.path ?? []}
+          value={rawTextContent} onChange={updateRawTextContent}
+          onSave={saveRawTextContent} disabled={!isFileLoaded} />
       ) : (
         <div className="flex-1 min-h-0 flex flex-col">
           {parseError ? (

@@ -42,10 +42,10 @@ export default function NoteEditor({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="flex flex-col flex-1 min-h-0 h-full min-w-0">
       {/* header bar */}
-      <div className="flex items-center justify-between shrink-0 px-1 py-1">
-        <span className="text-xs font-medium text-white/40 truncate">
+      <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 px-2 py-2">
+        <span className="text-sm font-medium text-slate-200 truncate">
           {selectedTitle ?? "Select a note"}
         </span>
         <div className="flex items-center gap-1.5">
@@ -60,25 +60,28 @@ export default function NoteEditor({
               <button
                 onClick={togglePreview}
                 title={isPreview ? "Switch to edit" : "Switch to preview"}
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                aria-label={isPreview ? "Switch to edit" : "Switch to preview"}
+                className={`workspace-button ${
                   !isSplit
                     ? "text-cyan-400 bg-cyan-400/10"
                     : "text-white/30 hover:text-white/50"
                 }`}
               >
-                {isPreview ? <Eye size={14} /> : <Pencil size={14} />}
+                {isPreview ? <Pencil size={14} /> : <Eye size={14} />}
+                <span>{isPreview ? "Edit" : "Preview"}</span>
               </button>
               {/* Split toggle */}
               <button
                 onClick={toggleSplit}
                 title={isSplit ? "Exit split view" : "Split view"}
+                aria-pressed={isSplit}
                 className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
                   isSplit
                     ? "text-cyan-400 bg-cyan-400/10"
                     : "text-white/30 hover:text-white/50"
                 }`}
               >
-                <Columns2 size={14} />
+                <Columns2 size={14} /><span>Split</span>
               </button>
             </>
           )}
@@ -91,26 +94,28 @@ export default function NoteEditor({
           <>
             {/* edit pane */}
             <div className="flex-1 min-w-0 flex flex-col border border-white/5 rounded-l-lg overflow-hidden max-md:hidden">
-              <div className="px-2 py-1 text-[9px] text-white/20 uppercase tracking-wider border-b border-white/5 bg-white/2 shrink-0">
+              <div className="px-2 py-1 text-xs text-slate-400 font-medium border-b border-white/5 bg-white/2 shrink-0">
                 Edit
               </div>
               <textarea
                 disabled={!selectedId}
                 value={content}
                 onChange={(e) => onChange(e.target.value)}
-                placeholder="Write markdown..."
-                className="flex-1 w-full resize-none bg-transparent p-3 text-[13px] text-white/80 outline-none placeholder-white/15 leading-relaxed font-mono"
+                aria-label="Markdown source"
+                spellCheck={false}
+                placeholder="Write markdown…"
+                className="flex-1 w-full resize-none bg-transparent p-4 text-sm text-white/80 outline-none placeholder-white/15 leading-relaxed font-mono"
               />
             </div>
             {/* divider */}
             <div className="w-px bg-white/5 shrink-0 max-md:hidden" />
             {/* preview pane */}
             <div className="flex-1 min-w-0 flex flex-col border border-white/5 border-l-0 rounded-r-lg overflow-hidden max-md:hidden">
-              <div className="px-2 py-1 text-[9px] text-white/20 uppercase tracking-wider border-b border-white/5 bg-white/2 shrink-0">
+              <div className="px-2 py-1 text-xs text-slate-400 font-medium border-b border-white/5 bg-white/2 shrink-0">
                 Preview
               </div>
               <div
-                className="flex-1 overflow-y-auto p-3 text-[13px] text-white/70 leading-relaxed note-preview"
+                className="flex-1 overflow-y-auto p-4 text-sm text-white/70 leading-relaxed note-preview"
                 dangerouslySetInnerHTML={{ __html: renderedHtml }}
               />
             </div>
@@ -120,19 +125,21 @@ export default function NoteEditor({
                 disabled={!selectedId}
                 value={content}
                 onChange={(e) => onChange(e.target.value)}
-                placeholder="Write markdown..."
-                className="flex-1 w-full resize-none bg-transparent p-3 text-[13px] text-white/80 outline-none placeholder-white/15 leading-relaxed font-mono"
+                aria-label="Markdown source"
+                spellCheck={false}
+                placeholder="Write markdown…"
+                className="flex-1 w-full resize-none bg-transparent p-4 text-sm text-white/80 outline-none placeholder-white/15 leading-relaxed font-mono"
               />
               <div className="h-px bg-white/5 shrink-0" />
               <div
-                className="flex-1 overflow-y-auto p-3 text-[13px] text-white/70 leading-relaxed note-preview"
+                className="flex-1 overflow-y-auto p-4 text-sm text-white/70 leading-relaxed note-preview"
                 dangerouslySetInnerHTML={{ __html: renderedHtml }}
               />
             </div>
           </>
         ) : isPreview ? (
           <div
-            className="flex-1 overflow-y-auto p-3 text-[13px] text-white/70 leading-relaxed note-preview"
+            className="flex-1 overflow-y-auto p-4 text-sm text-white/70 leading-relaxed note-preview"
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
           />
         ) : (
@@ -140,19 +147,21 @@ export default function NoteEditor({
             disabled={!selectedId}
             value={content}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="Write markdown..."
-            className="flex-1 w-full resize-none bg-transparent p-3 text-[13px] text-white/80 outline-none placeholder-white/15 leading-relaxed font-mono"
+            aria-label="Markdown source"
+                spellCheck={false}
+                placeholder="Write markdown…"
+            className="flex-1 w-full resize-none bg-transparent p-4 text-sm text-white/80 outline-none placeholder-white/15 leading-relaxed font-mono"
           />
         )}
       </div>
 
       {/* footer */}
       <div className="flex items-center justify-between shrink-0 px-1 py-1 border-t border-white/5">
-        <span className="text-[10px] text-white/20">
+        <span className="text-xs text-slate-400">
           {content.length} chars{content.trim() ? ` · ${content.trim().split(/\s+/).length} words` : ""}
         </span>
         {selectedId && (
-          <span className="text-[10px] text-white/15">
+          <span className="text-xs text-slate-400">
             {isSplit ? "Split" : isPreview ? "Preview" : "Edit"} mode
           </span>
         )}

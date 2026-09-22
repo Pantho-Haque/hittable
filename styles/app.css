@@ -2,12 +2,26 @@
 
 @import "./components/index.css";
 @import "./font.css";
+@import "./workspace.css";
 
+@theme inline {
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "SFMono-Regular", Consolas, monospace;
+}
 
+body { font-family: var(--font-geist-sans), system-ui, sans-serif; }
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: -2px;
+}
+
+button:not(:disabled), summary { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
 
 *::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 8px;
+  height: 8px;
 }
 
 *::-webkit-scrollbar-track {
@@ -15,13 +29,12 @@
 }
 
 *::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #2dd4bf 0%, #0891b2 100%);
+  background: #475569;
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #5eead4 0%, #22d3ee 100%);
-  box-shadow: 0 0 6px rgba(45, 212, 191, 0.6);
+  background: #64748b;
 }
 
 *::-webkit-scrollbar-corner {

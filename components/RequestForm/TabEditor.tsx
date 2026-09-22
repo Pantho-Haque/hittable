@@ -62,7 +62,7 @@ function JsonEditor({
             {Array.from({ length: lineCount }, (_, i) => (
               <div
                 key={i}
-                className="text-[10px] md:text-[12px] leading-relaxed text-white/20 font-mono"
+                className="text-sm leading-relaxed text-slate-400 font-mono"
               >
                 {i + 1}
               </div>
@@ -74,7 +74,9 @@ function JsonEditor({
         <textarea
           ref={textareaRef}
           key={tab}
-          className="flex-1 w-full resize-none bg-transparent p-2 md:p-4 text-[10px] md:text-[12px] text-white/70 outline-none placeholder-white/15 leading-relaxed font-mono overflow-y-auto"
+          aria-label={`${tab} JSON`}
+          wrap="off"
+          className="flex-1 min-w-0 w-full resize-none bg-transparent p-2 md:p-4 text-sm text-slate-200 placeholder-slate-500 leading-relaxed font-mono overflow-auto"
           style={{ tabSize: 2 }}
           spellCheck={false}
           value={value}

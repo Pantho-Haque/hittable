@@ -384,13 +384,13 @@ function EmptyState() {
         </div>
 
         <div>
-          <p className="text-[10px] tracking-[0.3em] uppercase text-cyan-500/60 mb-2">
+          <p className="text-xs tracking-widest uppercase text-cyan-300 mb-2">
             Hittable
           </p>
-          <h2 className="text-xl font-bold text-white/80 mb-2">
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-100 mb-3">
             {hasCollections ? "Select a route" : "No collections yet"}
           </h2>
-          <p className="text-xs text-white/30 max-w-[260px] leading-relaxed">
+          <p className="text-sm text-slate-400 max-w-[300px] leading-relaxed">
             {hasCollections
               ? "Choose a collection and route from the sidebar to start making requests."
               : "Create a collection in the sidebar, then add routes to start testing your APIs."}

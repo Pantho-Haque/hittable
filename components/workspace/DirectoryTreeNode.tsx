@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, memo } from "react";
-import { ChevronRight, ChevronDown, Folder, File, FileText, Settings } from "lucide-react";
+import { ChevronRight, ChevronDown, Folder, File } from "lucide-react";
 import { TDirectoryNode } from "@/types";
-import { isReservedRootEntry, getFileKind } from "@/utils/workspace/directoryTreeHelpers";
+import { isReservedRootEntry } from "@/utils/workspace/directoryTreeHelpers";
+import { getFileIcon, getFolderIcon } from "@/utils/workspace/fileIcons";
 
 function isReservedNode(path: string[], name: string): boolean {
   if (path.length < 2) return false;
@@ -17,6 +18,7 @@ type DirectoryTreeNodeProps = {
   depth: number;
   expandedDirs: Set<string>;
   selectedPath: string[] | null;
+  activePath?: string;
   toggleDir: (path: string) => void;
   onSelect: (path: string[]) => void;
   onOpen: (path: string[], handle: FileSystemFileHandle) => void;
@@ -40,6 +42,7 @@ const DirectoryTreeNode = memo(function DirectoryTreeNode({
   depth,
   expandedDirs,
   selectedPath,
+  activePath,
   toggleDir,
   onSelect,
   onOpen,
@@ -53,7 +56,7 @@ const DirectoryTreeNode = memo(function DirectoryTreeNode({
   const pathStr = path.join("/");
   const isExpanded = expandedDirs.has(pathStr);
   const isSelected = selectedPath?.join("/") === pathStr;
-  const isActive = false;
+  const isActive = activePath === pathStr;
   const isReserved = depth === 0 && isReservedRootEntry(node.name) || isReservedNode(path, node.name);
   const isDirectory = node.kind === "directory";
 
@@ -72,27 +75,9 @@ const DirectoryTreeNode = memo(function DirectoryTreeNode({
     onContextMenu(e, node.name, node.handle, node.kind, path);
   }, [node, path, isReserved, onContextMenu]);
 
-  const renderIcon = () => {
-    if (isDirectory) {
-      return isExpanded ? (
-        <ChevronDown className="w-4 h-4 text-white/40 shrink-0" />
-      ) : (
-        <ChevronRight className="w-4 h-4 text-white/40 shrink-0" />
-      );
-    }
-
-    const kind = getFileKind(node.name);
-    switch (kind) {
-      case "hit":
-        return <FileText className="w-4 h-4 text-cyan-400/70 shrink-0" />;
-      case "env":
-        return <Settings className="w-4 h-4 text-amber-400/70 shrink-0" />;
-      case "markdown":
-        return <FileText className="w-4 h-4 text-emerald-400/70 shrink-0" />;
-      default:
-        return <File className="w-4 h-4 text-white/30 shrink-0" />;
-    }
-  };
+  const { Icon, className: iconClassName } = isDirectory
+    ? getFolderIcon(node.name, isExpanded)
+    : getFileIcon(node.name);
 
   const shouldShowCreateInput = isCreating &&
     isDirectory &&
@@ -100,33 +85,37 @@ const DirectoryTreeNode = memo(function DirectoryTreeNode({
     isExpanded;
 
   return (
-    <div>
+    <div role="treeitem" id={`file-${encodeURIComponent(pathStr)}`}
+      aria-label={node.name} aria-selected={isSelected}
+      aria-expanded={isDirectory ? isExpanded : undefined}>
       <div
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         className={`
-          flex items-center gap-1.5 h-6 cursor-pointer select-none group
+          flex items-center gap-2 h-8 cursor-pointer select-none group border-l-2
           transition-colors duration-75
-          ${isSelected ? "bg-white/8" : "hover:bg-white/5"}
-          ${isActive ? "bg-cyan-400/10" : ""}
-          ${isReserved ? "opacity-60" : ""}
+          ${isSelected ? "bg-cyan-400/10 border-cyan-300" : "border-transparent hover:bg-white/5"}
+          ${isActive ? "font-medium" : ""}
         `}
         style={{ paddingLeft: `${depth * 16 + 8}px`, paddingRight: "8px" }}
-        title={isReserved ? `Reserved: ${node.name}` : undefined}
+        title={pathStr}
       >
-        {renderIcon()}
+        {isDirectory &&
+          (isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-white/40 shrink-0" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-white/40 shrink-0" />
+          ))}
 
-        {isDirectory && (
-          <Folder className="w-4 h-4 text-amber-400/60 shrink-0" />
-        )}
+        <Icon className={`w-4 h-4 shrink-0 ${iconClassName}`} />
 
-        <span className="text-[13px] truncate flex-1" style={{ color: isDirectory ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.55)" }}>
+        <span className="text-[13px] truncate flex-1" style={{ color: isDirectory ? "#dce6f3" : "#b8c5d6" }}>
           {node.name}
         </span>
       </div>
 
       {isDirectory && isExpanded && node.children && (
-        <div>
+        <div role="group">
           {shouldShowCreateInput && (
             <div className="flex items-center gap-1 h-6" style={{ paddingLeft: `${(depth + 1) * 16 + 8}px`, paddingRight: "8px" }}>
               {isCreating.type === "directory" ? (
@@ -157,6 +146,7 @@ const DirectoryTreeNode = memo(function DirectoryTreeNode({
               depth={depth + 1}
               expandedDirs={expandedDirs}
               selectedPath={selectedPath}
+              activePath={activePath}
               toggleDir={toggleDir}
               onSelect={onSelect}
               onOpen={onOpen}

@@ -78,6 +78,9 @@ type buffer struct {
 	hlCache  map[string]string
 	findLast string
 
+	words      []string // identifiers for completion, rebuilt after an edit
+	wordsDirty bool
+
 	fold     foldState          // collapsed blocks, keyed by header line
 	foldHead map[int]foldRegion // foldable headers, refreshed by layout
 
@@ -103,7 +106,8 @@ type TextEditor struct {
 
 	prompt      promptKind
 	promptValue string
-	status      string // transient message shown in the status row
+	comp        *completion // suggestion popup, nil when closed
+	status      string      // transient message shown in the status row
 	// Hint is a persistent note shown in the status row (e.g. JSON validity).
 	Hint string
 	// Annotations (one per line) render left of the gutter, e.g. git blame.
@@ -231,7 +235,7 @@ func newBuffer(path string) *buffer {
 	ta.KeyMap.CapitalizeWordForward = key.NewBinding()
 	ta.KeyMap.Paste = key.NewBinding(key.WithKeys("ctrl+v"))
 
-	b := &buffer{ta: ta, hlCache: map[string]string{}}
+	b := &buffer{ta: ta, hlCache: map[string]string{}, wordsDirty: true}
 	b.lexer = lexerFor(path)
 	return b
 }
@@ -293,6 +297,7 @@ func (t *TextEditor) SetContent(path, content string) {
 	t.currentPath = path
 	t.TextArea = b.ta
 	t.prompt = promptNone
+	t.comp = nil
 	t.status = ""
 }
 
@@ -319,8 +324,9 @@ func (t *TextEditor) RemoveEditor(path string) {
 // GetCursorRow returns the 0-based cursor line.
 func (t *TextEditor) GetCursorRow() int { return t.TextArea.Line() }
 
-// PromptOpen reports whether find / go-to-line is capturing keys.
-func (t *TextEditor) PromptOpen() bool { return t.prompt != promptNone }
+// PromptOpen reports whether find / go-to-line / the completion popup is
+// capturing keys. The screen checks this before treating esc as "close file".
+func (t *TextEditor) PromptOpen() bool { return t.prompt != promptNone || t.comp != nil }
 
 // moveTo places the textarea cursor on (row, col) without soft-wrap effects.
 func moveTo(ta *textarea.Model, row, col int) {
@@ -529,6 +535,9 @@ func (t *TextEditor) Update(msg tea.Msg) tea.Cmd {
 		t.changed()
 	}
 	t.followCursor()
+	// A paste lands as a whole chunk rather than a word being typed, so any
+	// open suggestion list no longer describes the cursor.
+	t.comp = nil
 	return cmd
 }
 
@@ -552,6 +561,7 @@ func (t *TextEditor) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	case tea.MouseWheelRight:
 		b.scrollX += 6
 	case tea.MouseLeft:
+		t.comp = nil
 		// msg.X / msg.Y are relative to the editor's top-left content cell.
 		row := b.scrollY + msg.Y
 		col := b.scrollX + msg.X - t.gutterWidth()
@@ -614,7 +624,20 @@ func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 		t.handlePromptKey(msg)
 		return nil
 	}
+	if t.handleCompletionKey(msg) {
+		return nil
+	}
+	// Any key the popup did not claim dismisses it, so a command like undo or
+	// tab is never swallowed by a stale list. The editing path at the end of
+	// this function reopens it when the word under the cursor is still growing.
+	hadCompletion := t.comp != nil
+	t.comp = nil
+
 	switch msg.String() {
+	// Terminals report ctrl+space as either spelling depending on the emulator.
+	case "ctrl+@", "ctrl+space":
+		t.openCompletion(true)
+		return nil
 	case "ctrl+z":
 		if n := len(t.cur.undo); n > 0 {
 			s := t.cur.undo[n-1]
@@ -649,6 +672,10 @@ func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "ctrl+o":
 		t.ToggleFold(t.TextArea.Line())
+		return nil
+	// macOS terminals send the composed rune for ⌥o, as they do for ⌥z.
+	case "alt+o", "ø":
+		t.ToggleFoldAll()
 		return nil
 	// macOS terminals send the composed rune for Option+z rather than a
 	// meta-modified key, so both spellings toggle wrap.
@@ -719,6 +746,15 @@ func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 		t.changed()
 	}
 	t.followCursor()
+
+	// Suggestions track the word under the cursor: an open list refilters after
+	// every edit, and typing into a word opens one.
+	switch {
+	case hadCompletion:
+		t.openCompletion(false)
+	case msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && isWordRune(msg.Runes[len(msg.Runes)-1]):
+		t.openCompletion(false)
+	}
 	return cmd
 }
 
@@ -750,6 +786,9 @@ func keyTypeFor(name string) tea.KeyType {
 }
 
 func (t *TextEditor) changed() {
+	if t.cur != nil {
+		t.cur.wordsDirty = true
+	}
 	if t.OnChanged != nil {
 		t.OnChanged(t.GetContent())
 	}
@@ -956,7 +995,8 @@ func (t *TextEditor) View() string {
 	numW := len(strconv.Itoa(t.TextArea.LineCount())) + 1
 	sb := theme.VScrollbar(rows, len(vrows), b.scrollY)
 	var out []string
-	cut := false // any visible line truncated on the right
+	cut := false         // any visible line truncated on the right
+	curX, curY := -1, -1 // cursor cell, used to anchor the completion popup
 	for vi := b.scrollY; vi < b.scrollY+rows; vi++ {
 		if vi >= len(vrows) {
 			out = append(out, "")
@@ -1034,6 +1074,7 @@ func (t *TextEditor) View() string {
 					cell = string(raw[col])
 				}
 				text = ansi.Cut(text, 0, c) + theme.CursorCellStyle.Render(cell) + ansi.Cut(text, c+1, avail)
+				curX, curY = lipgloss.Width(num)+c, vi-b.scrollY
 			}
 		}
 		if w := lipgloss.Width(text); w < avail {
@@ -1041,6 +1082,10 @@ func (t *TextEditor) View() string {
 		}
 		out = append(out, num+text)
 	}
+	if t.comp != nil && curY >= 0 {
+		t.overlayCompletion(out, curX, curY)
+	}
+
 	// Scrollbar column on the right.
 	for i := range out {
 		if sb != nil {
@@ -1069,7 +1114,9 @@ func (t *TextEditor) View() string {
 		if note == "" && t.LineHint != nil {
 			note = t.LineHint(row)
 		}
-		if hasSel {
+		if t.comp != nil {
+			note = "⇅ select · ⇥ accept · esc close"
+		} else if hasSel {
 			note = fmt.Sprintf("%d selected · ctrl+c copy · ctrl+x cut", len([]rune(t.SelectedText())))
 		} else if cut || b.scrollX > 0 {
 			note = fmt.Sprintf("⟷ col %d · shift+wheel scrolls · alt+z wraps", b.scrollX+1)

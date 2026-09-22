@@ -279,6 +279,9 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case "send_btn":
 		m.saveAndEnqueue()
 		return m, m.sendRequestAsync()
+	case "fold_all":
+		m.TextEd.ToggleFoldAll()
+		return m, nil
 	case "md_text":
 		m.setMdMode(MdText)
 		return m, nil
@@ -353,7 +356,7 @@ func (m *MainScreen) findZoneAt(msg tea.MouseMsg) string {
 				ids = append(ids, "method_"+method)
 			}
 		}
-		ids = append(ids, "md_text", "md_preview", "md_split", "md_pane", "urlbar", "response", "editor")
+		ids = append(ids, "fold_all", "md_text", "md_preview", "md_split", "md_pane", "urlbar", "response", "editor")
 	}
 	ids = append(ids, "term_strip")
 	for _, id := range ids {

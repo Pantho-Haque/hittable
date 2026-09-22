@@ -142,6 +142,7 @@ export default function DirectoryTree() {
   }, [tree]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if ((e.target as HTMLElement).closest("input, textarea")) return;
     if (!selectedPath) return;
 
     const flatItems: { path: string[]; kind: "file" | "directory" }[] = [];
@@ -193,11 +194,12 @@ export default function DirectoryTree() {
         }
         break;
       }
+      case " ":
       case "Enter": {
         e.preventDefault();
         const currentItem = flatItems[currentIndex];
         if (currentItem?.kind === "file") {
-          const node = tree.find((n) => n.name === currentItem.path[0]);
+          const node = findNodeByPath(tree, currentItem.path);
           if (node) {
             handleOpen(currentItem.path, node.handle as FileSystemFileHandle);
           }
@@ -210,9 +212,9 @@ export default function DirectoryTree() {
         e.preventDefault();
         const currentItem = flatItems[currentIndex];
         if (currentItem) {
-          const node = tree.find((n) => n.name === currentItem.path[0]);
-          if (node && !isReservedInHittable(currentItem.path, node.name)) {
-            const parentHandle = getParentHandleForPath(tree, currentItem.path);
+          const node = findNodeByPath(tree, currentItem.path);
+          if (node && !isReservedInHittable(currentItem.path.slice(0, -1), node.name)) {
+            const parentHandle = currentItem.path.length === 1 ? directoryHandle : getParentHandleForPath(tree, currentItem.path);
             if (parentHandle) {
               setContextMenu({
                 x: 0,
@@ -229,9 +231,9 @@ export default function DirectoryTree() {
         e.preventDefault();
         const currentItem = flatItems[currentIndex];
         if (currentItem) {
-          const node = tree.find((n) => n.name === currentItem.path[0]);
-          if (node && !isReservedInHittable(currentItem.path, node.name)) {
-            const parentHandle = getParentHandleForPath(tree, currentItem.path);
+          const node = findNodeByPath(tree, currentItem.path);
+          if (node && !isReservedInHittable(currentItem.path.slice(0, -1), node.name)) {
+            const parentHandle = currentItem.path.length === 1 ? directoryHandle : getParentHandleForPath(tree, currentItem.path);
             if (parentHandle) {
               setContextMenu({
                 x: 0,
@@ -245,42 +247,48 @@ export default function DirectoryTree() {
         break;
       }
     }
-  }, [selectedPath, tree, expandedDirs, toggleDir, handleOpen]);
+  }, [selectedPath, tree, expandedDirs, toggleDir, handleOpen, directoryHandle]);
 
   const folderName = directoryHandle?.name ?? "Explorer";
 
+  useEffect(() => {
+    if (!selectedPath) return;
+    document.getElementById(`file-${encodeURIComponent(selectedPath.join("/"))}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedPath]);
+
   return (
     <div className="flex flex-col h-full bg-[#0a1628]">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/5">
-        <span className="text-[10px] font-semibold text-white/50 tracking-wider uppercase truncate">
+      <div className="flex flex-wrap items-center gap-1 px-3 py-2 border-b border-white/10">
+        <span className="text-xs font-semibold text-slate-300 truncate">
           {folderName}
         </span>
         <button
           onClick={openFolder}
-          className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white/60 transition-colors"
-          title="Change Folder"
+          className="workspace-button"
+          title="Change Folder" aria-label="Change Folder"
         >
           <FolderOpen className="w-3.5 h-3.5" />
         </button>
         <div className="ml-auto flex items-center gap-1 shrink-0">
           <button
             onClick={() => handleCreate("file", [])}
-            className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white/60 transition-colors"
-            title="New File"
+            className="workspace-button"
+            title="New File" aria-label="New File"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => handleCreate("directory", [])}
-            className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white/60 transition-colors"
-            title="New Folder"
+            className="workspace-button"
+            title="New Folder" aria-label="New Folder"
           >
             <Folder className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => refreshTree()}
-            className="p-1 rounded hover:bg-white/5 text-white/30 hover:text-white/60 transition-colors"
-            title="Refresh"
+            className="workspace-button"
+            title="Refresh" aria-label="Refresh"
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -288,10 +296,12 @@ export default function DirectoryTree() {
       </div>
 
       <div
-        className="flex-1 overflow-auto py-1 outline-none"
+        className="flex-1 overflow-auto py-2"
+        role="tree" aria-label="Workspace files"
+        aria-activedescendant={selectedPath ? `file-${encodeURIComponent(selectedPath.join("/"))}` : undefined}
+        onFocus={() => { if (!selectedPath && tree[0]) setSelectedPath([tree[0].name]); }}
         tabIndex={0}
         onKeyDown={handleKeyDown}
-        onClick={() => setSelectedPath(null)}
       >
         {isCreating && isCreating.parentPath.length === 0 && (
           <div className="flex items-center gap-1 px-2 py-1" style={{ paddingLeft: "8px" }}>
@@ -323,6 +333,7 @@ export default function DirectoryTree() {
             depth={0}
             expandedDirs={expandedDirs}
             selectedPath={selectedPath}
+            activePath={activeFile?.path.join("/")}
             toggleDir={toggleDir}
             onSelect={handleSelect}
             onOpen={handleOpen}

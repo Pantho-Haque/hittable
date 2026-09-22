@@ -135,40 +135,9 @@ func (m *MainScreen) renderRunnerView() string {
 }
 
 func (m *MainScreen) renderTextView() string {
-	breadcrumb := theme.BreadcrumbStyle.Render(ansi.Truncate(m.relPath(), m.MainWidth, "…"))
+	header := m.renderEditorHeader()
 	if !m.isMarkdown() {
-		return lipgloss.JoinVertical(lipgloss.Left, breadcrumb, m.Zones.Mark("editor", m.TextEd.View()))
-	}
-
-	// Markdown: header with the Text / Preview / Split toggle.
-	seg := func(id, label string, mode MdMode) string {
-		st := theme.MutedStyle
-		if m.MdMode == mode {
-			st = theme.TabActiveStyle
-		} else if m.HoverZone == id {
-			st = theme.HoverStyle
-		}
-		return m.Zones.Mark(id, st.Render(label))
-	}
-	// Widths are measured from the plain labels: the toggle carries zone
-	// markers, which lipgloss.Width counts but the terminal never draws. A
-	// narrow pane gets initials, and below that the toggle is dropped —
-	// overflowing here would wrap and scroll the whole frame.
-	text, preview, split := "Text", "Preview", "Split"
-	plain := "[ Text | Preview | Split ]"
-	if m.MainWidth < lipgloss.Width(plain)+8 {
-		text, preview, split = "T", "P", "S"
-		plain = "[ T | P | S ]"
-	}
-	header := ""
-	toggleW := lipgloss.Width(plain)
-	if toggleW <= m.MainWidth {
-		header = "[ " + seg("md_text", text, MdText) + " | " + seg("md_preview", preview, MdPreview) +
-			" | " + seg("md_split", split, MdSplit) + " ]"
-	}
-	if room := m.MainWidth - toggleW - 1; room > 0 {
-		crumb := theme.BreadcrumbStyle.Render(ansi.Truncate(m.relPath(), room, "…"))
-		header = crumb + strings.Repeat(" ", max(m.MainWidth-lipgloss.Width(crumb)-toggleW, 1)) + header
+		return lipgloss.JoinVertical(lipgloss.Left, header, m.Zones.Mark("editor", m.TextEd.View()))
 	}
 
 	var body string
@@ -185,6 +154,91 @@ func (m *MainScreen) renderTextView() string {
 		body = m.Zones.Mark("editor", m.TextEd.View())
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, body)
+}
+
+// renderEditorHeader is the breadcrumb plus the right-aligned toggles: fold
+// all / expand all for any file with a collapsible block, and the
+// Text | Preview | Split switch for Markdown.
+//
+// Every width decision is made on the plain labels, because the rendered
+// toggles carry zone markers that lipgloss.Width counts but the terminal never
+// draws. The toggles shrink and then drop rather than overflow: a wrapped
+// header scrolls the whole frame, which puts every mouse coordinate out of
+// step with the layout.
+func (m *MainScreen) renderEditorHeader() string {
+	showFold := m.TextEd.Foldable()
+	showMd := m.isMarkdown()
+
+	arrow, word := "▾", "Collapse"
+	if m.TextEd.AnyFolded() {
+		arrow, word = "▸", "Expand"
+	}
+	foldFull, foldShort := "[ "+arrow+" "+word+" ]", "[ "+arrow+" ]"
+	mdFull, mdShort := "[ Text | Preview | Split ]", "[ T | P | S ]"
+	foldTxt, mdTxt := foldFull, mdFull
+
+	const minCrumb = 8
+	width := func() int {
+		w := 0
+		if showFold {
+			w += lipgloss.Width(foldTxt)
+		}
+		if showMd {
+			if w > 0 {
+				w++ // the space between the two toggles
+			}
+			w += lipgloss.Width(mdTxt)
+		}
+		return w
+	}
+	// Shrink the wordier toggle first, then the fold one, then drop them —
+	// the Markdown switch survives longest because it is the only way back
+	// out of Preview with the mouse.
+	if width()+minCrumb > m.MainWidth {
+		mdTxt = mdShort
+	}
+	if width()+minCrumb > m.MainWidth {
+		foldTxt = foldShort
+	}
+	if width()+minCrumb > m.MainWidth {
+		showFold = false
+	}
+	if width() > m.MainWidth {
+		showMd = false
+	}
+
+	seg := func(id, label string, mode MdMode) string {
+		st := theme.MutedStyle
+		if m.MdMode == mode {
+			st = theme.TabActiveStyle
+		} else if m.HoverZone == id {
+			st = theme.HoverStyle
+		}
+		return m.Zones.Mark(id, st.Render(label))
+	}
+
+	var parts []string
+	if showFold {
+		parts = append(parts, m.Zones.Mark("fold_all",
+			theme.Hoverable(m.HoverZone == "fold_all", theme.MutedStyle).Render(foldTxt)))
+	}
+	if showMd {
+		text, preview, split := "Text", "Preview", "Split"
+		if mdTxt == mdShort {
+			text, preview, split = "T", "P", "S"
+		}
+		parts = append(parts, "[ "+seg("md_text", text, MdText)+" | "+
+			seg("md_preview", preview, MdPreview)+" | "+seg("md_split", split, MdSplit)+" ]")
+	}
+
+	rightW := width()
+	room := m.MainWidth - rightW - 1
+	if len(parts) == 0 || room < 1 {
+		return theme.BreadcrumbStyle.Render(ansi.Truncate(m.relPath(), m.MainWidth, "…"))
+	}
+	crumb := theme.BreadcrumbStyle.Render(ansi.Truncate(m.relPath(), room, "…"))
+	gap := max(m.MainWidth-lipgloss.Width(crumb)-rightW, 1)
+	return crumb + strings.Repeat(" ", gap) + strings.Join(parts, " ")
 }
 
 // setMdMode switches the Markdown view and re-lays out the panes.
@@ -308,6 +362,10 @@ var helpSections = []struct {
 		{"drag  shift+←→↑↓", "select · double-click a word"},
 		{"ctrl+f  ⏎  F3", "find · next match"},
 		{"ctrl+g", "go to line"},
+		{"ctrl+o  click ▾▸", "fold · unfold the block at the cursor"},
+		{"alt+o  ⌥o  click [ ▾ ]", "collapse · expand every block"},
+		{"ctrl+space", "suggestions (also after 2 typed chars)"},
+		{"↑↓  ⇥ ⏎  esc", "in suggestions: select · accept · close"},
 		{"ctrl+l", "format JSON body"},
 		{"alt+z  ⌥z", "word wrap on / off"},
 		{"shift+wheel", "scroll sideways (wrap off)"},

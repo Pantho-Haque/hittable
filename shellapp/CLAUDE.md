@@ -420,6 +420,8 @@ send binding.
 | Editor: indent        | `tab` (2 spaces) | Text editor         |
 | Editor: leave         | `shift+tab`     | Text editor → Explorer |
 | Editor: fold          | `ctrl+o`, click `▾`/`▸` | Any editor (folds the innermost block at the cursor) |
+| Editor: fold all      | `alt+o` (`⌥o` on macOS, which sends `ø`), click `[ ▾ Collapse ]` / `[ ▸ Expand ]` in the header | Text view (collapses every block, or expands them all when any is collapsed) |
+| Editor: suggestions   | 2 typed chars or `ctrl+space`; `↑↓`/`ctrl+p/n` select, `⇥`/`⏎` accept, `esc` close | Any editor (buffer identifiers + language keywords; `.hit` files also get schema keys, HTTP verbs and header names) |
 | Editor: wrap / h-scroll | `alt+z` (`⌥z` on macOS, which sends `Ω`), `shift+wheel`, wheel-left/right | Any editor |
 | Editor: select        | drag, `shift+←→↑↓`, double-click word, `ctrl+a` | Any editor |
 | Editor: copy/cut/paste| `ctrl+c` / `ctrl+x` / `ctrl+v` | Any editor (ctrl+c quits only without a selection) |
@@ -762,6 +764,45 @@ send binding.
   longer an invisible all-red/all-green diff); `w` toggles `-w` (ignore whitespace).
 - git pane: drag selects detail lines, `ctrl+c` copies them (quits only with no
   selection). Help/README export wording made consistent (`-e postman`, `-e insomnia`).
+
+### v2.9.1 — Collapse / expand all
+- The text view header gained a `[ ▾ Collapse ]` / `[ ▸ Expand ]` toggle on the
+  right, matching the web editor's button beside Wrap. It collapses every block,
+  or expands them all when any is already collapsed, and relabels itself from the
+  live fold state rather than a remembered flag. `alt+o` / `⌥o` (`ø`) does the
+  same from the keyboard. Files with no collapsible block don't show it.
+- `renderTextView` now shares one `renderEditorHeader` with the Markdown path, so
+  a `.md` file shows both toggles. The header shrinks then drops them as the pane
+  narrows — full → `[ T | P | S ]` → `[ ▾ ]` → fold dropped — keeping the
+  Markdown switch longest, since it is the only mouse route out of Preview. A
+  header wider than the pane would wrap and scroll the frame, so a test asserts
+  the width at six terminal sizes for both file kinds.
+- `FoldAll` collapses nested regions too and pulls the cursor to the outermost
+  header when it would otherwise be left on a hidden row.
+
+### v2.9 — Autocompletion in the editor
+- Suggestions in every editor instance (file, body tab, params/headers, git
+  edit-in-preview). They appear after two word characters, or on `ctrl+space`
+  regardless of prefix; `↑↓` / `ctrl+p`/`ctrl+n` select, `⇥` or `⏎` accept as a
+  single undo step, `esc` dismisses. Candidates are ranked in three tiers —
+  request schema, language keywords, then identifiers already in the buffer —
+  alphabetical within each, so the most specific help is always on top.
+- `.hit` files complete their own schema, mirroring the web editor: the six
+  top-level keys, the seven HTTP verbs on the `"method"` line, common header
+  names inside the `"headers"` block, and content types after `Content-Type`.
+  The enclosing object is found by walking brace depth upwards from the cursor.
+- The popup is composited over the rendered rows like the explorer's context
+  menu, anchored at the start of the word (not the cursor) and flipped above
+  when there is no room below. Rows past the end of the file are empty strings
+  in the frame, so the base row is padded before the cut — otherwise the box
+  slid to column 0.
+- `PromptOpen()` now also reports the popup, or the screen would treat `esc` as
+  "close file" while suggestions were up. Any key the popup does not claim
+  dismisses it, so `tab` still indents and `ctrl+z` still undoes.
+- Identifiers are cached per buffer and rebuilt on edit; files over 512KB skip
+  the word scan and fall back to keywords and schema only.
+- The help overlay (`?`/`F1`) gained the suggestion keys, and the fold keys that
+  v2.8.10 added but never documented there.
 
 ### v2.8.10
 - Code folding in the editor: blocks come from indentation, the way VS Code
