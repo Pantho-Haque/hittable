@@ -127,7 +127,7 @@ Open any `.md` file and press `ctrl+t` (or click `[ Text | Preview | Split ]` in
 
 ## Scrolling
 
-Every pane has a vertical scrollbar on its right edge. Code files do not wrap: `shift+wheel` (or a horizontal wheel/trackpad swipe) scrolls sideways, and `alt+z` (or ⌥z on macOS, which sends `Ω`) toggles word wrap, as in VS Code. Markdown files wrap by default.
+Every pane has a vertical scrollbar on its right edge. Code files do not wrap: `shift+wheel` (or a horizontal wheel/trackpad swipe) scrolls sideways, and `alt+z` (or ⌥z on macOS, which sends `Ω`) toggles word wrap, as in VS Code. Markdown files wrap by default. Functions and blocks fold by indentation: click the `▾` in the gutter, or press `ctrl+o` to collapse the block around the cursor.
 
 ## Git
 

@@ -208,7 +208,7 @@ func TestMouseInRunner(t *testing.T) {
 	if z == nil || z.IsZero() {
 		t.Fatal("editor zone not registered")
 	}
-	gutter := 3 // "N " + 1 for 2-line files
+	gutter := m.Body.GutterWidth() // asked for, not assumed
 	x0, y0 := z.StartX+1+gutter, z.StartY+1
 	press := func(x, y int) {
 		m.Update(tea.MouseMsg{X: x, Y: y, Type: tea.MouseLeft, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})

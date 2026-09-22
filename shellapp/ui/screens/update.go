@@ -44,8 +44,19 @@ func (m *MainScreen) Init() tea.Cmd {
 	return gitTick()
 }
 
+// busy reports whether anything long-running is in flight, so the spinner
+// keeps animating: a request, or a git network operation like push or pull.
+func (m *MainScreen) busy() bool { return m.Sending || m.Git.Busy != "" }
+
 func (m *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
+	// Start the spinner the moment something goes in flight. Git work begins
+	// inside a key or click handler that has no Cmd to return, so it is picked
+	// up here rather than at each call site.
+	if m.busy() && !m.spinning {
+		m.spinning = true
+		cmd = tea.Batch(cmd, m.Spinner.Tick)
+	}
 	// Opening or closing a full-width panel changes the layout. Too many
 	// paths flip GitOpen / Palette.Open to re-lay out at each of them, so the
 	// change is picked up here instead.
@@ -82,7 +93,8 @@ func (m *MainScreen) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Palette.Deliver(msg)
 		return m, nil
 	case spinner.TickMsg:
-		if !m.Sending {
+		if !m.busy() {
+			m.spinning = false
 			return m, nil
 		}
 		var cmd tea.Cmd

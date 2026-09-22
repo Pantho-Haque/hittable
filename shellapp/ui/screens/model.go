@@ -96,6 +96,7 @@ type MainScreen struct {
 	gitPolling       bool
 	gitKey           string
 	Sending          bool
+	spinning         bool // a spinner tick loop is already running
 	StatusBar        string
 	ExplorerFocused  bool
 	Dragging         bool

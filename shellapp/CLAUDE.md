@@ -419,6 +419,7 @@ send binding.
 | Editor: word jump     | `ctrl+←/→`, `alt+←/→` | Text editor    |
 | Editor: indent        | `tab` (2 spaces) | Text editor         |
 | Editor: leave         | `shift+tab`     | Text editor → Explorer |
+| Editor: fold          | `ctrl+o`, click `▾`/`▸` | Any editor (folds the innermost block at the cursor) |
 | Editor: wrap / h-scroll | `alt+z` (`⌥z` on macOS, which sends `Ω`), `shift+wheel`, wheel-left/right | Any editor |
 | Editor: select        | drag, `shift+←→↑↓`, double-click word, `ctrl+a` | Any editor |
 | Editor: copy/cut/paste| `ctrl+c` / `ctrl+x` / `ctrl+v` | Any editor (ctrl+c quits only without a selection) |
@@ -762,7 +763,22 @@ send binding.
 - git pane: drag selects detail lines, `ctrl+c` copies them (quits only with no
   selection). Help/README export wording made consistent (`-e postman`, `-e insomnia`).
 
-### v2.8.8
+### v2.8.10
+- Code folding in the editor: blocks come from indentation, the way VS Code
+  folds a file with no folding provider — a line is a header when the next
+  non-blank line is indented further, and the block runs to the last line still
+  indented past it, so a blank line inside does not end it. ctrl+o folds the
+  innermost block containing the cursor; the gutter gained a clickable
+  arrow column and a collapsed header says what it hid. Clicks now map through
+  the visual rows in every case, not only when wrapping is on: a collapsed
+  block shifts the rows beneath it exactly as a wrapped line does. Two existing
+  click tests hardcoded the old gutter width and now ask the editor for it.
+- Push and pull show a live spinner. The tick loop ran only for request sends,
+  so a git network operation sat on a frozen label; it now runs while anything
+  is in flight, with the frame shown in the top-bar sync pill and the panel
+  footer.
+
+### v2.8.9
 - Diff rows are tinted whole-width: theme.DiffAddLineStyle / DiffDelLineStyle
   add a background to added / removed lines in both inline and split view. The
   inline path pads each wrapped row with the row style so the tint reaches the

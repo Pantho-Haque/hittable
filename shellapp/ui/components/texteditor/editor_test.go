@@ -61,8 +61,9 @@ func TestUndoRedoTabFindClick(t *testing.T) {
 		t.Errorf("goto: cursor row %d, want 0", ed.GetCursorRow())
 	}
 
-	// click row 2 (relative coords), gutter is 3 wide -> col 5
-	ed.Update(tea.MouseMsg{Type: tea.MouseLeft, X: 3 + 5, Y: 2})
+	// Click row 2, five columns into the text. The gutter width is asked for
+	// rather than assumed, so adding a column to it cannot silently break this.
+	ed.Update(tea.MouseMsg{Type: tea.MouseLeft, X: ed.gutterWidth() + 5, Y: 2})
 	if ed.GetCursorRow() != 2 || ed.TextArea.LineInfo().ColumnOffset != 5 {
 		t.Errorf("click: row %d col %d", ed.GetCursorRow(), ed.TextArea.LineInfo().ColumnOffset)
 	}

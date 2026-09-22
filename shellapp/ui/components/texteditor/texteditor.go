@@ -78,6 +78,9 @@ type buffer struct {
 	hlCache  map[string]string
 	findLast string
 
+	fold     foldState          // collapsed blocks, keyed by header line
+	foldHead map[int]foldRegion // foldable headers, refreshed by layout
+
 	anchor    *pos // selection anchor; nil = no selection
 	lastClick pos
 	lastAt    time.Time
@@ -123,8 +126,13 @@ type vrow struct {
 
 // layout splits lines into visual rows. Without wrap each line is one row.
 func (t *TextEditor) layout(lines []string, avail int) []vrow {
+	hidden, head := t.cur.fold.hidden(lines)
+	t.cur.foldHead = head
 	rows := make([]vrow, 0, len(lines))
 	for i, l := range lines {
+		if hidden[i] {
+			continue // inside a collapsed block
+		}
 		r := []rune(l)
 		if !t.Wrap || displayCol(r, len(r)) <= avail {
 			rows = append(rows, vrow{i, 0, len(r), true})
@@ -550,14 +558,23 @@ func (t *TextEditor) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		if col < 0 {
 			col = 0
 		}
-		if t.Wrap {
-			vrows := t.layout(strings.Split(t.TextArea.Value(), "\n"), t.avail())
-			if row >= len(vrows) {
-				row = len(vrows) - 1
+		// Always map through the visual rows: a collapsed block shifts every
+		// row beneath it, exactly as a wrapped line does.
+		lines := strings.Split(t.TextArea.Value(), "\n")
+		vrows := t.layout(lines, t.avail())
+		if row >= len(vrows) {
+			row = len(vrows) - 1
+		}
+		if row >= 0 {
+			v := vrows[row]
+			if msg.Action == tea.MouseActionPress && msg.X == t.foldCol() {
+				if _, ok := b.foldHead[v.line]; ok && v.first {
+					t.ToggleFold(v.line)
+					return nil
+				}
 			}
-			if row >= 0 {
-				v := vrows[row]
-				row = v.line
+			row = v.line
+			if t.Wrap {
 				col = v.start + col
 				if col > v.end {
 					col = v.end
@@ -629,6 +646,9 @@ func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "ctrl+a":
 		t.SelectAll()
+		return nil
+	case "ctrl+o":
+		t.ToggleFold(t.TextArea.Line())
 		return nil
 	// macOS terminals send the composed rune for Option+z rather than a
 	// meta-modified key, so both spellings toggle wrap.
@@ -804,11 +824,19 @@ func (t *TextEditor) contentRows() int {
 }
 
 func (t *TextEditor) gutterWidth() int {
-	w := len(strconv.Itoa(t.TextArea.LineCount())) + 2
+	w := len(strconv.Itoa(t.TextArea.LineCount())) + 3 // +1 for the fold arrow
 	if t.AnnotWidth > 0 {
 		w += t.AnnotWidth + 1
 	}
 	return w
+}
+
+// foldCol is the x offset of the fold arrow inside the gutter.
+func (t *TextEditor) foldCol() int {
+	if t.AnnotWidth > 0 {
+		return t.AnnotWidth + 1
+	}
+	return 0
 }
 
 // avail is the text width: pane minus gutter minus the scrollbar column.
@@ -940,9 +968,16 @@ func (t *TextEditor) View() string {
 		if i == row {
 			numStyle = theme.GutterActiveStyle
 		}
-		num := numStyle.Render(fmt.Sprintf("%*d ", numW, i+1))
+		arrow := " "
+		if _, ok := b.foldHead[i]; ok && v.first {
+			arrow = "▾"
+			if b.fold.collapsed[i] {
+				arrow = "▸"
+			}
+		}
+		num := theme.GutterStyle.Render(arrow) + numStyle.Render(fmt.Sprintf("%*d ", numW, i+1))
 		if !v.first {
-			num = strings.Repeat(" ", numW+1)
+			num = strings.Repeat(" ", numW+2)
 		}
 		if t.AnnotWidth > 0 {
 			a := ""
@@ -984,6 +1019,10 @@ func (t *TextEditor) View() string {
 			segEnd = segStart + avail
 		}
 		text := ansi.Cut(full, segStart, segEnd)
+		if r, ok := b.foldHead[i]; ok && b.fold.collapsed[i] && v.first {
+			summary := theme.MutedStyle.Render("  " + foldSummary(lines, r))
+			text = ansi.Truncate(text+summary, avail, "")
+		}
 		if !t.Wrap && displayCol(raw, len(raw)) > segStart+avail {
 			cut = true
 		}
@@ -1040,3 +1079,8 @@ func (t *TextEditor) View() string {
 	out = append(out, ansi.Truncate(status, t.Width, "…"))
 	return border.Width(t.Width).Height(t.Height).Render(lipgloss.JoinVertical(lipgloss.Left, out...))
 }
+
+// GutterWidth is the width of the line-number gutter, including the fold
+// column. Exported so callers can convert a click to a text column without
+// re-deriving it.
+func (t *TextEditor) GutterWidth() int { return t.gutterWidth() }

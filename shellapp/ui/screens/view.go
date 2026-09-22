@@ -15,6 +15,7 @@ import (
 func (m *MainScreen) View() string {
 	// Components that mark their own zones render their own hover state.
 	m.Git.Hover, m.Palette.Hover, m.URLBar.Hover, m.Response.Hover = m.HoverZone, m.HoverZone, m.HoverZone, m.HoverZone
+	m.Git.Spinner = m.Spinner.View()
 
 	explorerView := m.Explorer.View()
 

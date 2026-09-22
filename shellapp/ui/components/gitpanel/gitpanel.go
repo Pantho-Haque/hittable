@@ -68,6 +68,10 @@ type DoneMsg struct {
 }
 
 type Panel struct {
+	// Spinner is the current animation frame, fed by the screen each frame so
+	// a push or pull shows progress rather than a frozen label.
+	Spinner string
+
 	// Hover is the zone id the mouse is over, fed by the screen each frame.
 	// HoverRow / HoverBtn track the list row and button under the mouse,
 	// which are hit-tested by coordinate rather than by zone.
@@ -1359,7 +1363,7 @@ func (p *Panel) View(z *zone.Manager) string {
 	case p.Resolving:
 		foot = theme.MutedStyle.Render(fmt.Sprintf(" resolving %s · c/i/b accept current/incoming/both · n/p next/prev · a mark resolved · o open · esc back", p.ResolveRel))
 	case p.Busy != "":
-		foot = theme.WordmarkStyle.Render(" " + p.Busy)
+		foot = theme.WordmarkStyle.Render(" " + p.Spinner + " " + p.Busy)
 	case p.Message != "":
 		foot = theme.MutedStyle.Render(" " + p.Message)
 	default:
