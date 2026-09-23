@@ -7,9 +7,13 @@
 package gitpanel
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,6 +21,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	zone "github.com/lrstanley/bubblezone"
 
+	"github.com/hittable/shellapp/internal/commitmsg"
 	"github.com/hittable/shellapp/internal/gitx"
 	"github.com/hittable/shellapp/ui/components/texteditor"
 	"github.com/hittable/shellapp/ui/theme"
@@ -38,11 +43,11 @@ type promptKind int
 
 const (
 	promptNone promptKind = iota
-	promptCommit
 	promptBranch
 	promptStash
 	promptFilter
 	promptConfirm
+	promptType // conventional-commit type picker, shown before the compose editor
 )
 
 // row is one list entry; header rows are not actionable.
@@ -138,6 +143,30 @@ type Panel struct {
 	EditPath  string
 	editDirty bool
 
+	// Composing edits the commit message in the detail pane, mirroring the
+	// Editing submode above. The editor opens pre-filled with the heuristic
+	// draft; a model streams over it when one is installed. draft survives
+	// esc so pressing c again restores what was typed.
+	Composing    bool
+	MsgEditor    *texteditor.TextEditor
+	draft        string
+	draftEdited  bool
+	composeType  string
+	composeRules commitmsg.Rules
+	digest       *commitmsg.Digest
+
+	// Generation state. genSeq supersedes stale chunks the way the find
+	// palette does; genBuf accumulates tokens off the UI goroutine and
+	// genWake coalesces the redraws, as the terminal does for shell output.
+	Generating bool
+	genSeq     int
+	genCancel  context.CancelFunc
+	genMu      sync.Mutex
+	genBuf     strings.Builder
+	genWake    atomic.Bool
+	genStart   time.Time
+	userEdited bool
+
 	prompt      promptKind
 	promptText  string
 	promptTitle string
@@ -154,10 +183,39 @@ type Panel struct {
 	SourceLines   func() []string                               // current editor lines (blame list)
 	LoadFile      func(abs string) (string, error)              // working-copy content for edit mode
 	SaveFile      func(abs, content string)                     // persist edits (through the document store)
+	Send          func(tea.Msg)                                 // deliver an async message to the program
+	Drafter       Drafter                                       // nil when no model is installed
+}
+
+// Drafter rewrites the heuristic draft into prose. It is an interface rather
+// than a concrete client so the panel's tests can script it without HTTP, and
+// so nothing here depends on the inference packages.
+type Drafter interface {
+	DraftStream(ctx context.Context, d *commitmsg.Digest, opts commitmsg.Options, onChunk func(string)) (commitmsg.Message, error)
+}
+
+// GenChunkMsg says the generation buffer moved. It carries no text: the buffer
+// is read under the mutex when the message is handled, so a burst of tokens
+// costs one redraw rather than one per token.
+type GenChunkMsg struct{ Seq int }
+
+// GenDoneMsg ends a generation, successfully or not.
+//
+// Source says where the final text actually came from. It is not cosmetic:
+// unusable model output is replaced by the heuristic draft without an error,
+// so Err alone cannot tell "the model wrote this" from "the model was
+// discarded and you are looking at the mechanical draft". Saying which is the
+// difference between a user trusting the label and ignoring it.
+type GenDoneMsg struct {
+	Seq    int
+	Text   string
+	Source commitmsg.Source
+	Err    error
 }
 
 func New(repo *gitx.Repo) *Panel {
-	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1, HoverRow: -1, Wrap: true}
+	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1, HoverRow: -1, Wrap: true,
+		composeRules: commitmsg.DefaultRules()}
 }
 
 func (p *Panel) SetSize(w, h int) { p.Width, p.Height = w, h; p.clamp() }
@@ -625,8 +683,10 @@ func (p *Panel) confirm(title string, fn func()) {
 	p.confirmFn = fn
 }
 
-// PromptOpen reports whether an inline prompt / confirm is active.
-func (p *Panel) PromptOpen() bool { return p.prompt != promptNone }
+// PromptOpen reports whether an inline prompt / confirm / picker is active, or
+// the message editor has the keyboard. The screen checks this before treating
+// esc as "close the panel".
+func (p *Panel) PromptOpen() bool { return p.prompt != promptNone || p.Composing }
 
 // HandleKey processes a key while the panel has focus. Returns false when the
 // key is Esc with nothing to dismiss (the screen closes the panel).
@@ -638,6 +698,10 @@ func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 	}
 	if p.Resolving {
 		p.handleResolveKey(msg)
+		return true
+	}
+	if p.Composing {
+		p.handleComposeKey(msg)
 		return true
 	}
 	if p.Editing {
@@ -812,7 +876,7 @@ func (p *Panel) sectionKey(key string) {
 		case "D":
 			p.confirm("undo all changes", func() { p.run("undo all", p.Repo.DiscardAll) })
 		case "c":
-			p.prompt, p.promptTitle, p.promptText = promptCommit, "commit message", ""
+			p.startCompose()
 		case "S":
 			p.prompt, p.promptTitle, p.promptText = promptStash, "stash message (optional)", ""
 		case "p":
@@ -893,6 +957,10 @@ func (p *Panel) Done(msg DoneMsg) {
 }
 
 func (p *Panel) handlePromptKey(msg tea.KeyMsg) {
+	if p.prompt == promptType {
+		p.handleTypeKey(msg)
+		return
+	}
 	switch msg.String() {
 	case "esc":
 		p.prompt = promptNone
@@ -901,10 +969,6 @@ func (p *Panel) handlePromptKey(msg tea.KeyMsg) {
 		kind, text := p.prompt, strings.TrimSpace(p.promptText)
 		p.prompt = promptNone
 		switch kind {
-		case promptCommit:
-			if text != "" {
-				p.run("commit", func() error { return p.Repo.Commit(text) })
-			}
 		case promptBranch:
 			if text != "" {
 				p.run("branch "+text, func() error { return p.Repo.CreateBranch(text) })
@@ -983,7 +1047,7 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 		}
 	case tea.MouseLeft:
 		// Drag the split divider to rebalance the two diff columns.
-		if p.Split && !p.Resolving && !p.Editing && msg.Y >= p.detailTop() {
+		if p.Split && !p.Resolving && !p.Editing && !p.Composing && msg.Y >= p.detailTop() {
 			if msg.Action == tea.MouseActionPress && abs(msg.X-p.dividerX()) <= 1 {
 				p.dragSplit = true
 				return
@@ -997,7 +1061,7 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			p.dragSplit = false
 		}
 		// Text selection in the diff / commit pane: press + drag over rows.
-		if !p.Resolving && !p.Editing && msg.Y >= p.detailTop() {
+		if !p.Resolving && !p.Editing && !p.Composing && msg.Y >= p.detailTop() {
 			line := p.detailScroll + msg.Y - p.detailTop()
 			if line >= len(p.detailLines()) {
 				line = len(p.detailLines()) - 1
@@ -1026,11 +1090,11 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			_ = rl
 			return
 		}
-		if p.Editing && msg.Y >= listTop+p.listRows()+1 {
+		if ed := p.detailEditor(); ed != nil && msg.Y >= listTop+p.listRows()+1 {
 			rel := msg
 			rel.X -= 2
 			rel.Y -= listTop + p.listRows() + 2
-			p.Editor.Update(rel)
+			ed.Update(rel)
 			return
 		}
 		if msg.Action != tea.MouseActionPress {
@@ -1063,11 +1127,11 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 		if msg.Type == tea.MouseWheelUp {
 			d = -3
 		}
-		if p.Editing && msg.Y >= listTop+p.listRows()+1 {
+		if ed := p.detailEditor(); ed != nil && msg.Y >= listTop+p.listRows()+1 {
 			rel := msg
 			rel.X -= 2
 			rel.Y -= listTop + p.listRows() + 2
-			p.Editor.Update(rel)
+			ed.Update(rel)
 			return
 		}
 		if y := msg.Y - listTop; y >= 0 && y < p.listRows() {
@@ -1322,6 +1386,10 @@ func (p *Panel) View(z *zone.Manager) string {
 			}
 			lines = append(lines, rl[i])
 		}
+	} else if p.Composing && p.MsgEditor != nil {
+		p.MsgEditor.SetSize(inner-2, p.detailRows()-2)
+		p.MsgEditor.Hint = p.composeHint()
+		lines = append(lines, strings.Split(p.MsgEditor.View(), "\n")...)
 	} else if p.Editing && p.Editor != nil {
 		p.Editor.SetSize(inner-2, p.detailRows()-2)
 		p.Editor.Hint = "editing working copy · esc done · ctrl+s save"
@@ -1358,12 +1426,14 @@ func (p *Panel) View(z *zone.Manager) string {
 	switch {
 	case p.prompt == promptConfirm:
 		foot = theme.PromptStyle.Render(" " + p.promptTitle + " ")
+	case p.prompt == promptType:
+		foot = p.typePickerFoot(inner)
 	case p.prompt != promptNone:
 		foot = theme.PromptStyle.Render(" "+p.promptTitle+": "+p.promptText+"▏") + theme.MutedStyle.Render("  ⏎ ok · esc cancel")
 	case p.Resolving:
 		foot = theme.MutedStyle.Render(fmt.Sprintf(" resolving %s · c/i/b accept current/incoming/both · n/p next/prev · a mark resolved · o open · esc back", p.ResolveRel))
 	case p.Busy != "":
-		foot = theme.WordmarkStyle.Render(" " + p.Spinner + " " + p.Busy)
+		foot = theme.WordmarkStyle.Render(" " + p.Spinner + " " + p.Busy + p.genElapsed())
 	case p.Message != "":
 		foot = theme.MutedStyle.Render(" " + p.Message)
 	default:

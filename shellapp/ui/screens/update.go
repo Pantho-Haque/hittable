@@ -83,6 +83,12 @@ func (m *MainScreen) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitpanel.DoneMsg:
 		m.Git.Done(msg)
 		return m, nil
+	case gitpanel.GenChunkMsg:
+		m.Git.GenChunk(msg)
+		return m, nil
+	case gitpanel.GenDoneMsg:
+		m.Git.GenDone(msg)
+		return m, nil
 	case gitTickMsg:
 		m.reloadExternalEdits() // files changed outside the app
 		return m, m.pollGit()

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -208,5 +209,136 @@ func TestDiscardAll(t *testing.T) {
 	}
 	if len(st.Files) != 0 {
 		t.Fatalf("expected clean tree, got %v", st.Files)
+	}
+}
+
+// The staged-diff and log wrappers feed the commit-message generator. Unlike
+// Diff they return their error, so "nothing staged" and "git failed" stay
+// distinguishable; these assert both the happy path and that contract.
+func TestStagedAndLogWrappers(t *testing.T) {
+	r := newRepo(t)
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(r.Root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Nothing staged yet: empty output, no error.
+	for _, c := range []struct {
+		name string
+		fn   func() (string, error)
+	}{
+		{"StagedNameStatus", r.StagedNameStatus},
+		{"StagedNumstat", r.StagedNumstat},
+		{"StagedDiff", func() (string, error) { return r.StagedDiff(3) }},
+	} {
+		out, err := c.fn()
+		if err != nil {
+			t.Errorf("%s with nothing staged: %v", c.name, err)
+		}
+		if strings.TrimSpace(out) != "" {
+			t.Errorf("%s with nothing staged = %q, want empty", c.name, out)
+		}
+	}
+
+	// One modification and one addition, staged.
+	write("a.txt", "one\ntwo\nthree\n")
+	write("b.txt", "beta\n")
+	if _, err := r.Run("add", "."); err != nil {
+		t.Fatal(err)
+	}
+
+	ns, err := r.StagedNameStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ns, "M\ta.txt") || !strings.Contains(ns, "A\tb.txt") {
+		t.Errorf("StagedNameStatus = %q, want M a.txt and A b.txt", ns)
+	}
+
+	num, err := r.StagedNumstat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(num, "1\t0\ta.txt") || !strings.Contains(num, "1\t0\tb.txt") {
+		t.Errorf("StagedNumstat = %q, want one added line each", num)
+	}
+
+	// unified controls the context lines, and a path argument scopes it.
+	wide, err := r.StagedDiff(3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(wide, "+three") || !strings.Contains(wide, "+beta") {
+		t.Errorf("StagedDiff(3) = %q, want both files", wide)
+	}
+	narrow, err := r.StagedDiff(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(narrow, "\n") >= strings.Count(wide, "\n") {
+		t.Error("StagedDiff(0) should be shorter than StagedDiff(3)")
+	}
+	only, err := r.StagedDiff(3, "b.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(only, "a.txt") {
+		t.Errorf("StagedDiff scoped to b.txt still mentions a.txt: %q", only)
+	}
+
+	// Renames are detected, which is what -M -C is for.
+	if _, err := r.Run("commit", "-q", "-m", "second"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Run("mv", "b.txt", "c.txt"); err != nil {
+		t.Fatal(err)
+	}
+	ns, err = r.StagedNameStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(ns), "R") {
+		t.Errorf("StagedNameStatus after a rename = %q, want an R status", ns)
+	}
+
+	subs, err := r.LogSubjects(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs) != 2 || subs[0] != "second" || subs[1] != "first commit" {
+		t.Errorf("LogSubjects = %v, want [second, first commit] newest first", subs)
+	}
+	if n, err := r.LogSubjects(1); err != nil || len(n) != 1 {
+		t.Errorf("LogSubjects(1) = %v, %v, want one entry", n, err)
+	}
+
+	entries, err := r.LogEntries(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(entries, "second") || !strings.Contains(entries, "\x00") {
+		t.Errorf("LogEntries = %q, want NUL-separated records", entries)
+	}
+}
+
+// A repo with no commits makes git log fail. Collect tolerates that, but the
+// wrappers must report it rather than return a silent empty string.
+func TestLogWrappersOnAnEmptyRepo(t *testing.T) {
+	dir := t.TempDir()
+	cmd := exec.Command("git", "-C", dir, "init", "-q", "-b", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	r := Open(dir)
+	if r == nil {
+		t.Fatal("Open returned nil")
+	}
+	if subs, err := r.LogSubjects(10); err == nil && len(subs) != 0 {
+		t.Errorf("LogSubjects on an empty repo = %v, want an error or nothing", subs)
+	}
+	if out, err := r.LogEntries(10); err == nil && strings.TrimSpace(out) != "" {
+		t.Errorf("LogEntries on an empty repo = %q, want an error or empty", out)
 	}
 }

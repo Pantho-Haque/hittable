@@ -255,6 +255,51 @@ func (r *Repo) Diff(f FileStatus, staged, ignoreWS bool) string {
 	return out
 }
 
+// StagedNameStatus returns `diff --cached --name-status`, one
+// "<status>\t<path>" line per staged change (renames and copies carry the
+// source path in a second tab-separated field).
+func (r *Repo) StagedNameStatus() (string, error) {
+	return r.Run("diff", "--cached", "--name-status", "-M", "-C")
+}
+
+// StagedNumstat returns `diff --cached --numstat`: "<added>\t<removed>\t<path>"
+// per staged change, with "-\t-" for binary files. Line counts come from here
+// rather than --stat, whose column padding is noise.
+func (r *Repo) StagedNumstat() (string, error) {
+	return r.Run("diff", "--cached", "--numstat", "-M", "-C")
+}
+
+// StagedDiff returns the staged unified diff with the given amount of context
+// (0 drops context lines entirely), optionally limited to paths.
+func (r *Repo) StagedDiff(unified int, paths ...string) (string, error) {
+	args := []string{"diff", "--cached", "-M", "-C", "--unified=" + strconv.Itoa(unified)}
+	if len(paths) > 0 {
+		args = append(append(args, "--"), paths...)
+	}
+	return r.Run(args...)
+}
+
+// LogSubjects lists the subject lines of up to n recent commits. It fails on a
+// repository with no commits yet; callers that only want a sample ignore that.
+func (r *Repo) LogSubjects(n int) ([]string, error) {
+	out, err := r.Run("log", "-n", strconv.Itoa(n), "--pretty=%s")
+	if err != nil {
+		return nil, err
+	}
+	out = strings.TrimRight(out, "\n")
+	if out == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// LogEntries returns up to n recent commits as subject, body, then a NUL
+// separator, so a body spanning blank lines still parses unambiguously. Like
+// LogSubjects it fails on a repository with no commits.
+func (r *Repo) LogEntries(n int) (string, error) {
+	return r.Run("log", "-n", strconv.Itoa(n), "--pretty=format:%s%n%b%x00")
+}
+
 // Show returns `git show --stat -p` for a revision.
 func (r *Repo) Show(rev string) string {
 	out, _ := r.Run("show", "--stat", "-p", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n    %s%n%n%b", rev)

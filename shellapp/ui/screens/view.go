@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/hittable/shellapp/internal/document"
+	"github.com/hittable/shellapp/internal/llmhost"
 	"github.com/hittable/shellapp/ui/components/requesteditor"
 	"github.com/hittable/shellapp/ui/theme"
 )
@@ -66,12 +67,20 @@ func (m *MainScreen) renderEmptyMain() string {
 	cmd := func(c, d string) string {
 		return theme.HelpKeyStyle.Width(20).Render(c) + theme.HelpDescStyle.Render(d)
 	}
+	// The model row reflects what is actually on disk: telling someone to
+	// enable something they already enabled is noise. Installed() is two
+	// os.Stat calls, so it is cheap enough for a render path.
+	modelRow := cmd("hittable model enable", "local model for AI commit messages")
+	if llmhost.Installed() {
+		modelRow = cmd("hittable model status", "local model: installed")
+	}
 	commands := lipgloss.JoinVertical(lipgloss.Left,
 		theme.HelpTitle.Render("Get started from the shell"),
 		cmd("hittable init", "create the hittable/ template here"),
 		cmd("hittable -i <file>", "import a Postman or Insomnia collection"),
 		cmd("hittable -e postman", "export hittable/ as a Postman collection"),
 		cmd("hittable -e insomnia", "export hittable/ as an Insomnia collection"),
+		modelRow,
 		cmd("hittable uninstall", "remove hittable from this machine"),
 		cmd("hittable -h", "all options"),
 	)
@@ -395,7 +404,10 @@ var helpSections = []struct {
 		{"1-5  tab", "switch section"},
 		{"s u  a A", "stage · unstage · all · all"},
 		{"d  D", "discard file · undo all changes"},
-		{"c  S", "commit · stash"},
+		{"c  S", "commit (type picker, then compose) · stash"},
+		{"←/→ ⏎", "pick commit type · open the message editor"},
+		{"ctrl+s", "commit the message · esc cancels (draft kept)"},
+		{"ctrl+r", "redraft with the model, when one is installed"},
 		{"p P f  y", "push · pull · fetch · sync"},
 		{"e", "edit working copy in preview"},
 		{"v  z  w", "inline⇄split · wrap · ignore ws"},

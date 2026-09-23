@@ -95,6 +95,17 @@ func (m *MainScreen) wireGit() {
 			teaProgram.Send(gitpanel.DoneMsg{Label: label, Out: out, Err: err})
 		}()
 	}
+	// teaProgram is set after the screen is built (main.go calls NewApp then
+	// SetTeaProgram), so this must test it when the message is sent, not when
+	// the hook is wired — exactly as Async does above. Deciding here would
+	// leave Send permanently nil in the real app, which makes the panel
+	// generate inline on the UI goroutine: no spinner, no streaming, no
+	// cancel, and the whole app frozen for the length of a generation.
+	g.Send = func(msg tea.Msg) {
+		if teaProgram != nil {
+			teaProgram.Send(msg)
+		}
+	}
 	m.TextEd.LineHint = func(row int) string {
 		if !m.BlameOn || row >= len(m.blame) {
 			return ""
@@ -266,6 +277,11 @@ func gitTick() tea.Cmd {
 // pollGit runs `git status` off the UI goroutine; the result arrives as a
 // gitStatusMsg and is applied only when something changed.
 func (m *MainScreen) pollGit() tea.Cmd {
+	// A model enabled from the integrated terminal has to take effect here
+	// without a restart, so this rides the tick that already runs git status.
+	if msg := m.refreshAI(); msg != "" {
+		m.StatusBar = msg
+	}
 	if m.Repo == nil || m.gitPolling {
 		return gitTick()
 	}

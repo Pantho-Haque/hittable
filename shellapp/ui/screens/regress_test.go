@@ -292,11 +292,18 @@ func TestGitPanel(t *testing.T) {
 	if !strings.Contains(m.View(), "Staged Changes (1)") {
 		t.Fatalf("stage failed:\n%s", m.View())
 	}
+	// c opens the compose editor pre-filled with the heuristic draft. This
+	// repo's one commit ("init") is not conventional, so the type picker is
+	// skipped. Select all and type over the draft, then ctrl+s to commit.
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if !m.Git.Composing {
+		t.Fatalf("c should open the compose editor:\n%s", m.View())
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
 	for _, r := range "add greeting" {
 		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	if v := m.View(); !strings.Contains(v, "Changes (0)") || strings.Contains(v, "M hittable/notes.md") {
 		t.Fatalf("commit failed:\n%s", v)
 	}

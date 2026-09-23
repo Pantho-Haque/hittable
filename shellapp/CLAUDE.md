@@ -433,6 +433,8 @@ send binding.
 | Git: sections         | `1-5`, `tab`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
 | Git: diff layout      | drag `│`, `z`/`alt+z`/`⌥z`, `v`, `w` | resize split columns · wrap lines · inline⇄split · ignore whitespace |
 | Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `z` `d` `D` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · wrap lines · discard · undo all · commit · stash · push · pull · fetch · open/collapse · filter |
+| Git: commit type      | `←/→`, first letter, `⏎`, `esc` | Type picker (conventional repos only) |
+| Git: compose message  | `ctrl+s` commit · `ctrl+r` redraft · `esc` cancel | Message editor (full text editor: undo, selection, folding) |
 | Markdown view         | `ctrl+t` cycles Text → Preview → Split; click `[ Text | Preview | Split ]` | .md file open |
 | Preview scroll        | `jk` `↑↓` `pgup/pgdown` `g/G`, wheel | Preview focused (tab ⇄ editor in split) |
 | Find file             | `ctrl+p`, `/` in explorer, click `Find` | Global (fuzzy, skips node_modules etc.) |
@@ -764,6 +766,35 @@ send binding.
   longer an invisible all-red/all-green diff); `w` toggles `-w` (ignore whitespace).
 - git pane: drag selects detail lines, `ctrl+c` copies them (quits only with no
   selection). Help/README export wording made consistent (`-e postman`, `-e insomnia`).
+
+### v3.0 — Commit messages, and the seam for a local model
+- `c` in the Git panel no longer opens an empty one-line prompt. It reads the
+  staged changes, offers a conventional-commit type with the likely one already
+  selected, and opens a full editor over the detail pane pre-filled with a
+  drafted message — subject, and a body listing what moved and by how much. The
+  editor is a `texteditor`, so it arrives with undo/redo, selection, mouse,
+  folding and autocompletion; `ctrl+s` commits, `esc` keeps the draft for the
+  next `c`. `Repo.Commit` already passes one `-m`, which git splits into
+  subject and body, so nothing in `gitx` had to change for a multi-line message.
+- A repo whose history is not conventional does not get one imposed on it: the
+  picker is skipped and the type requirement is dropped from the rules, so
+  neither the draft nor the commit-time repair invents a `chore:` prefix.
+- `internal/commitmsg` is one body of code doing three jobs rather than a
+  heuristic that gets abandoned once a model exists. A `Digest` of the staged
+  changes is (a) the draft when nothing is installed, (b) the packed prompt for
+  a model, and (c) the validator that repairs a model's output against
+  `commitlint.config.js`. Sensitive-looking files (`.env*`, `*.pem`, `*.key`,
+  `id_rsa*`, `*credential*`) are listed by name and their contents are never
+  packed — a canary test drives a real repo end to end to prove it.
+- `internal/llm` is the reusable client for a local OpenAI-compatible server,
+  speaking chat, raw completion and `/infill` fill-in-the-middle through one
+  request type, with streaming, cancellation that preserves partial text, and a
+  cached health probe that is never called at startup. `internal/appconfig` and
+  `internal/hithome` define the app's first user-level config and state
+  directory. Nothing is wired into the UI yet and no model ships: `Drafter` is
+  nil, every path falls back to the draft, and the test suite passes with no
+  network and nothing downloaded. Still stdlib-only — no new dependency, no
+  cgo, no build tags, and the binary is the same size.
 
 ### v2.9.1 — Collapse / expand all
 - The text view header gained a `[ ▾ Collapse ]` / `[ ▸ Expand ]` toggle on the

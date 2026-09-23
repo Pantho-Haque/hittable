@@ -40,6 +40,12 @@ plain .hit files (shared with the Hittable web app), variables in hittable/env.j
   hittable -e postman          export hittable/ as a Postman collection (<folder>.postman_collection.json)
   hittable -e insomnia         export hittable/ as an Insomnia collection (<folder>.insomnia.json)
   hittable -e postman -o x.json  choose the output file
+
+  hittable model enable        download a local model so the Git panel can draft
+                               commit messages (asks before using disk / memory)
+  hittable model status        what is installed, how much disk, is it running
+  hittable model disable       stop it, delete it, free the space
+
   hittable uninstall           remove hittable from this machine`,
     Args:          cobra.MaximumNArgs(1),
     SilenceUsage:  true,
@@ -106,19 +112,32 @@ var uninstallCmd = &cobra.Command{
         if pids := runningInstances(); len(pids) > 0 {
             return fmt.Errorf("hittable is currently running (pid %s) — close it first, then run `hittable uninstall` again", strings.Join(pids, ", "))
         }
+        // Data first, binaries last. The other order can strand a 2GB model
+        // cache with no tool left on the machine to clean it up.
+        freed, dataDirs := removeAppData()
+
         var removed []string
         for _, p := range installedBinaries() {
             if err := os.Remove(p); err == nil {
                 removed = append(removed, p)
             }
         }
-        if len(removed) == 0 {
+        if len(removed) == 0 && len(dataDirs) == 0 {
             fmt.Println("nothing to remove")
             return nil
         }
-        fmt.Println("removed:")
-        for _, p := range removed {
-            fmt.Println("  " + p)
+        if len(removed) > 0 {
+            fmt.Println("removed:")
+            for _, p := range removed {
+                fmt.Println("  " + p)
+            }
+        }
+        if len(dataDirs) > 0 {
+            fmt.Println("removed app data:")
+            for _, d := range dataDirs {
+                fmt.Println("  " + d)
+            }
+            fmt.Printf("  (%s freed)\n", humanBytes(freed))
         }
         fmt.Println("hittable has been uninstalled. Your project files (hittable/ folders) were left untouched.")
         return nil
@@ -222,7 +241,7 @@ func init() {
     rootCmd.Flags().Lookup("export").NoOptDefVal = "postman"
     rootCmd.Flags().StringVarP(&flagOut, "out", "o", "", "output file for --export (default: <folder>.postman_collection.json)")
     rootCmd.Flags().StringVar(&flagIcons, "icons", "nerd", `file icon pack: "nerd" (Nerd Font glyphs) or "emoji"`)
-    rootCmd.AddCommand(initCmd, uninstallCmd)
+    rootCmd.AddCommand(initCmd, uninstallCmd, modelCmd)
 }
 
 func main() {

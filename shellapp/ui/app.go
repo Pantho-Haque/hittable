@@ -70,5 +70,8 @@ func (a *App) Cleanup() {
 		wq.FlushNow()
 	}
 	a.screen.Term.Close()
+	// Stop a model server this process started. One adopted from another
+	// hittable window is left running for it.
+	a.screen.CloseAI()
 	Zones.Close()
 }

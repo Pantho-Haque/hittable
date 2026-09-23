@@ -71,6 +71,7 @@ type MainScreen struct {
 	Term     *terminal.Terminal
 	Repo     *gitx.Repo
 	Git      *gitpanel.Panel
+	AI       *ai
 	Palette  *palette.Palette
 	Preview  *mdpreview.Preview
 	MdMode   MdMode
@@ -137,6 +138,8 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 
 	repo := gitx.Open(rootDir)
 	git := gitpanel.New(repo)
+	aiState := newAI(rootDir)
+	git.Drafter = aiState.drafter()
 	pal := palette.New(rootDir, func(msg tea.Msg) {
 		if teaProgram != nil {
 			teaProgram.Send(msg)
@@ -161,6 +164,7 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 		Term:            term,
 		Repo:            repo,
 		Git:             git,
+		AI:              aiState,
 		Palette:         pal,
 		Preview:         mdpreview.New(),
 		Focus:           FocusExplorerPane,
