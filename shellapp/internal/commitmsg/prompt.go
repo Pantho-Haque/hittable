@@ -88,7 +88,9 @@ func systemPrompt(d *Digest, opts Options, rules Rules, lo, hi int) string {
 	b.WriteString("3. Say what the code now does, leading with the capability rather than the list of names. ")
 	b.WriteString("Use the purpose line to say what a package achieves.\n")
 	b.WriteString("4. Name only the packages, functions and types you were given, each under the directory it was given for.\n")
-	b.WriteString("5. Never mention how many files or lines changed. Invent nothing. No preamble.\n")
+	b.WriteString("5. One sentence per bullet. Name at most the two or three identifiers that matter, ")
+	b.WriteString("and do not append a list of every name you were given.\n")
+	b.WriteString("6. Never mention how many files or lines changed. Invent nothing. No preamble.\n")
 
 	if rules.RequireType && len(rules.Types) > 0 {
 		if opts.Type != "" {
@@ -172,8 +174,8 @@ also touched: cmd/tool`
 
 func shotReply(rules Rules) string {
 	body := "\n\n" +
-		"- Added internal/httpcache, which keeps HTTP responses on disk and serves them until they expire, with Get, Put and Evict to manage entries and TTL to set their lifetime.\n" +
-		"- Extended internal/fetch with WithCache, so requests can be served from that cache, and RetryPolicy to control how failures are retried.\n" +
+		"- Added internal/httpcache, which keeps HTTP responses on disk until they expire.\n" +
+		"- Extended internal/fetch so requests can be served from that cache, via WithCache.\n" +
 		"- Wired the new options through cmd/tool."
 	if rules.RequireType {
 		return "feat(httpcache): cache http responses on disk" + body

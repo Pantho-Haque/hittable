@@ -786,6 +786,12 @@ send binding.
   `commitlint.config.js`. Sensitive-looking files (`.env*`, `*.pem`, `*.key`,
   `id_rsa*`, `*credential*`) are listed by name and their contents are never
   packed — a canary test drives a real repo end to end to prove it.
+- `hittable model enable` downloads a pinned llama-server and a 3B model after
+  showing what it costs in disk and memory; `model disable` stops the server and
+  gives the memory back while keeping the files, so re-enabling is free;
+  `model delete` reclaims the disk. Stopping and deleting are deliberately
+  separate verbs: conflating them charges a two-gigabyte download to anyone who
+  only wanted their RAM back.
 - `internal/llm` is the reusable client for a local OpenAI-compatible server,
   speaking chat, raw completion and `/infill` fill-in-the-middle through one
   request type, with streaming, cancellation that preserves partial text, and a

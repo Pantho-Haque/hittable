@@ -181,6 +181,7 @@ func (m *MainScreen) toggleGit() {
 	m.setExplorerFocused(false)
 	m.Git.SetActiveFile(m.ActiveFile)
 	m.Git.Refresh()
+	m.warmAI()
 }
 
 func (m *MainScreen) handleGitKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

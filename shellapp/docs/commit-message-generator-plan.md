@@ -226,7 +226,9 @@ signs the binary on macOS, and finishes with a smoke test — spawn, `/health`, 
 16-token completion — so a missing dylib or corrupt GGUF surfaces at install time
 rather than silently inside the TUI days later.
 
-`hittable model disable` stops the server and deletes it all. `hittable uninstall`
+`hittable model disable` stops the server and releases its ~2.4GB of memory,
+leaving the model on disk so re-enabling costs nothing. `hittable model delete`
+removes it from the machine entirely. `hittable uninstall`
 additionally clears every directory any version of the app could have created.
 
 Enabling from the **integrated terminal takes effect without restarting the TUI**: the

@@ -247,7 +247,12 @@ func (p *Panel) commitCompose() {
 		text = repaired
 	}
 	p.Composing, p.MsgEditor, p.draft, p.draftEdited, p.digest = false, nil, "", false, nil
-	p.run("commit", func() error { return p.Repo.Commit(text) })
+	// Committing is not instant: pre-commit hooks run, and on a large index
+	// git itself takes a moment. run() would do that on the UI goroutine with
+	// the screen frozen and no indication anything is happening, so this goes
+	// through async and gets the spinner every other slow operation gets.
+	repo, msg := p.Repo, text
+	p.async("commit", func() (string, error) { return "", repo.Commit(msg) })
 }
 
 // detailEditor is whichever editor currently owns the detail pane, or nil.

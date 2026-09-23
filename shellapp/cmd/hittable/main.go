@@ -44,7 +44,8 @@ plain .hit files (shared with the Hittable web app), variables in hittable/env.j
   hittable model enable        download a local model so the Git panel can draft
                                commit messages (asks before using disk / memory)
   hittable model status        what is installed, how much disk, is it running
-  hittable model disable       stop it, delete it, free the space
+  hittable model disable       stop the server, free the memory, keep the files
+  hittable model delete        remove it from this machine, reclaim the disk
 
   hittable uninstall           remove hittable from this machine`,
     Args:          cobra.MaximumNArgs(1),

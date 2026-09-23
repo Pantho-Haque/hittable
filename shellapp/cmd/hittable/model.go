@@ -23,11 +23,12 @@ var modelCmd = &cobra.Command{
 	Short: "Manage the local model used for AI commit messages",
 	Long: `hittable can draft commit messages with a small model running on this machine.
 Nothing is downloaded until you run ` + "`hittable model enable`" + `, and everything it
-installs lives in one directory that ` + "`hittable model disable`" + ` deletes.
+installs lives in one directory that ` + "`hittable model delete`" + ` removes.
 
   hittable model enable    download the runtime and the model (asks first)
   hittable model status    what is installed, how much disk, is it running
-  hittable model disable   stop it, delete it, report the space freed
+  hittable model disable   stop the server and free the memory, keep the files
+  hittable model delete    remove it from this machine and reclaim the disk
 
 Without a model the Git panel still drafts a commit message from the staged
 diff; the model only rewrites that draft into prose.`,
@@ -43,12 +44,29 @@ var modelEnableCmd = &cobra.Command{
 }
 
 var modelDisableCmd = &cobra.Command{
-	Use:           "disable",
-	Short:         "Stop and delete the local model, freeing the disk",
+	Use:   "disable",
+	Short: "Stop the model server and turn drafting off, keeping the files",
+	Long: `Stops the local model server and turns AI drafting off.
+
+The model stays on disk, so ` + "`hittable model enable`" + ` turns it straight back
+on with nothing to download. Use ` + "`hittable model delete`" + ` to reclaim the disk.`,
 	Args:          cobra.NoArgs,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE:          runModelDisable,
+}
+
+var modelDeleteCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "Remove the model and runtime from this machine entirely",
+	Long: `Stops the server and deletes everything hittable downloaded.
+
+Re-enabling afterwards means downloading the model again. To stop the server
+and free memory without that cost, use ` + "`hittable model disable`" + `.`,
+	Args:          cobra.NoArgs,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	RunE:          runModelDelete,
 }
 
 var modelStatusCmd = &cobra.Command{
@@ -135,13 +153,46 @@ func runModelEnable(*cobra.Command, []string) error {
 }
 
 func runModelDisable(*cobra.Command, []string) error {
+	running, ram, err := llmhost.Stop()
+	if err != nil {
+		return err
+	}
+	cfg, _ := appconfig.Load("")
+	cfg.AI.Enabled = false
+	if err := appconfig.Save(cfg); err != nil {
+		return fmt.Errorf("saving config: %w", err)
+	}
+	if running {
+		fmt.Printf("Stopped the model server — about %s of memory released.\n", humanBytes(ram))
+	} else {
+		fmt.Println("The model server was not running.")
+	}
+	st, _ := llmhost.Status()
+	if st.ModelInstalled {
+		fmt.Printf("The model is still on disk (%s). `hittable model enable` turns it back on\n"+
+			"with nothing to download; `hittable model delete` reclaims the space.\n", humanBytes(st.TotalBytes))
+	}
+	fmt.Println("Commit drafting falls back to the staged diff.")
+	return nil
+}
+
+func runModelDelete(*cobra.Command, []string) error {
 	st, err := llmhost.Status()
 	if err != nil {
 		return err
 	}
 	if !st.RuntimeInstalled && !st.ModelInstalled {
-		fmt.Fprintln(os.Stderr, "Nothing installed.")
+		fmt.Println("Nothing installed.")
 		return nil
+	}
+	if !flagModelYes {
+		fmt.Printf("\n  This deletes %s from ~/.hittable.\n", humanBytes(st.TotalBytes))
+		fmt.Println("  Enabling it again means downloading the model over the network.")
+		fmt.Println("  To stop the server and free memory without that, use `hittable model disable`.")
+		if !confirm("\n  Delete it?") {
+			fmt.Println("  Nothing was deleted.")
+			return nil
+		}
 	}
 	freed, err := llmhost.Remove()
 	if err != nil {
@@ -152,7 +203,7 @@ func runModelDisable(*cobra.Command, []string) error {
 	if err := appconfig.Save(cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
-	fmt.Printf("Removed the local model and runtime — %s freed.\n", humanBytes(freed))
+	fmt.Printf("Deleted the local model and runtime — %s freed.\n", humanBytes(freed))
 	fmt.Println("Commit drafting falls back to the staged diff. Settings were kept.")
 	return nil
 }
@@ -344,5 +395,6 @@ func truncate(s string, n int) string {
 func init() {
 	modelEnableCmd.Flags().BoolVarP(&flagModelYes, "yes", "y", false, "skip the confirmation prompt")
 	modelEnableCmd.Flags().BoolVar(&flagModelDryRun, "dry-run", false, "show what would be downloaded, then stop")
-	modelCmd.AddCommand(modelEnableCmd, modelDisableCmd, modelStatusCmd)
+	modelCmd.AddCommand(modelEnableCmd, modelDisableCmd, modelDeleteCmd, modelStatusCmd)
+	modelDeleteCmd.Flags().BoolVarP(&flagModelYes, "yes", "y", false, "skip the confirmation prompt")
 }

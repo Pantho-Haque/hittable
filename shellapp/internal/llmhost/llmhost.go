@@ -22,7 +22,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/hittable/shellapp/internal/hithome"
@@ -243,6 +245,38 @@ func runtimeVerified(sum, goos string) bool {
 	}
 	fi, err := os.Stat(filepath.Join(hithome.RuntimeTag(RuntimeTag), serverBinName(goos)))
 	return err == nil && !fi.IsDir()
+}
+
+// Stop shuts down a running llama-server and reports whether one was there,
+// along with the memory it was holding. The model stays on disk: this is the
+// difference between "I am not using it right now" and "take it off my
+// machine", and conflating the two means a user who wants their RAM back pays
+// a two-gigabyte download to get the feature working again.
+//
+// It stops the server recorded in the run file, so it works from the CLI on a
+// server a running TUI started.
+func Stop() (wasRunning bool, freedRAM int64, err error) {
+	rs, readErr := readRunState()
+	if readErr != nil || !processAlive(rs.PID) {
+		_ = os.Remove(hithome.RunFile())
+		return false, 0, nil
+	}
+	freedRAM = residentBytes(rs.PID)
+	stopRunFileServer()
+	return true, freedRAM, nil
+}
+
+// residentBytes asks ps for a pid's resident set size. It is for a human-facing
+// number only, so an unparsable answer reports the model's expected footprint
+// rather than failing the command.
+func residentBytes(pid int) int64 {
+	out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(pid)).Output()
+	if err == nil {
+		if kb, convErr := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64); convErr == nil && kb > 0 {
+			return kb * 1024
+		}
+	}
+	return ModelRAMBytes
 }
 
 // Remove stops any server this app started, deletes everything it downloaded,

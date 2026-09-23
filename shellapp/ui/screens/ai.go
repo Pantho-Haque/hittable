@@ -3,6 +3,7 @@ package screens
 import (
 	"context"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/hittable/shellapp/internal/appconfig"
@@ -25,9 +26,10 @@ type ai struct {
 	cfg       appconfig.AI
 	sup       *llmhost.Supervisor
 	client    *llm.HTTPClient
-	live      bool   // a model is installed and enabled right now
-	cfgStamp  string // config file mtime+size, to notice external edits
-	announced bool   // the "AI drafts enabled" line has been shown once
+	live      bool        // a model is installed and enabled right now
+	cfgStamp  string      // config file mtime+size, to notice external edits
+	warming   atomic.Bool // a background spawn is already in flight
+	announced bool        // the "AI drafts enabled" line has been shown once
 }
 
 func newAI(root string) *ai {
@@ -139,4 +141,30 @@ func (m *MainScreen) CloseAI() {
 	if m.AI != nil && m.AI.sup != nil {
 		m.AI.sup.Close()
 	}
+}
+
+// warmAI starts the model server in the background when the Git panel opens.
+//
+// Spawning llama-server and memory-mapping a 2GB model costs about 2.8s, and
+// paying it after the user presses c is most of the wait they actually feel.
+// Opening the panel means reading a diff and picking files first, so the cold
+// start lands in time the user was spending anyway. It is best-effort: if it
+// fails, the first real request simply pays the cost as before.
+func (m *MainScreen) warmAI() {
+	if m.AI == nil || !m.AI.live || m.AI.cfg.Endpoint != "" {
+		return // nothing installed, or someone else's server to wake
+	}
+	if _, _, running := m.AI.sup.Running(); running {
+		return
+	}
+	if !m.AI.warming.CompareAndSwap(false, true) {
+		return // one attempt at a time
+	}
+	sup := m.AI.sup
+	go func() {
+		defer m.AI.warming.Store(false)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		_, _ = sup.Endpoint(ctx)
+	}()
 }

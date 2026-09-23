@@ -479,3 +479,55 @@ func waitGone(t *testing.T, pid int) {
 	}
 	t.Errorf("process %d is still running", pid)
 }
+
+// Stop is the "give me my memory back" half of the split: it must leave the
+// model on disk, so turning the feature back on costs nothing. A user who
+// wants their RAM should not have to pay a two-gigabyte download for it.
+func TestStopLeavesTheModelOnDisk(t *testing.T) {
+	t.Setenv(hithome.EnvHome, t.TempDir())
+	if err := hithome.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	model := ModelPath()
+	if err := os.MkdirAll(filepath.Dir(model), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(model, []byte("gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	running, ram, err := Stop()
+	if err != nil {
+		t.Fatalf("Stop with no server: %v", err)
+	}
+	if running || ram != 0 {
+		t.Errorf("Stop reported running=%v ram=%d with no server", running, ram)
+	}
+	if _, err := os.Stat(model); err != nil {
+		t.Errorf("Stop deleted the model: %v", err)
+	}
+}
+
+// A run file left behind by a crash names a pid that is gone. Stop must clear
+// it rather than report a server that is not there, or status lies forever.
+func TestStopClearsAStaleRunFile(t *testing.T) {
+	t.Setenv(hithome.EnvHome, t.TempDir())
+	if err := hithome.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	// A pid that cannot be alive.
+	if err := os.WriteFile(hithome.RunFile(),
+		[]byte(`{"pid":999999,"port":1,"model":"x","binary":"y","started":"2020-01-01T00:00:00Z"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	running, _, err := Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if running {
+		t.Error("reported a dead pid as running")
+	}
+	if _, err := os.Stat(hithome.RunFile()); !os.IsNotExist(err) {
+		t.Error("stale run file was not cleared")
+	}
+}
