@@ -19,7 +19,7 @@ const maxStreamLine = 4 << 20
 // OpenAI-compatible chat delta and completion choice, and llama.cpp's own
 // top-level content. Which fields are populated tells you which one arrived.
 type frame struct {
-	// llama.cpp /completion and /infill
+	// llama.cpp /completion
 	Content         string `json:"content"`
 	Stop            *bool  `json:"stop"`
 	Done            *bool  `json:"done"`

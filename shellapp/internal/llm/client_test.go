@@ -26,9 +26,6 @@ func TestRouteSwitch(t *testing.T) {
 		{"system only", Request{System: "you are a commit writer"}, "/v1/chat/completions"},
 		{"empty request", Request{}, "/v1/chat/completions"},
 		{"prompt", Request{Prompt: "func main"}, "/v1/completions"},
-		{"prompt and suffix", Request{Prompt: "func main", Suffix: "}"}, "/infill"},
-		{"suffix alone", Request{Suffix: "}"}, "/infill"},
-		{"suffix beats messages", Request{Messages: []Message{{Role: RoleUser}}, Prompt: "a", Suffix: "b"}, "/infill"},
 	}
 
 	for _, tt := range tests {
@@ -73,13 +70,6 @@ func TestCompleteParsesEachShape(t *testing.T) {
 			body:     `{"choices":[{"text":"4","finish_reason":"length"}]}`,
 			wantText: "4",
 			wantStop: "length",
-		},
-		{
-			name:     "infill",
-			req:      Request{Prompt: "func add(", Suffix: ") int {"},
-			body:     `{"content":"a, b int","stop":true,"stop_type":"eos","tokens_predicted":5}`,
-			wantText: "a, b int",
-			wantStop: "eos",
 		},
 	}
 
@@ -232,7 +222,7 @@ func TestDeadlineFiresOnASilentServer(t *testing.T) {
 		max  time.Duration
 	}{
 		{"chat uses Timeout", Request{Messages: []Message{{Role: RoleUser, Content: "x"}}}, 2 * time.Second},
-		{"infill uses FastTimeout", Request{Prompt: "a", Suffix: "b"}, time.Second},
+		{"Priority uses FastTimeout", Request{Prompt: "a", Priority: true}, time.Second},
 	}
 
 	for _, tt := range tests {
@@ -254,9 +244,9 @@ func TestDeadlineFiresOnASilentServer(t *testing.T) {
 	}
 }
 
-// The infill route must be bounded by FastTimeout, not Timeout: a completion
-// that arrives after the user typed the next character is worse than none.
-func TestInfillUsesFastTimeout(t *testing.T) {
+// A Priority request must be bounded by FastTimeout, not Timeout: it exists
+// for a caller judged on latency, where a late answer is worse than none.
+func TestPriorityUsesFastTimeout(t *testing.T) {
 	setup(t)
 
 	srv := silentServer(t)
@@ -264,11 +254,11 @@ func TestInfillUsesFastTimeout(t *testing.T) {
 	c := New(Config{Endpoint: endpointOf(srv), Timeout: 10 * time.Second, FastTimeout: 50 * time.Millisecond})
 
 	start := time.Now()
-	if _, err := c.Complete(context.Background(), Request{Prompt: "a", Suffix: "b"}); !errors.Is(err, ErrTimeout) {
+	if _, err := c.Complete(context.Background(), Request{Prompt: "a", Priority: true}); !errors.Is(err, ErrTimeout) {
 		t.Fatalf("err = %v, want ErrTimeout", err)
 	}
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
-		t.Errorf("infill waited %v; it used the slow timeout", elapsed)
+		t.Errorf("a Priority request waited %v; it used the slow timeout", elapsed)
 	}
 }
 
@@ -488,17 +478,6 @@ func TestSemaphoreLimitsInFlightAndPriorityBypasses(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("a Priority request was held in the queue")
 	}
-
-	// So does /infill, without asking.
-	go c.Complete(context.Background(), Request{Prompt: "pre", Suffix: "post"})
-	select {
-	case p := <-entered:
-		if p != "/infill" {
-			t.Errorf("expected the infill request, got %s", p)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("an /infill request was held in the queue")
-	}
 }
 
 func TestBuildBody(t *testing.T) {
@@ -526,12 +505,6 @@ func TestBuildBody(t *testing.T) {
 			req:    Request{Prompt: "2+2=", Temperature: 0.2, TopP: 0.9, Seed: 7, Stop: []string{"\n\n\n"}},
 			want:   map[string]any{"prompt": "2+2=", "temperature": 0.2, "top_p": 0.9, "seed": 7},
 			absent: []string{"input_prefix", "messages"},
-		},
-		{
-			name:   "infill splits around the cursor",
-			req:    Request{Prompt: "func add(", Suffix: ") int {", MaxTokens: 32},
-			want:   map[string]any{"input_prefix": "func add(", "input_suffix": ") int {", "n_predict": 32},
-			absent: []string{"max_tokens", "prompt", "messages", "stream_options"},
 		},
 		{
 			name:   "grammar is sent when set",
@@ -581,7 +554,7 @@ func TestBuildBody(t *testing.T) {
 				t.Error("temperature must always be sent")
 			}
 			if tt.stream {
-				if _, ok := got["stream_options"]; !ok && routeFor(tt.req) != routeInfill {
+				if _, ok := got["stream_options"]; !ok {
 					t.Error("a streamed OpenAI request must ask for usage")
 				}
 			}

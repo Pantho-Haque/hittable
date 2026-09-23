@@ -1,8 +1,17 @@
 # Commit message generator for the shellapp TUI
 
-> Status: in progress. Supersedes the heuristic-only draft of this document.
-> `c` pre-fills a compose editor; a local model rewrites the draft into prose
-> when one is installed, and the heuristic stands alone when one is not.
+> Status: shipped. Supersedes the heuristic-only draft of this document.
+> `c` pre-fills a compose editor. With a model installed, it writes the subject
+> and the body; without one, the mechanical draft stands alone.
+>
+> One thing here was wrong and is worth recording. This document originally had
+> the model "rewrite the draft into prose". It does not, because that was tried
+> and it invented details — a preview pane that did not exist, in every one of
+> five runs. What ships instead is narrower: the model is shown a
+> *specification* of the change (directories, each package's own doc comment,
+> the exported symbols added — deliberately no line counts), and every claim it
+> makes is checked back against that specification before it reaches the editor.
+> See "Getting a valid message out of a 3B model" below.
 
 ## Context
 
@@ -28,8 +37,8 @@ heuristic will only ever emit `- ui/screens: view.go (+96 −31)`. Describing a 
 needs a model.
 
 **Goal:** press `c` and land in an editor already holding a well-formed conventional
-commit — factual from the first frame, and rewritten into prose by a local model if
-one is installed.
+commit — factual from the first frame, and improved by a local model if one is
+installed, without ever asserting something the diff does not support.
 
 ## Two things that are easy to get wrong here
 
@@ -197,6 +206,32 @@ line before the body; reject bodies containing `As an AI` or that merely restate
 subject. Then: mechanical repair → one re-ask at `temperature 0` (skipped while
 streaming, where the user is already reading) → heuristic, with the footer saying
 `heuristic draft · model output rejected`.
+
+### Grounding: the check that replaced the phrase filter
+
+The first attempt at keeping the model honest was a list of forbidden phrases —
+`easy to use`, `intuitive`, `allows users to`. It does not work, and the reason
+is worth stating: a phrase list filters *wording*, and the problem is *truth*.
+Five runs on the same diff all invented a preview pane; four were rejected for
+how they were worded and the fifth passed saying exactly the same false thing in
+different words.
+
+What works is checking each claim against the specification the model was given:
+
+- a path a bullet names must be one the change touched;
+- an identifier must appear in the spec's vocabulary;
+- a symbol named beside a directory must belong to that directory.
+
+Two refinements came out of real use, both of which were rejecting correct
+bullets. Anything quoted from the spec is grounded by definition — purpose lines
+are the author's prose and contain paths like `~/.hittable/config.json` that are
+not part of the change. And a word preceded by an article is prose, not an
+identifier: "which closes the AI" is English, even though `AI` is also a type.
+
+Bullets are dropped individually rather than discarding the body. One wrong
+claim in six used to throw away five correct ones and leave the user watching
+the model's work be replaced by the file list. If fewer than half survive, the
+mechanical body is the honest answer.
 
 ## Streaming into the editor
 

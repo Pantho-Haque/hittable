@@ -31,7 +31,8 @@ installs lives in one directory that ` + "`hittable model delete`" + ` removes.
   hittable model delete    remove it from this machine and reclaim the disk
 
 Without a model the Git panel still drafts a commit message from the staged
-diff; the model only rewrites that draft into prose.`,
+diff; the model rewrites it, and every claim it makes is checked back against
+the changes before you see it.`,
 }
 
 var modelEnableCmd = &cobra.Command{

@@ -38,8 +38,7 @@ type Message struct {
 
 // Request is one generation. Which fields are set decides the route:
 //
-//	Suffix != ""                 -> /infill            (fill-in-the-middle)
-//	Prompt != "" (no Suffix)     -> /v1/completions    (raw completion)
+//	Prompt != ""                 -> /v1/completions    (raw completion)
 //	otherwise                    -> /v1/chat/completions
 //
 // Temperature is always sent, so the zero value means greedy decoding rather
@@ -47,8 +46,7 @@ type Message struct {
 // thing must get the same sampling.
 type Request struct {
 	Messages []Message // chat turns
-	Prompt   string    // raw prompt, or the prefix when Suffix is set
-	Suffix   string    // text after the cursor; its presence selects /infill
+	Prompt   string    // raw prompt for the completions route
 	System   string    // convenience: prepended as a system Message on the chat route
 
 	Model       string
@@ -133,7 +131,7 @@ type Config struct {
 	// Timeout bounds a request that arrives without its own deadline.
 	// Default 60s.
 	Timeout time.Duration
-	// FastTimeout bounds the /infill route, which is on the typing path.
+	// FastTimeout bounds a Priority request, for a latency-critical caller.
 	// Default 800ms.
 	FastTimeout time.Duration
 	// MaxInFlight is the number of concurrent non-priority requests.

@@ -7,7 +7,7 @@ import (
 	"github.com/hittable/shellapp/internal/llm"
 )
 
-// Drafter rewrites the heuristic draft into prose. The git panel declares this
+// Drafter turns a digest of the staged changes into a message. The git panel declares this
 // interface itself so it depends on no inference package; ClientDrafter is the
 // implementation that does.
 type Drafter interface {

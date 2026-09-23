@@ -1,0 +1,135 @@
+name: Release shellapp
+
+# The browser extension has its own workflow on v* tags. This one uses a
+# separate prefix so the two can be released independently: tag `shellapp-v1.2.0`
+# to cut a TUI release without touching the extension.
+on:
+  push:
+    tags:
+      - "shellapp-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. shellapp-v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: shellapp/go.mod
+          cache-dependency-path: shellapp/go.sum
+      # A release that does not pass its own tests is not a release.
+      - name: Vet and test
+        working-directory: shellapp
+        run: go vet ./... && go test ./... -timeout 600s
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: darwin, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: shellapp/go.mod
+          cache-dependency-path: shellapp/go.sum
+
+      - name: Resolve version
+        id: v
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      # CGO_ENABLED=0 keeps every build a static binary with no libc to match,
+      # which is what lets one Linux build run on any distribution. The project
+      # has no cgo, so this costs nothing.
+      - name: Build
+        working-directory: shellapp
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          out="hittable"
+          [ "$GOOS" = windows ] && out="hittable.exe"
+          go build -trimpath \
+            -ldflags "-s -w -X main.version=${{ steps.v.outputs.tag }}" \
+            -o "$out" ./cmd/hittable
+          ls -l "$out"
+
+      # tar.gz for unix so the executable bit survives; zip for Windows because
+      # that is what Windows can open without extra tools.
+      - name: Package
+        working-directory: shellapp
+        run: |
+          name="hittable_${{ steps.v.outputs.tag }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = windows ]; then
+            zip -q "../$name.zip" hittable.exe
+          else
+            tar -czf "../$name.tar.gz" hittable
+          fi
+          ls -l "../$name".*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hittable_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: hittable_*.*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # install.sh reads this file and refuses to install on a mismatch, so it
+      # has to list every asset by its published name.
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum hittable_* > checksums.txt
+          cat checksums.txt
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: hittable.sh ${{ github.event.inputs.tag || github.ref_name }}
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            ```sh
+            curl -fsSL https://raw.githubusercontent.com/Pantho-Haque/hittable/main/install.sh | sh
+            ```
+
+            The script picks the build for your machine, verifies its SHA-256
+            against `checksums.txt`, and installs to `~/.local/bin`.
+
+            Windows: use WSL for the full app, or take the `windows` asset —
+            everything works there except the integrated terminal, which
+            needs a PTY.
+
+            ### Verifying by hand
+
+            ```sh
+            sha256sum -c checksums.txt --ignore-missing
+            ```

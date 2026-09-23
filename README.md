@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/media/intro.png" alt="Hittable — a terminal API client · .hit files, shared with the web app" width="820">
+</p>
+
 # <p align="center">📦 Hittable</p>
 
 <p align="center">
@@ -50,6 +54,42 @@ Hittable is a lightweight, open-source HTTP API client that runs entirely in you
 - **🔍 Deep Search**: Find exactly what you need in massive API payloads with floating text match highlights.
 - **⌨️ Pro Shortcuts**: `Cmd/Ctrl + Enter` (Send), `Cmd/Ctrl + S` (Save), `Shift + T` (New Route), `Cmd/Ctrl + F` (Search).
 - **🛡️ Type Safe**: Built with strict TypeScript for maximum reliability and a bulletproof developer experience.
+
+---
+
+## hittable.sh — the same thing in your terminal
+
+`hittable.sh` is a terminal (TUI) API client written in Go. It opens a project directory,
+shows the whole tree, and runs the requests inside it. It reads and writes the same plain
+`.hit` JSON files and the same `hittable/env.json` as the web app, so one folder opens in
+either — edit a request in the browser, send it from the shell, commit the file.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Pantho-Haque/hittable/main/install.sh | sh
+```
+
+![The explorer: the whole project as one tree, single click opens, git status colours every row](docs/media/s1.png)
+
+Beyond requests it is a small editor: syntax highlighting, folding, local autocompletion,
+markdown preview, fuzzy file find and live grep, and an integrated shell on a real PTY.
+
+![The welcome screen beside the file tree, listing the shell commands: init, import, export, uninstall](docs/media/still-term.png)
+
+`ctrl+r` sends. The response panel shows status, timing and size, with the body
+highlighted and searchable.
+
+![Response panel: 200 OK, 199ms, 421B, with the JSON body highlighted](docs/media/s3.png)
+
+There is a full Git panel — status, commits, branches, stashes, blame — with click-to-stage
+rows and a diff pane that does inline or side-by-side.
+
+![The Git panel showing four changed files and the diff of a new .hit file](docs/media/s2.png)
+
+Press `c` in the Git panel and it drafts the commit message. That part is opt-in and
+entirely local: nothing is downloaded until you run `hittable model enable`, and nothing
+leaves the machine after that.
+
+**[Full documentation → `shellapp/README.md`](shellapp/README.md)**
 
 ---
 

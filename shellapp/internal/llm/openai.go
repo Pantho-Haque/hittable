@@ -10,8 +10,6 @@ import (
 // which is always sent (see Request).
 func buildBody(rt route, req Request, stream bool) map[string]any {
 	switch rt {
-	case routeInfill:
-		return infillBody(req, stream)
 	case routeCompletions:
 		return completionBody(req, stream)
 	default:

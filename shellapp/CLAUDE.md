@@ -793,8 +793,7 @@ send binding.
   separate verbs: conflating them charges a two-gigabyte download to anyone who
   only wanted their RAM back.
 - `internal/llm` is the reusable client for a local OpenAI-compatible server,
-  speaking chat, raw completion and `/infill` fill-in-the-middle through one
-  request type, with streaming, cancellation that preserves partial text, and a
+  speaking chat and raw completion through one request type, with streaming, cancellation that preserves partial text, and a
   cached health probe that is never called at startup. `internal/appconfig` and
   `internal/hithome` define the app's first user-level config and state
   directory. Nothing is wired into the UI yet and no model ships: `Drafter` is

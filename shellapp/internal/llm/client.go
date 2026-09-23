@@ -29,15 +29,12 @@ type route int
 const (
 	routeChat route = iota
 	routeCompletions
-	routeInfill
 )
 
 // routeFor is the whole routing rule. Adding a fourth shape means adding a
 // branch here and nowhere else.
 func routeFor(req Request) route {
 	switch {
-	case req.Suffix != "":
-		return routeInfill
 	case req.Prompt != "":
 		return routeCompletions
 	default:
@@ -47,8 +44,6 @@ func routeFor(req Request) route {
 
 func (r route) path() string {
 	switch r {
-	case routeInfill:
-		return "/infill"
 	case routeCompletions:
 		return "/v1/completions"
 	default:
@@ -89,16 +84,14 @@ func (c *HTTPClient) run(parent context.Context, req Request, onChunk func(Chunk
 	ctx, cancel := parent, context.CancelFunc(func() {})
 	if _, ok := parent.Deadline(); !ok {
 		timeout := c.cfg.Timeout
-		if rt == routeInfill {
+		if req.Priority {
 			timeout = c.cfg.FastTimeout
 		}
 		ctx, cancel = context.WithTimeout(parent, timeout)
 	}
 	defer cancel()
 
-	// /infill is on the typing path and bypasses the queue for the same reason
-	// Priority does: latency, not throughput, is what it is judged on.
-	release, err := c.acquire(ctx, req.Priority || rt == routeInfill)
+	release, err := c.acquire(ctx, req.Priority)
 	if err != nil {
 		return nil, c.classify(parent, ctx, err)
 	}

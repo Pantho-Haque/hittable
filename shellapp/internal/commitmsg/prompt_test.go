@@ -65,8 +65,8 @@ func TestBuildRequest(t *testing.T) {
 	if !strings.Contains(req.Grammar, "bullet") {
 		t.Errorf("the grammar does not enforce the bullet shape:\n%s", req.Grammar)
 	}
-	if req.Suffix != "" || req.Prompt != "" {
-		t.Error("BuildRequest must use the chat route, not /infill or /completions")
+	if req.Prompt != "" {
+		t.Error("BuildRequest must use the chat route, not /completions")
 	}
 }
 

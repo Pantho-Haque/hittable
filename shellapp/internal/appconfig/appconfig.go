@@ -6,9 +6,9 @@
 // prevent the app from opening.
 //
 // Non-goals: this package does not watch files, does not cache, holds no global
-// state, and knows nothing about what the values mean. The --ai command-line
-// flag sits above the environment in the precedence order and is applied by the
-// caller, not here. Save is the one write path and exists only so that
+// state, and knows nothing about what the values mean. A caller may layer its
+// own source above the environment; nothing here reads command-line flags.
+// Save is the one write path and exists only so that
 // `hittable model enable|disable` can flip ai.enabled.
 package appconfig
 
