@@ -95,7 +95,7 @@ func (t *Terminal) Start() error {
 	if err != nil {
 		return err
 	}
-	t.vt = vt10x.New(vt10x.WithSize(t.Cols, t.Rows))
+	t.vt = vt10x.New(vt10x.WithSize(t.Cols, t.Rows), vt10x.WithWriter(replyWriter{t}))
 	t.ptmx = ptmx
 	t.cmd = cmd
 	t.running = true
@@ -197,15 +197,129 @@ func (t *Terminal) Close() {
 	t.running = false
 }
 
-// modeSniffer watches the output stream for bracketed-paste mode changes.
-type modeSniffer struct {
-	r io.Reader
-	t *Terminal
+// replyWriter carries the emulator's answers to device queries back to the
+// child: cursor position (CPR, from \x1b[6n), device status, and the OSC
+// colour reports. vt10x defaults this writer to io.Discard, which leaves every
+// query unanswered — a full-screen TUI that asks where the cursor is before
+// its first redraw (Ink, and so Claude Code) then assumes a stale row and
+// draws its input box over output it had already printed.
+type replyWriter struct{ t *Terminal }
+
+func (w replyWriter) Write(b []byte) (int, error) {
+	w.t.Write(b) // non-blocking; shares the serialised PTY writer
+	return len(b), nil
 }
 
+// modeSniffer watches the output stream for bracketed-paste mode changes and
+// drops the escape sequences vt10x misreads (see stripUnsupportedCSI).
+type modeSniffer struct {
+	r     io.Reader
+	t     *Terminal
+	carry []byte // partial escape sequence held back from the previous read
+}
+
+// maxCarry bounds how much of a partial escape sequence is held back waiting
+// for the rest. Every sequence we care about is well under this.
+const maxCarry = 32
+
+// stripUnsupportedCSI removes CSI sequences that vt10x dispatches on their
+// final byte without understanding their private-parameter prefix.
+//
+// vt10x only recognises '?' as a private marker, and even then checks for it
+// in just one place (DECSTBM). So the keyboard-protocol sequences a modern TUI
+// probes with are executed as unrelated cursor commands:
+//
+//	\x1b[?u, \x1b[<u, \x1b[>5u  (kitty keyboard query/pop/push) -> DECRC
+//	\x1b[?1049s                 (XTSAVE)                        -> DECSC
+//	\x1b[>4;2m                  (XTMODKEYS)                     -> SGR reset
+//
+// The DECRC one is why a program appeared to type into the middle of its own
+// output: Claude Code saves the cursor at startup and sends \x1b[?u on every
+// keystroke, so each character was drawn at the startup position instead of in
+// its input box. '<' and '>' sequences are dropped wholesale because vt10x
+// implements none of them; '?' sequences are dropped only for 'u' and 's',
+// since '?...h' and '?...l' are genuine DECSET/DECRST that it does handle.
+//
+// carry is a trailing partial sequence to prepend to the next read.
+func stripUnsupportedCSI(b []byte) (out, carry []byte) {
+	out = b[:0] // in place: we only ever drop bytes, so writes trail reads
+	for i := 0; i < len(b); {
+		if b[i] != 0x1b {
+			out = append(out, b[i])
+			i++
+			continue
+		}
+		n, drop, ok := scanCSI(b[i:])
+		if !ok {
+			if len(b)-i <= maxCarry {
+				return out, b[i:]
+			}
+			out = append(out, b[i]) // implausibly long; resync on the next byte
+			i++
+			continue
+		}
+		if !drop {
+			out = append(out, b[i:i+n]...)
+		}
+		i += n
+	}
+	return out, nil
+}
+
+// scanCSI measures the escape sequence at the start of b, reporting whether it
+// is one of the forms vt10x misreads and whether b held enough bytes to tell.
+// A non-CSI escape yields the ESC byte alone; the rest passes through as-is.
+func scanCSI(b []byte) (n int, drop, ok bool) {
+	if len(b) < 2 {
+		return 0, false, false
+	}
+	if b[1] != '[' {
+		return 1, false, true
+	}
+	i := 2
+	if i >= len(b) {
+		return 0, false, false
+	}
+	priv := b[i] == '?' || b[i] == '<' || b[i] == '>'
+	extended := priv && b[i] != '?'
+	if priv {
+		i++
+	}
+	for i < len(b) && (b[i] >= '0' && b[i] <= '9' || b[i] == ';' || b[i] == ':') {
+		i++
+	}
+	if i >= len(b) {
+		return 0, false, false
+	}
+	final := b[i]
+	return i + 1, extended || (priv && (final == 'u' || final == 's')), true
+}
+
+// ptyLog, when HITTABLE_PTYLOG is set to a path, records the raw byte stream
+// the child writes, before the emulator parses it — the counterpart to
+// HITTABLE_KEYLOG, for finding which sequence a misrendering program sent.
+var ptyLog = func() *os.File {
+	p := os.Getenv("HITTABLE_PTYLOG")
+	if p == "" {
+		return nil
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil
+	}
+	return f
+}()
+
 func (m *modeSniffer) Read(p []byte) (int, error) {
-	n, err := m.r.Read(p)
+	// Leave headroom so a held-back partial sequence always fits back in.
+	if len(p) <= maxCarry {
+		return m.r.Read(p)
+	}
+	n, err := m.r.Read(p[:len(p)-maxCarry])
 	if n > 0 {
+		if ptyLog != nil {
+			ptyLog.Write(p[:n]) // raw, before filtering
+		}
 		if bytes.Contains(p[:n], []byte("\x1b[?2004h")) {
 			m.t.bracketed.Store(true)
 		}
@@ -213,7 +327,16 @@ func (m *modeSniffer) Read(p []byte) (int, error) {
 			m.t.bracketed.Store(false)
 		}
 	}
-	return n, err
+	if n == 0 {
+		return 0, err
+	}
+	src := p[:n]
+	if len(m.carry) > 0 {
+		src = append(append(make([]byte, 0, len(m.carry)+n), m.carry...), src...)
+	}
+	out, carry := stripUnsupportedCSI(src)
+	m.carry = append(m.carry[:0], carry...)
+	return copy(p, out), err
 }
 
 // captureScrollback compares the new screen with the previous one; if the

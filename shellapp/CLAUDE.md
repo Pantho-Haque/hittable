@@ -1,4 +1,4 @@
-[<64;61;32M[<64;61;32M[<65;46;31M# hittable.sh — Full Requirements & Architecture Spec
+# hittable.sh — Full Requirements & Architecture Spec
 
 This is the complete, self-contained source of truth for `hittable.sh`, a terminal-based
 (TUI) API client written in Go. Read this doc top to bottom before writing any code — it
@@ -289,8 +289,6 @@ internal/
 ui/
 ├── theme/
 │   └── theme.go                 # dark theme, cyan accents, all Lip Gloss styles
-├── keymap/
-│   └── keymap.go                 # centralized keymap: every action defined once
 ├── components/
 │   ├── explorer/
 │   │   ├── model.go              # ExplorerComponent struct, New, SetSize, RebuildTree
@@ -473,7 +471,8 @@ send binding.
 7. **Runner ↔ Text toggle**: `Ctrl+T` flips `ViewMode`. Content serialized/deserialized
    on mode switch.
 8. **Centralized keymap**: all bindings in `ui/keymap/keymap.go`. Send is `Ctrl+Enter`.
-   Footer shows `ctrl+` notation.
+   Footer shows `ctrl+` notation. *(Superseded — see v3.0.1. The package was never
+   imported and `ctrl+enter` is not deliverable; §9 is the binding reference.)*
 9. **Response search**: `Ctrl+F` opens overlay. Live match highlighting. Next/prev
    navigation. Match counter.
 10. **Method dropdown**: `Enter` on URL bar opens GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS.
@@ -800,6 +799,62 @@ send binding.
   nil, every path falls back to the draft, and the test suite passes with no
   network and nothing downloaded. Still stdlib-only — no new dependency, no
   cgo, no build tags, and the binary is the same size.
+
+### v3.0.2 — Keyboard-protocol probes no longer teleport the cursor
+- Typing into a full-screen TUI in the integrated terminal put the characters
+  in the middle of the program's own output instead of its input box. vt10x
+  dispatches a CSI sequence on its final byte without understanding the
+  private-parameter prefix — it recognises only `?`, and checks for it in just
+  one place (DECSTBM). So the keyboard-protocol sequences a modern TUI probes
+  with are executed as unrelated cursor commands: `\x1b[?u`, `\x1b[<u` and
+  `\x1b[>5u` (kitty keyboard query, pop, push) all run as DECRC, `\x1b[?1049s`
+  (XTSAVE) as DECSC, and `\x1b[>4;2m` (XTMODKEYS) as an argument-less SGR, which
+  resets every attribute mid-frame. Claude Code saves the cursor at startup and
+  sends `\x1b[?u` on every keystroke, so each character was drawn back at the
+  startup position — right under the shell command that launched it.
+- `stripUnsupportedCSI` drops those sequences before the emulator parses them.
+  `<` and `>` go wholesale, since vt10x implements none of them; `?` goes only
+  for `u` and `s`, because `?…h` / `?…l` are genuine DECSET/DECRST it handles.
+  The filter lives in `modeSniffer`, which already wrapped the PTY reader, and
+  holds back a trailing partial sequence (up to `maxCarry`) so a probe split
+  across two reads is not mistaken for literal text — the same hazard v2.8.3
+  fixed on the input side. `Read` takes its headroom out of the read length, so
+  a held-back fragment always fits back into the caller's buffer.
+- `HITTABLE_PTYLOG=<path>` records the raw byte stream the child writes, before
+  the emulator sees it — the counterpart to `HITTABLE_KEYLOG`, and how this was
+  found. Both are the first thing to reach for when a program misrenders here.
+- Verified by driving the real panel: Claude Code's banner, input box and status
+  rows all render, and typed text lands in the box.
+
+### v3.0.1 — Terminal answers device queries; dead keymap removed
+- A full-screen TUI in the integrated terminal drew over its own output: the
+  input line landed in the middle of text the program had already printed.
+  `vt10x.New` defaults its reply writer to `io.Discard`, and the panel never
+  passed `WithWriter`, so every device query the child sent was answered into
+  nothing. A program that asks where the cursor is before its first inline
+  redraw (Ink, and so Claude Code) got no cursor position report back, assumed
+  a stale row, and composed its frame against it. `replyWriter` now carries
+  vt10x's answers — cursor position from `\x1b[6n`, device status, and the OSC
+  10/11 colour reports terminal themes are detected with — back through the
+  existing serialised PTY writer, which is already non-blocking, so no new
+  deadlock path between the reader and writer goroutines.
+  `TestCursorPositionReport` runs `printf '\033[6n'` in a real shell on the
+  panel and asserts the coordinates come back; it fails when the writer is
+  unwired.
+- `ui/keymap` is deleted. Nothing ever imported it, and the bindings it
+  advertised were not the ones that run: `ctrl+shift+c`, `ctrl+shift+n` and
+  `ctrl+enter` are not deliverable to a terminal program at all — a terminal
+  sends `0x03` for `ctrl+c` and `ctrl+shift+c` alike, and plain CR for
+  `ctrl+enter`, so shift is unencodable and the chords never arrive. The real
+  bindings are `ctrl+y` (copy as curl), `ctrl+f` (new folder) and `ctrl+r`
+  (send), aliased at each call site in `ui/screens/update_key.go`. §9 is the
+  one binding reference; there is no second source of truth to drift from it.
+- On `cmd` vs `ctrl` across macOS and Linux: there is nothing to add. macOS
+  terminals bind `Cmd` at the emulator level and never forward it, and the
+  legacy key encoding has no bits for it, so `msg.String()` cannot return
+  `cmd+c`. `ctrl+c` is already the convention on both platforms. The mac
+  difference that *is* real is Option sending a composed rune, handled by the
+  `"alt+z", "Ω"` and `"alt+o", "ø"` aliases in `texteditor.go`.
 
 ### v2.9.1 — Collapse / expand all
 - The text view header gained a `[ ▾ Collapse ]` / `[ ▸ Expand ]` toggle on the

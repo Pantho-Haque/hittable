@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -145,5 +146,84 @@ func TestHighlight(t *testing.T) {
 	// Past the end of a short row: blank cells still highlight.
 	if got := highlight("ab", 0, 4, 4); got != "\x1b[7mab  \x1b[27m" {
 		t.Fatalf("padding: got %q", got)
+	}
+}
+
+// A child that asks where the cursor is must get an answer. vt10x discards its
+// replies unless a writer is wired up (replyWriter), and a TUI that gets no
+// answer draws over its own output.
+func TestCursorPositionReport(t *testing.T) {
+	term := New(t.TempDir(), nil)
+	term.shell = "/bin/sh"
+	term.SetSize(60, 8)
+	if err := term.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer term.Close()
+	time.Sleep(300 * time.Millisecond)
+
+	for _, r := range "printf '\\033[6n'" {
+		term.SendKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	term.SendKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// The reply (ESC [ row ; col R) arrives on the shell's stdin with no
+	// newline, so it sits in the line buffer until we terminate the line. The
+	// shell then fails to run "[row;colR", which prints the coordinates as
+	// plain text — visible proof the answer came back.
+	time.Sleep(500 * time.Millisecond)
+	term.SendKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	want := regexp.MustCompile(`;\d+R`)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if want.MatchString(term.Snapshot()) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("no cursor position report reached the shell; screen:\n%s", term.Snapshot())
+}
+
+// vt10x dispatches CSI on the final byte without understanding the private
+// prefix, so a kitty-keyboard query reads as "restore cursor". Claude Code
+// sends \x1b[?u on every keystroke; unfiltered, each character lands wherever
+// the cursor was last saved instead of in the program's input box.
+func TestStripUnsupportedCSI(t *testing.T) {
+	for _, c := range []struct{ name, in, want string }{
+		{"kitty query", "a\x1b[?ub", "ab"},
+		{"kitty pop", "a\x1b[<ub", "ab"},
+		{"kitty push", "a\x1b[>5ub", "ab"},
+		{"xtsave", "a\x1b[?1049sb", "ab"},
+		{"xtmodkeys", "a\x1b[>4;2mb", "ab"},
+		{"xtversion", "a\x1b[>0qb", "ab"},
+		{"decset kept", "a\x1b[?2004hb", "a\x1b[?2004hb"},
+		{"decrst kept", "a\x1b[?25lb", "a\x1b[?25lb"},
+		{"real decrc kept", "a\x1b[ub", "a\x1b[ub"},
+		{"real decsc kept", "a\x1b[sb", "a\x1b[sb"},
+		{"sgr kept", "a\x1b[38;5;42mb", "a\x1b[38;5;42mb"},
+		{"cursor up kept", "a\x1b[4Ab", "a\x1b[4Ab"},
+		{"esc7 kept", "a\x1b7b", "a\x1b7b"},
+		{"osc kept", "a\x1b]0;title\x07b", "a\x1b]0;title\x07b"},
+	} {
+		out, carry := stripUnsupportedCSI([]byte(c.in))
+		if got := string(out); got != c.want || len(carry) != 0 {
+			t.Errorf("%s: got %q carry %q, want %q", c.name, got, carry, c.want)
+		}
+	}
+}
+
+// A sequence split across two reads must not be mistaken for literal text.
+func TestStripUnsupportedCSISplit(t *testing.T) {
+	full := "x\x1b[?uy"
+	for cut := 1; cut < len(full); cut++ {
+		out1, carry := stripUnsupportedCSI([]byte(full[:cut]))
+		got := string(out1)
+		rest := append(append([]byte(nil), carry...), full[cut:]...)
+		out2, carry2 := stripUnsupportedCSI(rest)
+		got += string(out2)
+		if got != "xy" || len(carry2) != 0 {
+			t.Errorf("cut at %d: got %q carry %q, want %q", cut, got, carry2, "xy")
+		}
 	}
 }
