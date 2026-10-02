@@ -183,8 +183,9 @@ finder that skips `node_modules`, `.git`, `.next`, `dist`, `build`, `vendor` and
 **Integrated terminal.** `ctrl+j`, or click the `▸ TERMINAL` strip. `$SHELL -l` on a real
 PTY, so full-screen programs work. While it has focus every key goes to the shell;
 `ctrl+b` returns to the explorer. 5000 lines of scrollback (wheel, or
-`shift+↑/↓`/`shift+pgup/pgdown`). Drag to select and `ctrl+c` to copy — with nothing
-selected `ctrl+c` still interrupts the shell, as in VS Code. Multi-line pastes go through
+`shift+↑/↓`/`shift+pgup/pgdown`). Drag to select — the selection is copied the moment
+you release, and `ctrl+c` copies it too; with nothing selected `ctrl+c` still interrupts
+the shell, as in VS Code. Drag the `▸ TERMINAL` strip to resize the panel. Multi-line pastes go through
 as one bracketed block rather than being executed line by line.
 
 **Git.** `ctrl+g`, `alt+g`, `F5`, `g` in the explorer, or the `⎇ Git` button. The panel
@@ -197,7 +198,7 @@ sections:
 | Commits | repo history, or `f` for the open file's history; `/` searches message, author or hash |
 | Branches | `⏎` checkout, `n` new, `d` delete |
 | Stashes | `⏎` pop, `s` stash, `d` drop |
-| Blame | every line with author, age and commit; `b` turns on inline blame in the editor gutter |
+| Blame | the commits that wrote the open file on the left (newest first, line counts); every source line with its hash, author and age on the right, the selected commit's lines marked. Click a file in the explorer to blame it; `⏎` opens the editor at that line; `b` turns on inline blame in the editor gutter |
 
 The diff pane does inline or side-by-side (`v`), wraps or clips (`z`), and can ignore
 whitespace (`w`). Added and removed lines carry a full-width tint. `e` opens the working
@@ -412,10 +413,14 @@ Environment variables override both:
 | Send (mouse)          | click `▶ Send`  | URL bar              |
 | Terminal toggle/focus | `ctrl+j`, `` ctrl+` ``, click strip | Global (`ctrl+j` is the reliable one; `` ctrl+` `` only in terminals that emit NUL for it) |
 | Terminal leave        | `ctrl+b`        | Terminal focused (all other keys go to the shell) |
-| Terminal select/copy  | drag, `ctrl+c`  | Terminal focused (ctrl+c interrupts the shell only with no selection) |
+| Terminal select/copy  | drag (copies on release), `ctrl+c` | Terminal focused (ctrl+c interrupts the shell only with no selection) |
+| Terminal resize       | drag the `▸ TERMINAL` strip | Terminal open |
 | Git panel             | `ctrl+g` (outside editors), `alt+g`, `F5`, `g` in explorer, click `⎇ Git` | Global |
-| Git: sections         | `1-5`, `tab`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
-| Git: diff layout      | drag `│`, `z`/`alt+z`/`⌥z`, `v`, `w` | resize split columns · wrap lines · inline⇄split · ignore whitespace |
+| Git: sections         | `1-5`, `h`/`l`, `←/→`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
+| Git: list ⇄ diff      | `tab`, click    | file list (left) ⇄ diff (right); `esc` back to the list |
+| Git: diff lines       | `jk`, `shift+↑↓`, `s`, `u`, `d`, click `[ ⟲ revert ]` / `[ + stage ]` / `[ − unstage ]` | stage · unstage-or-revert · revert the selected lines or the cursor's hunk |
+| Git: diff layout      | drag `│` / `─`, `z`/`alt+z`/`⌥z`, `v`, `w` | resize columns · list/graph · wrap · inline⇄split · ignore whitespace |
+| Git: edit in split    | click the new (right) side of a split diff | the editor takes the right column, the index side stays on the left; removed lines red, added lines green, and each hunk gets `⟲` (revert) and `+` (stage) buttons in the gutter between them; `esc` back to the diff |
 | Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `z` `d` `D` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · wrap lines · discard · undo all · commit · stash · push · pull · fetch · open/collapse · filter |
 | Git: commit type      | `←/→`, first letter, `⏎`, `esc` | Type picker (conventional repos only) |
 | Git: compose message  | `ctrl+s` commit · `ctrl+r` redraft · `esc` cancel | Message editor (full text editor: undo, selection, folding) |
@@ -429,7 +434,9 @@ Environment variables override both:
 | Git: blame            | `⏎` `b`         | go to line · toggle inline blame in editor |
 | Click                 | mouse left      | Everything: files, folders, tabs, toggle, method, URL cursor, editor cursor, response, body/headers label |
 | Scroll                | wheel           | Explorer, editor, response |
-| Resize explorer       | drag `│`        | Separator            |
+| Select any text       | drag over it (copied on release) · `ctrl+c` re-copies | Anywhere: explorer, response, preview, help, git lists; editors, the terminal panel and the git diff keep their own selections |
+| Resize explorer       | drag `│`        | Separator (`ctrl+b` is the only keyboard toggle) |
+| Resize runner / markdown split | drag the editor/response border · the editor/preview seam | Runner view · Markdown split |
 
 ---
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/hittable/shellapp/internal/document"
 	"github.com/hittable/shellapp/internal/hitfile"
+	"github.com/hittable/shellapp/ui/components/gitpanel"
 	"github.com/hittable/shellapp/ui/components/texteditor"
 )
 
@@ -81,6 +82,7 @@ func (m *MainScreen) loadDoc(path string) (*document.DocumentModel, error) {
 
 func (m *MainScreen) openFileRaw(path string) {
 	if m.ActiveFile == path {
+		m.GitOpen = m.GitOpen && m.Git.Section == gitpanel.SecBlame
 		if m.ViewMode == ViewText {
 			m.Focus = FocusTextEditor
 		} else if m.Focus == FocusExplorerPane {
@@ -99,7 +101,9 @@ func (m *MainScreen) openFileRaw(path string) {
 	}
 	m.ActiveFile = path
 	m.ShowHelp = false
-	m.GitOpen = false
+	// The Blame tab follows the file picked in the explorer; the other tabs
+	// give way to the editor.
+	m.GitOpen = m.GitOpen && m.Git.Section == gitpanel.SecBlame
 	m.Git.SetActiveFile(path)
 	m.applyBlame()
 	m.URLBar.CloseDropdown()

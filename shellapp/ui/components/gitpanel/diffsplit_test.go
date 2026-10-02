@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/hittable/shellapp/ui/theme"
 )
 
 func TestWrapCells(t *testing.T) {
@@ -42,7 +43,7 @@ func TestSplitDiffWrapsInsteadOfClipping(t *testing.T) {
 	const width, half = 41, 20 // 15 cells of text per column
 	long := strings.Repeat("x", 60)
 	in := []string{"@@ -1,1 +1,1 @@", "-old", "+" + long}
-	out := splitDiff(in, width, half, true)
+	out, _ := splitDiff(in, width, half, true, theme.MutedStyle)
 
 	var right strings.Builder
 	for _, l := range out {
@@ -67,8 +68,8 @@ func TestSplitDiffWrapOffClips(t *testing.T) {
 	long := strings.Repeat("x", 60)
 	in := []string{"@@ -1,1 +1,1 @@", "-old", "+" + long}
 
-	wrapped := splitDiff(in, width, half, true)
-	clipped := splitDiff(in, width, half, false)
+	wrapped, _ := splitDiff(in, width, half, true, theme.MutedStyle)
+	clipped, _ := splitDiff(in, width, half, false, theme.MutedStyle)
 	if len(clipped) >= len(wrapped) {
 		t.Fatalf("wrap off produced %d rows, wrap on %d", len(clipped), len(wrapped))
 	}
@@ -81,7 +82,7 @@ func TestSplitDiffWrapOffClips(t *testing.T) {
 func TestSplitDiffDividerPosition(t *testing.T) {
 	in := []string{"@@ -1,1 +1,1 @@", " ctx"}
 	for _, half := range []int{10, 20, 30} {
-		out := splitDiff(in, 41, half, true)
+		out, _ := splitDiff(in, 41, half, true, theme.MutedStyle)
 		row := ansi.Strip(out[len(out)-1])
 		if lipgloss.Width(row) != 41 {
 			t.Fatalf("half=%d: row width %d, want 41", half, lipgloss.Width(row))

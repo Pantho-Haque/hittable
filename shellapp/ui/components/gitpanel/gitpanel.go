@@ -10,6 +10,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -62,7 +65,13 @@ type row struct {
 	commit *gitx.Commit
 	branch *gitx.Branch
 	stash  *gitx.Stash
-	blame  int // line index for the blame section
+	blame  int // index into blameCommits (blame section)
+}
+
+// blameCommit is one commit that wrote lines of the blamed file.
+type blameCommit struct {
+	gitx.BlameLine
+	lines, first int // line count and first line index
 }
 
 // DoneMsg is delivered when an async git operation finishes.
@@ -94,22 +103,44 @@ type Panel struct {
 	FileHistory bool
 	InlineBlame bool
 
-	Status   *gitx.Status
-	Commits  []gitx.Commit
-	Branches []gitx.Branch
-	Stashes  []gitx.Stash
-	Blame    []gitx.BlameLine
-	BlameSrc []string // file lines shown beside blame entries
-	Filter   string
+	Status       *gitx.Status
+	Commits      []gitx.Commit
+	Branches     []gitx.Branch
+	Stashes      []gitx.Stash
+	Blame        []gitx.BlameLine
+	BlameSrc     []string // file lines shown beside blame entries
+	blameCommits []blameCommit
+	Filter       string
 
 	rows           []row
 	Cursor         int
 	listScroll     int
 	detail         []string
 	detailCache    []string // detailLines() memo
+	detailSrc      [][]int  // rendered row → detail line(s) it shows (memo)
 	detailCacheKey string   // width/divider/split/wrap it was built for
 	detailScroll   int
 	collapsed      [2]bool // status groups
+
+	// Two columns: the list (with the commit graph under it) on the left,
+	// the diff on the right. ListW / ListRows are the user's drag
+	// preferences (0 = default); the drag flags live until EndDrag.
+	ListW, ListRows    int
+	dragList, dragRows bool
+	HoverSep           string   // divider under the mouse: list · rows · split
+	graph              []string // commit graph of the selected branch
+	graphFor           string
+	graphScroll        int
+
+	// FocusDiff moves the keyboard to the diff: diffCursor is the rendered
+	// row under it, and line ops (stage / revert / unstage) act on the
+	// selection or the cursor's hunk. hunkBtns is the button strip drawn
+	// on hunk headers ("" when the diff cannot be patched by line).
+	FocusDiff  bool
+	diffCursor int
+	hunkBtns   string
+	hoverHunk  int    // rendered row whose hunk button is hovered, -1 = none
+	hoverHunkB string // "stage" / "undo"
 
 	// Merge state (merge / rebase / cherry-pick waiting on conflicts).
 	Merge     bool
@@ -137,11 +168,16 @@ type Panel struct {
 	// Detail-pane text selection (line range), -1 = none.
 	selAnchor, selEnd int
 
-	Split     bool
-	Editing   bool
-	Editor    *texteditor.TextEditor
-	EditPath  string
-	editDirty bool
+	Split      bool
+	Editing    bool
+	Editor     *texteditor.TextEditor
+	EditPath   string
+	editDirty  bool
+	editOld    []string // index side, tabs expanded like the editor's buffer
+	editOldRaw []string // index side as git has it (patch "-" lines)
+	editHunks  []editHunk
+	editHover  int    // editor line whose gutter button is hovered, -1 = none
+	editHoverB string // "revert" / "stage"
 
 	// Composing edits the commit message in the detail pane, mirroring the
 	// Editing submode above. The editor opens pre-filled with the heuristic
@@ -214,7 +250,7 @@ type GenDoneMsg struct {
 }
 
 func New(repo *gitx.Repo) *Panel {
-	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1, HoverRow: -1, Wrap: true,
+	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1, HoverRow: -1, hoverHunk: -1, Wrap: true,
 		composeRules: commitmsg.DefaultRules()}
 }
 
@@ -275,6 +311,36 @@ func (p *Panel) Refresh() {
 	p.buildRows()
 	p.skipHeader()
 	p.loadDetail()
+	p.loadGraph(true)
+}
+
+// graphRef is the branch the graph pane follows: the branch under the cursor
+// in the Branches section, otherwise the checked-out one.
+func (p *Panel) graphRef() string {
+	if p.Section == SecBranches {
+		if r := p.current(); r != nil && r.branch != nil {
+			return r.branch.Name
+		}
+	}
+	if p.Status != nil && p.Status.Branch != "" && p.Status.Branch != "HEAD" {
+		return p.Status.Branch
+	}
+	return ""
+}
+
+// loadGraph reloads the commit graph. Unless forced it only runs when the
+// followed branch changed, so moving the cursor stays cheap.
+func (p *Panel) loadGraph(force bool) {
+	ref := p.graphRef()
+	if !force && ref == p.graphFor {
+		return
+	}
+	if p.Repo == nil {
+		return
+	}
+	p.graphFor = ref
+	p.graph, _ = p.Repo.Graph(ref, 200)
+	p.graphScroll = 0
 }
 
 // SetBlameSource supplies the editor's current lines for the blame list.
@@ -304,7 +370,7 @@ func (p *Panel) buildRows() {
 			}
 		}
 		if p.Merge {
-			h := row{text: fmt.Sprintf("⚠ %s in progress · %d conflict(s)", p.MergeKind, len(conflicts)), header: true, group: 2}
+			h := row{text: fmt.Sprintf("⚠ %s · %d conflict(s)", p.MergeKind, len(conflicts)), header: true, group: 2}
 			if len(conflicts) == 0 {
 				h.action = "✓ commit " + p.MergeKind
 			} else {
@@ -376,9 +442,12 @@ func (p *Panel) buildRows() {
 		}
 	case SecBlame:
 		if p.ActivePath == "" {
-			p.rows = append(p.rows, row{text: "Open a file to see its blame", header: true})
+			p.rows = append(p.rows, row{text: "Click a file in the explorer to see its blame", header: true})
+		} else {
+			p.rows = append(p.rows, row{text: " " + p.ActivePath, header: true})
 		}
-		for i := range p.Blame {
+		p.blameCommits = groupBlame(p.Blame)
+		for i := range p.blameCommits {
 			p.rows = append(p.rows, row{blame: i})
 		}
 	}
@@ -397,11 +466,18 @@ func (p *Panel) loadDetail() {
 		p.stopEdit()
 	}
 	p.detail, p.detailCache = nil, nil
-	p.detailScroll = 0
+	p.detailScroll, p.diffCursor = 0, 0
 	p.selAnchor, p.selEnd = -1, -1
+	p.hunkBtns = ""
 	r := p.current()
 	if r == nil || p.Repo == nil {
 		return
+	}
+	if p.canPatch(r) {
+		p.hunkBtns = "[ − unstage ]"
+		if !r.staged {
+			p.hunkBtns = "[ ⟲ revert ] [ + stage ]"
+		}
 	}
 	var text string
 	switch {
@@ -423,13 +499,11 @@ func (p *Panel) loadDetail() {
 		text, _ = p.Repo.Run("log", "-n", "30", "--date=relative", "--format=%h  %ad  %an: %s", r.branch.Name)
 	case r.stash != nil:
 		text = p.Repo.StashShow(r.stash.Ref)
-	case p.Section == SecBlame && r.blame < len(p.Blame):
-		b := p.Blame[r.blame]
-		if b.Uncommitted {
-			text = "Uncommitted changes"
-		} else {
-			text = p.Repo.Show(b.Hash)
-		}
+	case p.Section == SecBlame && r.blame < len(p.blameCommits):
+		p.detail = p.BlameSrc
+		p.detailScroll = max(p.blameCommits[r.blame].first-2, 0)
+		p.clamp()
+		return
 	}
 	p.detail, p.detailCache = strings.Split(strings.TrimRight(text, "\n"), "\n"), nil
 }
@@ -437,7 +511,7 @@ func (p *Panel) loadDetail() {
 // detailWidth is the usable width of the detail pane (the scrollbar column is
 // always reserved, so the content never shifts when one appears).
 func (p *Panel) detailWidth() int {
-	return max(p.Width-3, 1)
+	return max(p.rightW()-1, 1)
 }
 
 // detailLines renders the detail pane for the current width: side by side when
@@ -446,15 +520,22 @@ func (p *Panel) detailWidth() int {
 // flip, so a stale width can never survive a SetSize.
 func (p *Panel) detailLines() []string {
 	w, half := p.detailWidth(), p.splitHalf()
-	key := fmt.Sprintf("%d/%d/%v/%v", w, half, p.Split, p.Wrap)
+	hot := p.dragSplit || p.HoverSep == "split"
+	// The hovered hunk button is baked into the rows, so it is part of the key.
+	key := fmt.Sprintf("%d/%d/%v/%v/%v/%s/%d/%s", w, half, p.Split, p.Wrap, hot, p.hunkBtns, p.hoverHunk, p.hoverHunkB)
 	if p.detailCache != nil && p.detailCacheKey == key {
 		return p.detailCache
 	}
-	out := []string{}
-	if p.Split {
-		out = append(out, splitDiff(p.detail, w, half, p.Wrap)...)
+	out, src := []string{}, [][]int{}
+	if p.Section == SecBlame {
+		for i, l := range p.blameLines(w) {
+			out = append(out, l)
+			src = append(src, []int{i})
+		}
+	} else if p.Split {
+		out, src = splitDiff(p.detail, w, half, p.Wrap, sepStyle(hot))
 	} else {
-		for _, l := range p.detail {
+		for i, l := range p.detail {
 			chunks := fullWidth(diffLine(showWhitespace(l)), w, p.Wrap)
 			if st, tinted := diffRowStyle(l); tinted {
 				// Fill the rest of the row so the tint reaches the edge.
@@ -465,15 +546,138 @@ func (p *Panel) detailLines() []string {
 				}
 			}
 			out = append(out, chunks...)
+			for range chunks {
+				src = append(src, []int{i})
+			}
 		}
 	}
-	p.detailCache, p.detailCacheKey = out, key
+	// Hunk headers carry the line-op buttons, right-aligned.
+	if p.hunkBtns != "" {
+		bw := lipgloss.Width(p.hunkBtns)
+		for i, l := range out {
+			if s := src[i][0]; s < len(p.detail) && strings.HasPrefix(p.detail[s], "@@") && (i == 0 || src[i-1][0] != s) && w > bw+8 {
+				head := ansi.Truncate(l, w-bw-1, "…")
+				out[i] = head + strings.Repeat(" ", w-bw-lipgloss.Width(head)) + p.renderHunkBtns(i)
+			}
+		}
+	}
+	p.detailCache, p.detailSrc, p.detailCacheKey = out, src, key
 	return out
 }
 
-// EndDrag releases the split divider. The screen calls it on mouse-up, which
+// renderHunkBtns styles the hunk button strip, tinting the hovered one.
+func (p *Panel) renderHunkBtns(row int) string {
+	hov := func(name string) bool { return p.hoverHunk == row && p.hoverHunkB == name }
+	if strings.HasPrefix(p.hunkBtns, "[ −") {
+		return theme.Hoverable(hov("undo"), theme.DiffDelStyle).Render(p.hunkBtns)
+	}
+	return theme.Hoverable(hov("undo"), theme.HashStyle).Render("[ ⟲ revert ]") + " " +
+		theme.Hoverable(hov("stage"), theme.DiffAddStyle).Render("[ + stage ]")
+}
+
+// hunkBtnAt names the hunk button at a right-pane column of a rendered row:
+// "stage", "undo" or "".
+func (p *Panel) hunkBtnAt(row, col int) string {
+	dl := p.detailLines()
+	if p.hunkBtns == "" || row < 0 || row >= len(dl) {
+		return ""
+	}
+	s := p.detailSrc[row][0]
+	if !strings.HasPrefix(p.detail[s], "@@") || (row > 0 && p.detailSrc[row-1][0] == s) {
+		return ""
+	}
+	w, bw := p.detailWidth(), lipgloss.Width(p.hunkBtns)
+	if w <= bw+8 || col < w-bw { // detailLines draws no buttons on a pane this narrow
+		return ""
+	}
+	if !strings.HasPrefix(p.hunkBtns, "[ −") && col >= w-lipgloss.Width("[ + stage ]") {
+		return "stage"
+	}
+	return "undo"
+}
+
+// EndDrag releases every divider. The screen calls it on mouse-up, which
 // never reaches HandleMouse.
-func (p *Panel) EndDrag() { p.dragSplit = false }
+func (p *Panel) EndDrag() { p.dragSplit, p.dragList, p.dragRows = false, false, false }
+
+// ClearHover drops every hover highlight; the screen calls it when the mouse
+// leaves the panel.
+func (p *Panel) ClearHover() {
+	p.HoverRow, p.HoverBtn, p.HoverSep = -1, "", ""
+	p.hoverHunk, p.hoverHunkB = -1, ""
+	p.editHover, p.editHoverB = -1, ""
+}
+
+// sepAt names the draggable divider at a panel-relative cell, "" if none.
+func (p *Panel) sepAt(x, y int) string {
+	inBody := y >= listTop && y < listTop+p.bodyRows()
+	switch {
+	case !inBody:
+		return ""
+	case x == p.listW()+1:
+		return "list"
+	case x >= 1 && x <= p.listW() && y == p.ruleY():
+		return "rows"
+	case p.Split && !p.Resolving && !p.Editing && !p.Composing && abs(x-p.dividerX()) <= 1:
+		return "split"
+	}
+	return ""
+}
+
+// ResizeAxis is the pointer shape a divider under the mouse (or being
+// dragged) asks for: "ew-resize", "ns-resize" or "".
+func (p *Panel) ResizeAxis() string {
+	switch {
+	case p.dragRows, p.HoverSep == "rows":
+		return "ns-resize"
+	case p.dragList, p.dragSplit, p.HoverSep != "":
+		return "ew-resize"
+	}
+	return ""
+}
+
+// sepStyle is the divider style, lit while it is hovered or dragged.
+func sepStyle(hot bool) lipgloss.Style {
+	if hot {
+		return lipgloss.NewStyle().Foreground(theme.PrimaryColor).Bold(true)
+	}
+	return theme.MutedStyle
+}
+
+// newLineAt is the working-copy line number shown on a rendered diff row
+// (0 when the row carries no new-side line).
+func (p *Panel) newLineAt(row int) int {
+	dl := p.detailLines()
+	if row < 0 || row >= len(dl) {
+		return 0
+	}
+	src := p.detailSrc[row]
+	want := src[len(src)-1]
+	n, inHunk := 0, false
+	for i := 0; i <= want && i < len(p.detail); i++ {
+		l := p.detail[i]
+		switch {
+		case strings.HasPrefix(l, "@@"):
+			if m := hunkNewStart.FindStringSubmatch(l); m != nil {
+				n, _ = strconv.Atoi(m[1])
+				n--
+				inHunk = true
+			}
+		case strings.HasPrefix(l, "-"), strings.HasPrefix(l, "\\"):
+		default:
+			n++
+		}
+	}
+	if !inHunk {
+		return 0
+	}
+	if strings.HasPrefix(p.detail[want], "-") {
+		return n + 1
+	}
+	return n
+}
+
+var hunkNewStart = regexp.MustCompile(`^@@ -\d+(?:,\d+)? \+(\d+)`)
 
 // ToggleWrap flips between wrapping long diff lines and clipping them.
 func (p *Panel) ToggleWrap() {
@@ -505,12 +709,24 @@ func (p *Panel) splitHalf() int {
 	return half
 }
 
-// dividerX is the panel-relative column of the split divider (1 = inside the
-// left border).
-func (p *Panel) dividerX() int { return 1 + p.splitHalf() }
+// dividerX is the panel-relative column of the split divider.
+func (p *Panel) dividerX() int { return p.rightX() + p.splitHalf() }
 
 // detailTop is the first panel-relative row of the detail pane.
-func (p *Panel) detailTop() int { return listTop + p.listRows() + 1 }
+func (p *Panel) detailTop() int { return listTop }
+
+// editCell maps a right-pane column / panel row in split edit mode to the
+// editor line on that row and the column relative to the gutter's start
+// (negative = index side, 0..editGutterW-1 = gutter, beyond = editor).
+func (p *Panel) editCell(col, y int) (line, gx int) {
+	lines, first := p.Editor.RowLines()
+	if i := y - listTop - 1; i >= 0 && i < len(lines) && first[i] {
+		line = lines[i]
+	} else {
+		line = -1
+	}
+	return line, col - p.splitHalf()
+}
 
 // ---------- edit in preview ----------
 
@@ -546,10 +762,104 @@ func (p *Panel) startEdit() {
 	}
 	ed := texteditor.New()
 	ed.SetContent(abs, content)
-	ed.SetSize(p.Width-4, p.detailRows()-2)
+	ed.SetSize(p.rightW()-2, p.detailRows()-2)
 	ed.Focus()
-	ed.OnChanged = func(string) { p.editDirty = true }
+	ed.OnChanged = func(c string) {
+		p.editDirty = true
+		p.editHunks = lineDiff(p.editOld, splitLines(c))
+	}
+	ed.RowStyle = func(line int) (lipgloss.Style, bool) {
+		if h := p.hunkAt(line); h != nil && h.ns < h.ne {
+			return theme.DiffAddLineStyle, true
+		}
+		return lipgloss.Style{}, false
+	}
 	p.Editor, p.EditPath, p.Editing, p.editDirty = ed, abs, true, false
+	p.editHover = -1
+	p.loadEditOld(f.Path)
+	p.editHunks = lineDiff(p.editOld, splitLines(ed.GetContent()))
+}
+
+// loadEditOld reads the index side of the edited file (what a stage would
+// build on); an untracked file has none, so every line is an addition. The
+// editor's buffer holds tabs as spaces, so the copy it is diffed against
+// is expanded the same way; the raw lines go into patches.
+func (p *Panel) loadEditOld(rel string) {
+	p.editOld, p.editOldRaw = nil, nil
+	if old, err := p.Repo.Run("show", ":"+rel); err == nil {
+		p.editOldRaw = splitLines(old)
+		p.editOld = make([]string, len(p.editOldRaw))
+		for i, l := range p.editOldRaw {
+			p.editOld[i] = theme.ExpandTabs(l)
+		}
+	}
+}
+
+func splitLines(s string) []string { return strings.Split(strings.TrimSuffix(s, "\n"), "\n") }
+
+// editGutterW is the column between the index side and the editor in split
+// edit mode: "⟲ + │" — revert and stage buttons for the hunk starting on
+// that row, then the divider.
+const editGutterW = 5
+
+// revertEditHunk puts the index side's lines back in the editor (undoable).
+func (p *Panel) revertEditHunk(h editHunk) {
+	cur := p.Editor.GetContent()
+	lines := splitLines(cur)
+	out := append(append(append([]string{}, lines[:h.ns]...), p.editOld[h.os:h.oe]...), lines[h.ne:]...)
+	s := strings.Join(out, "\n")
+	if strings.HasSuffix(cur, "\n") {
+		s += "\n"
+	}
+	p.Editor.SetValue(s) // fires OnChanged: dirty + hunks
+	p.saveEdit()
+	p.Message = "hunk reverted · ctrl+z undoes"
+}
+
+// stageEditHunk applies this hunk to the index straight from the editor
+// buffer; the working file is untouched and the editor stays open.
+// ponytail: a file without a trailing newline gets no "\ No newline" marker.
+func (p *Panel) stageEditHunk(h editHunk) {
+	rel := p.Repo.Rel(p.EditPath)
+	lines := splitLines(p.Editor.GetContent())
+	rng := func(start, n int) string {
+		if n == 0 {
+			return fmt.Sprintf("%d,0", start)
+		}
+		return fmt.Sprintf("%d,%d", start+1, n)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "--- a/%s\n+++ b/%s\n@@ -%s +%s @@\n", rel, rel, rng(h.os, h.oe-h.os), rng(h.ns, h.ne-h.ns))
+	for _, l := range p.editOldRaw[h.os:h.oe] {
+		b.WriteString("-" + l + "\n")
+	}
+	for _, l := range lines[h.ns:h.ne] {
+		b.WriteString("+" + l + "\n")
+	}
+	if err := p.Repo.Apply(b.String(), true, false); err != nil {
+		p.Message = "stage hunk: " + err.Error()
+		return
+	}
+	p.Message = "hunk staged ✓"
+	p.loadEditOld(rel)
+	p.editHunks = lineDiff(p.editOld, lines)
+	if st, err := p.Repo.Status(); err == nil { // file list only; the editor keeps running
+		p.Status = st
+		p.buildRows()
+	}
+	if p.OnChanged != nil {
+		p.OnChanged()
+	}
+}
+
+// editGutter renders the gutter cell for editor line n.
+func (p *Panel) editGutter(n int, hunkRow bool) string {
+	if !hunkRow {
+		return "    " + sepStyle(false).Render("│")
+	}
+	hov := func(b string) bool { return p.editHover == n && p.editHoverB == b }
+	return theme.Hoverable(hov("revert"), theme.HashStyle).Render("⟲") + " " +
+		theme.Hoverable(hov("stage"), theme.DiffAddStyle).Render("+") + " " + sepStyle(false).Render("│")
 }
 
 func (p *Panel) saveEdit() {
@@ -577,21 +887,50 @@ func (p *Panel) stopEdit() {
 
 func (p *Panel) inner() int { return p.Height - 2 }
 
-func (p *Panel) listRows() int {
-	n := (p.inner() - 3) * 2 / 5
-	if n < 3 {
-		n = 3
+// bodyRows is the height of both columns: everything between the tabs row
+// and the hint row.
+func (p *Panel) bodyRows() int { return max(p.inner()-2, 3) }
+
+// listW is the left column's width, clamped so both columns stay usable.
+func (p *Panel) listW() int {
+	inner := p.Width - 2
+	w := p.ListW
+	if w <= 0 {
+		w = min(max(inner*2/5, 20), 60)
 	}
-	return n
+	if lo, hi := 16, inner-1-20; hi >= lo {
+		w = min(max(w, lo), hi)
+	}
+	return max(w, 1)
 }
 
-func (p *Panel) detailRows() int {
-	n := p.inner() - 3 - p.listRows()
-	if n < 1 {
-		n = 1
+// rightX is the panel-relative column where the diff pane starts (after the
+// left border, the list and the column divider).
+func (p *Panel) rightX() int { return 1 + p.listW() + 1 }
+
+// rightW is the diff pane's width.
+func (p *Panel) rightW() int { return max(p.Width-2-p.listW()-1, 1) }
+
+// listRows is the height of the file / commit list; the graph takes the rest
+// of the left column under a one-row rule.
+func (p *Panel) listRows() int {
+	body := p.bodyRows()
+	n := p.ListRows
+	if n <= 0 {
+		n = body * 3 / 5
 	}
-	return n
+	if lo, hi := 3, body-2; hi >= lo {
+		n = min(max(n, lo), hi)
+	}
+	return max(n, 1)
 }
+
+// ruleY is the panel-relative row of the list / graph divider.
+func (p *Panel) ruleY() int { return listTop + p.listRows() }
+
+func (p *Panel) graphRows() int { return max(p.bodyRows()-p.listRows()-1, 0) }
+
+func (p *Panel) detailRows() int { return p.bodyRows() }
 
 func (p *Panel) clamp() {
 	if len(p.rows) == 0 {
@@ -615,6 +954,18 @@ func (p *Panel) clamp() {
 	}
 	if p.detailScroll < 0 {
 		p.detailScroll = 0
+	}
+	if n := len(p.detailLines()); p.diffCursor >= n {
+		p.diffCursor = n - 1
+	}
+	if p.diffCursor < 0 {
+		p.diffCursor = 0
+	}
+	if max := len(p.graph) - p.graphRows(); p.graphScroll > max {
+		p.graphScroll = max
+	}
+	if p.graphScroll < 0 {
+		p.graphScroll = 0
 	}
 }
 
@@ -644,6 +995,7 @@ func (p *Panel) move(d int) {
 	}
 	p.clamp()
 	p.loadDetail()
+	p.loadGraph(false)
 }
 
 // skipHeader nudges the cursor off a header row onto the next entry.
@@ -658,6 +1010,7 @@ func (p *Panel) skipHeader() {
 func (p *Panel) setSection(s Section) {
 	p.Section = s
 	p.Cursor, p.listScroll, p.Filter = 0, 0, ""
+	p.FocusDiff = false
 	p.Refresh()
 }
 
@@ -709,6 +1062,8 @@ func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 		case "esc":
 			p.stopEdit()
 			p.Refresh()
+		case "alt+z", "Ω": // Option+z arrives as Ω on macOS
+			p.ToggleWrap()
 		case "ctrl+s":
 			p.saveEdit()
 			p.Message = "saved"
@@ -721,6 +1076,9 @@ func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 	if p.Repo == nil {
 		return msg.String() != "esc"
 	}
+	if p.FocusDiff && p.handleDiffKey(msg) {
+		return true
+	}
 	switch msg.String() {
 	case "esc":
 		if p.Filter != "" {
@@ -730,7 +1088,9 @@ func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 			return true
 		}
 		return false
-	case "tab", "right", "l":
+	case "tab":
+		p.FocusDiff = len(p.detail) > 0
+	case "right", "l":
 		p.setSection((p.Section + 1) % Section(len(SectionNames)))
 	case "shift+tab", "left", "h":
 		p.setSection((p.Section + Section(len(SectionNames)) - 1) % Section(len(SectionNames)))
@@ -852,8 +1212,12 @@ func (p *Panel) primary() {
 	case r.stash != nil:
 		ref := r.stash.Ref
 		p.confirm("pop "+ref, func() { p.run("pop "+ref, func() error { return p.Repo.StashPop(ref) }) })
-	case p.Section == SecBlame && p.OnGotoLine != nil:
-		p.OnGotoLine(r.blame)
+	case p.Section == SecBlame && p.OnGotoLine != nil && !r.header && r.blame < len(p.blameCommits):
+		line := p.blameCommits[r.blame].first
+		if p.FocusDiff {
+			line = p.diffCursor
+		}
+		p.OnGotoLine(line)
 	}
 }
 
@@ -1027,7 +1391,7 @@ func (p *Panel) rowAtY(y int) int {
 // stage/unstage button, "undo" for the discard button, "" for the row body.
 // Click and hover share it so they can never disagree about where a button is.
 func (p *Panel) rowHit(r *row, x int) string {
-	aLeft := p.Width - 2 - lipgloss.Width(r.action) - 3
+	aLeft := p.listW() - lipgloss.Width(r.action) - 3
 	switch {
 	case r.action != "" && x >= aLeft:
 		return "action"
@@ -1039,102 +1403,191 @@ func (p *Panel) rowHit(r *row, x int) string {
 
 // HandleMouse takes coordinates relative to the panel's top-left corner.
 func (p *Panel) HandleMouse(msg tea.MouseMsg) {
+	inLeft := msg.X >= 1 && msg.X <= p.listW()
+	inRight := msg.X >= p.rightX()
+	inBody := msg.Y >= listTop && msg.Y < listTop+p.bodyRows()
+	// The right pane's own coordinates: column inside it, rendered row.
+	col := msg.X - p.rightX()
+	drow := p.detailScroll + msg.Y - p.detailTop()
+	editorTop := listTop // the editors draw their own border from the first body row
+
 	switch msg.Type {
 	case tea.MouseMotion:
-		p.HoverRow, p.HoverBtn = p.rowAtY(msg.Y), ""
-		if p.HoverRow >= 0 {
-			p.HoverBtn = p.rowHit(&p.rows[p.HoverRow], msg.X)
+		p.HoverRow, p.HoverBtn = -1, ""
+		p.hoverHunk, p.hoverHunkB = -1, ""
+		p.HoverSep = p.sepAt(msg.X, msg.Y)
+		p.editHover, p.editHoverB = -1, ""
+		if p.Editing && p.Split && inRight && inBody {
+			if n, gx := p.editCell(col, msg.Y); gx == 0 || gx == 2 {
+				if h := p.hunkAt(n); h != nil && h.ns == n {
+					p.editHover, p.editHoverB = n, map[int]string{0: "revert", 2: "stage"}[gx]
+				}
+			}
+		}
+		if inLeft {
+			p.HoverRow = p.rowAtY(msg.Y)
+			if p.HoverRow >= 0 {
+				p.HoverBtn = p.rowHit(&p.rows[p.HoverRow], msg.X)
+			}
+		} else if inRight && inBody && !p.Resolving && !p.Editing && !p.Composing {
+			if b := p.hunkBtnAt(drow, col); b != "" {
+				p.hoverHunk, p.hoverHunkB = drow, b
+			}
 		}
 	case tea.MouseLeft:
+		// Column divider and list / graph rule: drag to resize.
+		if msg.Action == tea.MouseActionPress && inBody && msg.X == p.listW()+1 {
+			p.dragList = true
+			return
+		}
+		if msg.Action == tea.MouseActionPress && inLeft && msg.Y == p.ruleY() {
+			p.dragRows = true
+			return
+		}
+		if msg.Action == tea.MouseActionMotion {
+			if p.dragList {
+				p.ListW = msg.X - 1
+				p.detailCache = nil
+				p.clamp()
+				return
+			}
+			if p.dragRows {
+				p.ListRows = msg.Y - listTop
+				p.clamp()
+				return
+			}
+		}
 		// Drag the split divider to rebalance the two diff columns.
-		if p.Split && !p.Resolving && !p.Editing && !p.Composing && msg.Y >= p.detailTop() {
+		if p.Split && !p.Resolving && !p.Editing && !p.Composing && inBody {
 			if msg.Action == tea.MouseActionPress && abs(msg.X-p.dividerX()) <= 1 {
 				p.dragSplit = true
 				return
 			}
 			if p.dragSplit && msg.Action == tea.MouseActionMotion {
-				p.SplitPos = msg.X - 1
+				p.SplitPos = msg.X - p.rightX()
 				return
 			}
 		}
 		if msg.Action == tea.MouseActionPress {
 			p.dragSplit = false
 		}
-		// Text selection in the diff / commit pane: press + drag over rows.
-		if !p.Resolving && !p.Editing && !p.Composing && msg.Y >= p.detailTop() {
-			line := p.detailScroll + msg.Y - p.detailTop()
-			if line >= len(p.detailLines()) {
-				line = len(p.detailLines()) - 1
+		if inRight && inBody {
+			if p.Resolving {
+				if msg.Action != tea.MouseActionPress {
+					return
+				}
+				// Map the clicked row back to a conflict block (headers add rows).
+				for i, c := range p.Conflicts {
+					if drow >= c.Start+i+1 && drow <= c.End+i+1 {
+						p.ConflictIdx = i
+						return
+					}
+				}
+				return
 			}
-			if line < 0 {
+			if ed := p.detailEditor(); ed != nil {
+				rel := msg
+				rel.X = col - 1
+				rel.Y -= editorTop + 1
+				if p.Editing && p.Split {
+					n, gx := p.editCell(col, msg.Y)
+					if gx < editGutterW {
+						if h := p.hunkAt(n); msg.Action == tea.MouseActionPress && h != nil && h.ns == n {
+							switch gx {
+							case 0:
+								p.revertEditHunk(*h)
+							case 2:
+								p.stageEditHunk(*h)
+							}
+						}
+						return // index side and gutter are not the editor
+					}
+					rel.X = gx - editGutterW - 1
+				}
+				ed.Update(rel)
+				return
+			}
+			// Text selection in the diff / commit pane: press + drag over rows.
+			if n := len(p.detailLines()); drow >= n {
+				drow = n - 1
+			}
+			if drow < 0 {
 				return
 			}
 			if msg.Action == tea.MouseActionPress {
-				p.selAnchor, p.selEnd = line, line
-			} else if msg.Action == tea.MouseActionMotion && p.selAnchor >= 0 {
-				p.selEnd = line
-			}
-			return
-		}
-		if p.Resolving && msg.Action == tea.MouseActionPress && msg.Y >= listTop+p.listRows()+1 {
-			// Map the clicked row back to a conflict block (headers add rows).
-			line := p.detailScroll + msg.Y - (listTop + p.listRows() + 1)
-			rl := 0
-			for i, c := range p.Conflicts {
-				rl++ // header row
-				if line >= c.Start+i+1 && line <= c.End+i+1 {
-					p.ConflictIdx = i
+				p.FocusDiff = true
+				if b := p.hunkBtnAt(drow, col); b != "" {
+					p.selAnchor, p.selEnd = -1, -1
+					p.diffCursor = drow
+					p.lineOp(p.diffOp(b), drow)
 					return
 				}
+				// The new side of a split diff is the working copy: click it to edit there.
+				if p.Split && p.Section == SecStatus && col > p.splitHalf() {
+					if _, ok := p.canEdit(); ok {
+						line := p.newLineAt(drow)
+						p.startEdit()
+						if p.Editing && line > 0 {
+							p.Editor.GotoLine(line - 1)
+						}
+						return
+					}
+				}
+				p.selAnchor, p.selEnd = drow, drow
+				p.diffCursor = drow
+			} else if msg.Action == tea.MouseActionMotion && p.selAnchor >= 0 {
+				p.selEnd = drow
+				p.diffCursor = drow
 			}
-			_ = rl
 			return
 		}
-		if ed := p.detailEditor(); ed != nil && msg.Y >= listTop+p.listRows()+1 {
-			rel := msg
-			rel.X -= 2
-			rel.Y -= listTop + p.listRows() + 2
-			ed.Update(rel)
-			return
-		}
-		if msg.Action != tea.MouseActionPress {
+		if msg.Action != tea.MouseActionPress || !inLeft {
 			return
 		}
 		if i := p.rowAtY(msg.Y); i >= 0 {
-			{
-				r := &p.rows[i]
-				switch p.rowHit(r, msg.X) {
-				case "action":
-					p.Cursor = i
-					p.rowAction(r)
-					return
-				case "undo":
-					p.Cursor = i
-					p.rowUndo(r)
-					return
-				}
-				if i == p.Cursor {
-					p.primary()
-				} else {
-					p.Cursor = i
-					p.clamp()
-					p.loadDetail()
-				}
+			p.FocusDiff = false
+			r := &p.rows[i]
+			switch p.rowHit(r, msg.X) {
+			case "action":
+				p.Cursor = i
+				p.rowAction(r)
+				return
+			case "undo":
+				p.Cursor = i
+				p.rowUndo(r)
+				return
 			}
+			if i == p.Cursor {
+				p.primary()
+			} else {
+				p.Cursor = i
+				p.clamp()
+				p.loadDetail()
+				p.loadGraph(false)
+			}
+		}
+	case tea.MouseWheelLeft, tea.MouseWheelRight:
+		if ed := p.detailEditor(); inRight && ed != nil {
+			ed.Update(msg)
 		}
 	case tea.MouseWheelUp, tea.MouseWheelDown:
 		d := 3
 		if msg.Type == tea.MouseWheelUp {
 			d = -3
 		}
-		if ed := p.detailEditor(); ed != nil && msg.Y >= listTop+p.listRows()+1 {
+		switch {
+		case inRight && p.detailEditor() != nil:
 			rel := msg
-			rel.X -= 2
-			rel.Y -= listTop + p.listRows() + 2
-			ed.Update(rel)
-			return
-		}
-		if y := msg.Y - listTop; y >= 0 && y < p.listRows() {
+			rel.X = col - 1
+			rel.Y -= editorTop + 1
+			p.detailEditor().Update(rel)
+		case inRight:
+			p.detailScroll += d
+			p.clamp()
+		case inLeft && msg.Y > p.ruleY():
+			p.graphScroll += d
+			p.clamp()
+		case inLeft:
 			p.listScroll += d
 			if p.listScroll < 0 {
 				p.listScroll = 0
@@ -1142,9 +1595,6 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			if max := len(p.rows) - p.listRows(); p.listScroll > max && max >= 0 {
 				p.listScroll = max
 			}
-		} else {
-			p.detailScroll += d
-			p.clamp()
 		}
 	}
 }
@@ -1360,65 +1810,11 @@ func (p *Panel) View(z *zone.Manager) string {
 	}
 	lines := []string{ansi.Truncate(head+right, inner, "")}
 
-	// List.
-	for i := p.listScroll; i < p.listScroll+p.listRows(); i++ {
-		if i >= len(p.rows) {
-			lines = append(lines, "")
-			continue
-		}
-		lines = append(lines, p.renderRow(&p.rows[i], i == p.Cursor, i == p.HoverRow, inner))
-	}
-	lines = append(lines, theme.MutedStyle.Render(strings.Repeat("─", inner)))
-
-	// Detail: conflict resolver, editor when editing, otherwise the diff.
-	if p.Resolving {
-		rl := p.resolveLines(inner)
-		if max := len(rl) - p.detailRows(); p.detailScroll > max {
-			p.detailScroll = max
-		}
-		if p.detailScroll < 0 {
-			p.detailScroll = 0
-		}
-		for i := p.detailScroll; i < p.detailScroll+p.detailRows(); i++ {
-			if i >= len(rl) {
-				lines = append(lines, "")
-				continue
-			}
-			lines = append(lines, rl[i])
-		}
-	} else if p.Composing && p.MsgEditor != nil {
-		p.MsgEditor.SetSize(inner-2, p.detailRows()-2)
-		p.MsgEditor.Hint = p.composeHint()
-		lines = append(lines, strings.Split(p.MsgEditor.View(), "\n")...)
-	} else if p.Editing && p.Editor != nil {
-		p.Editor.SetSize(inner-2, p.detailRows()-2)
-		p.Editor.Hint = "editing working copy · esc done · ctrl+s save"
-		lines = append(lines, strings.Split(p.Editor.View(), "\n")...)
-	} else {
-		dl := p.detailLines()
-		s0, s1 := p.selRange()
-		sb := theme.VScrollbar(p.detailRows(), len(dl), p.detailScroll)
-		textW := inner - 1 // detailWidth() always reserves the scrollbar column
-		for i := p.detailScroll; i < p.detailScroll+p.detailRows(); i++ {
-			var line string
-			if i < len(dl) {
-				line = dl[i] // already styled and wrapped to width
-				if s0 >= 0 && i >= s0 && i <= s1 {
-					plain := ansi.Strip(line)
-					if w := lipgloss.Width(plain); w < textW {
-						plain += strings.Repeat(" ", textW-w)
-					}
-					line = theme.SelectionStyle.Render(plain)
-				}
-			}
-			if sb != nil {
-				if w := lipgloss.Width(line); w < textW {
-					line += strings.Repeat(" ", textW-w)
-				}
-				line += sb[i-p.detailScroll]
-			}
-			lines = append(lines, line)
-		}
+	// Two columns: list + graph on the left, the detail pane on the right.
+	left, right2 := p.leftColumn(), p.rightColumn()
+	sep := sepStyle(p.dragList || p.HoverSep == "list").Render("│")
+	for i := 0; i < p.bodyRows(); i++ {
+		lines = append(lines, left[i]+sep+right2[i])
 	}
 
 	// Prompt / hint row.
@@ -1442,6 +1838,177 @@ func (p *Panel) View(z *zone.Manager) string {
 	lines = append(lines, ansi.Truncate(foot, inner, "…"))
 
 	return theme.FocusedBorderStyle.Width(inner).Height(p.inner()).MaxHeight(p.Height).Render(strings.Join(lines, "\n"))
+}
+
+// pad fills a rendered line to exactly w cells.
+func pad(s string, w int) string {
+	s = ansi.Truncate(s, w, "")
+	if n := w - lipgloss.Width(s); n > 0 {
+		s += strings.Repeat(" ", n)
+	}
+	return s
+}
+
+// leftColumn is the list, a rule naming the graphed branch, and the commit
+// graph — bodyRows lines of listW cells.
+func (p *Panel) leftColumn() []string {
+	w := p.listW()
+	out := make([]string, 0, p.bodyRows())
+	for i := p.listScroll; i < p.listScroll+p.listRows(); i++ {
+		if i >= len(p.rows) {
+			out = append(out, pad("", w))
+			continue
+		}
+		out = append(out, pad(p.renderRow(&p.rows[i], i == p.Cursor && !p.FocusDiff, i == p.HoverRow, w), w))
+	}
+	title := " ⎇ " + p.graphFor + " "
+	if p.graphFor == "" {
+		title = " graph "
+	}
+	rs := sepStyle(p.dragRows || p.HoverSep == "rows")
+	rule := rs.Render("─") + theme.BranchStyle.Render(title)
+	out = append(out, pad(rule+rs.Render(strings.Repeat("─", max(w-lipgloss.Width(rule), 0))), w))
+	for i := p.graphScroll; len(out) < p.bodyRows(); i++ {
+		if i >= len(p.graph) {
+			out = append(out, pad("", w))
+			continue
+		}
+		out = append(out, pad(renderGraphLine(p.graph[i]), w))
+	}
+	return out[:p.bodyRows()]
+}
+
+// renderGraphLine colours one `git log --graph --oneline` row: glyphs muted,
+// the hash and the decoration highlighted.
+func renderGraphLine(l string) string {
+	i := 0
+	for i < len(l) && strings.ContainsRune("*|/\\ _-.", rune(l[i])) {
+		i++
+	}
+	var glyphs strings.Builder
+	for _, c := range l[:i] {
+		if c == '*' {
+			glyphs.WriteString(theme.DiffAddStyle.Render("●"))
+		} else {
+			glyphs.WriteString(theme.MutedStyle.Render(string(c)))
+		}
+	}
+	rest := l[i:]
+	hash, rest, _ := strings.Cut(rest, " ")
+	out := glyphs.String() + theme.HashStyle.Render(hash)
+	if strings.HasPrefix(rest, "(") {
+		if j := strings.Index(rest, ")"); j >= 0 {
+			out += " " + theme.BranchStyle.Render(rest[:j+1])
+			rest = strings.TrimPrefix(rest[j+1:], " ")
+		}
+	}
+	if rest != "" {
+		out += " " + rest
+	}
+	return out
+}
+
+// rightColumn is the detail pane: conflict resolver, an editor, or the diff —
+// bodyRows lines of rightW cells.
+func (p *Panel) rightColumn() []string {
+	w, rows := p.rightW(), p.detailRows()
+	var lines []string
+	switch {
+	case p.Resolving:
+		rl := p.resolveLines(w)
+		if max := len(rl) - rows; p.detailScroll > max {
+			p.detailScroll = max
+		}
+		if p.detailScroll < 0 {
+			p.detailScroll = 0
+		}
+		for i := p.detailScroll; i < p.detailScroll+rows; i++ {
+			if i < len(rl) {
+				lines = append(lines, rl[i])
+			}
+		}
+	case p.Composing && p.MsgEditor != nil:
+		p.MsgEditor.SetSize(w-2, rows-2)
+		p.MsgEditor.Hint = p.composeHint()
+		lines = strings.Split(p.MsgEditor.View(), "\n")
+	case p.Editing && p.Editor != nil && p.Split:
+		// Index side on the left (removed lines red, paired with the editor
+		// line that replaced them), the working copy in the editor on the
+		// right (added lines green), hunk buttons in the gutter between.
+		half := p.splitHalf()
+		p.Editor.SetSize(w-half-editGutterW-2, rows-2)
+		p.Editor.Wrap = p.Wrap
+		p.Editor.Hint = "editing working copy · ⟲ revert hunk · + stage hunk · ⌥z wrap · esc done · ctrl+s save"
+		ed := strings.Split(p.Editor.View(), "\n")
+		rowLines, rowFirst := p.Editor.RowLines()
+		numW := len(strconv.Itoa(len(p.editOld))) + 1
+		textW := max(half-numW-1, 0)
+		sx := p.Editor.ScrollX() // the index side pans with the editor
+		clip := func(s string) string { return ansi.Truncate(ansi.Cut(s, sx, sx+textW+1), textW, "…") }
+		for i := 0; i < rows; i++ {
+			var l, gut string
+			gut = p.editGutter(-1, false)
+			if n := i - 1; n >= 0 && n < len(rowLines) && rowLines[n] >= 0 && rowFirst[n] {
+				n = rowLines[n]
+				j, del := p.leftLine(n)
+				if j >= 0 && j < len(p.editOld) {
+					l = fmt.Sprintf("%*d ", numW, j+1) + clip(p.editOld[j])
+					if del {
+						l = theme.DiffDelLineStyle.Render(pad(l, half))
+					} else {
+						l = theme.MutedStyle.Render(l[:numW+1]) + l[numW+1:]
+					}
+				}
+				h := p.hunkAt(n)
+				if h != nil && h.ns == h.ne && h.ns == n {
+					// A pure deletion has no editor row to sit beside: show what
+					// went, folded onto the row that follows it.
+					gone := strings.Join(p.editOld[h.os:h.oe], " ⏎ ")
+					l = theme.DiffDelLineStyle.Render(pad(fmt.Sprintf("%*s ", numW, "−")+clip(gone), half))
+				}
+				gut = p.editGutter(n, h != nil && h.ns == n)
+			}
+			r := ""
+			if i < len(ed) {
+				r = ed[i]
+			}
+			lines = append(lines, pad(l, half)+gut+r)
+		}
+	case p.Editing && p.Editor != nil:
+		p.Editor.SetSize(w-2, rows-2)
+		p.Editor.Wrap = p.Wrap
+		p.Editor.Hint = "editing working copy · ⌥z wrap · esc done · ctrl+s save"
+		lines = strings.Split(p.Editor.View(), "\n")
+	default:
+		dl := p.detailLines()
+		s0, s1 := p.selRange()
+		sb := theme.VScrollbar(rows, len(dl), p.detailScroll)
+		textW := w - 1 // detailWidth() always reserves the scrollbar column
+		for i := p.detailScroll; i < p.detailScroll+rows; i++ {
+			var line string
+			if i < len(dl) {
+				line = dl[i] // already styled and wrapped to width
+				switch {
+				case s0 >= 0 && i >= s0 && i <= s1:
+					line = theme.SelectionStyle.Render(pad(ansi.Strip(line), textW))
+				case p.FocusDiff && i == p.diffCursor:
+					line = theme.CursorFocusedStyle.Render(pad(ansi.Strip(line), textW))
+				}
+			}
+			line = pad(line, textW)
+			if sb != nil {
+				line += sb[i-p.detailScroll]
+			}
+			lines = append(lines, line)
+		}
+	}
+	for len(lines) < rows {
+		lines = append(lines, "")
+	}
+	for i := range lines {
+		lines[i] = pad(lines[i], w)
+	}
+	return lines[:rows]
 }
 
 // SyncLabel mirrors VS Code's status-bar sync button.
@@ -1471,9 +2038,15 @@ func (p *Panel) SyncAction() {
 }
 
 func (p *Panel) hints() string {
+	if p.FocusDiff {
+		if p.hunkBtns != "" {
+			return "jk move · shift+↑↓ select · s stage lines · u revert/unstage lines · e edit · ctrl+c copy · drag │ resize · tab/esc list"
+		}
+		return "jk move · shift+↑↓ select · ctrl+c copy · v split · z wrap · tab/esc list"
+	}
 	switch p.Section {
 	case SecStatus:
-		return "+/− stage/unstage · e edit · v split · z wrap · w ignore-ws · drag+ctrl+c copy · c commit · y sync · S stash · d discard · P pull · f fetch"
+		return "tab diff · +/− stage · e edit · v split · z wrap · w -w · c commit · y sync · S stash · d discard · P pull · f fetch"
 	case SecCommits:
 		return "⏎/jk browse · J/K scroll diff · f file↔repo history · / search · y hash"
 	case SecBranches:
@@ -1481,7 +2054,7 @@ func (p *Panel) hints() string {
 	case SecStashes:
 		return "⏎ pop · s stash · d drop"
 	case SecBlame:
-		return "⏎ go to line · b inline blame in editor · J/K scroll commit"
+		return "⏎ open in editor at line · tab/click lines · b inline blame in editor · J/K scroll"
 	}
 	return ""
 }
@@ -1507,20 +2080,12 @@ func (p *Panel) renderRow(r *row, selected, hovered bool, width int) string {
 	case r.stash != nil:
 		s := r.stash
 		text = " " + theme.HashStyle.Render(s.Ref) + " " + theme.MutedStyle.Render(s.Date) + "  " + s.Subject
-	case p.Section == SecBlame && r.blame < len(p.Blame):
-		b := p.Blame[r.blame]
-		src := ""
-		if r.blame < len(p.BlameSrc) {
-			src = strings.ReplaceAll(p.BlameSrc[r.blame], "\t", "    ")
-		}
-		hash := theme.HashStyle.Render(b.Hash)
-		if b.Uncommitted {
-			hash = theme.MutedStyle.Render("·······")
-		}
-		text = fmt.Sprintf(" %4d %s %s %s %s │ %s", r.blame+1, hash,
+	case p.Section == SecBlame && r.blame < len(p.blameCommits):
+		b := p.blameCommits[r.blame]
+		text = fmt.Sprintf(" %s %s %s %s  %s", blameHash(b.BlameLine),
 			theme.AuthorStyle.Render(fmt.Sprintf("%-12s", ansi.Truncate(b.Author, 12, "…"))),
 			theme.MutedStyle.Render(fmt.Sprintf("%-8s", gitx.Ago(b.Time))),
-			theme.MutedStyle.Render(fmt.Sprintf("%-20s", ansi.Truncate(b.Summary, 20, "…"))), src)
+			theme.MutedStyle.Render(fmt.Sprintf("%4d ln", b.lines)), b.Summary)
 	default:
 		text = r.text
 	}
@@ -1643,4 +2208,66 @@ func diffLine(l string) string {
 		return theme.HashStyle.Render(l)
 	}
 	return l
+}
+
+// ---------- blame ----------
+
+// groupBlame folds per-line blame into one entry per commit, newest first,
+// uncommitted lines on top.
+func groupBlame(lines []gitx.BlameLine) []blameCommit {
+	idx := map[string]int{}
+	var out []blameCommit
+	for i, b := range lines {
+		k := b.Hash
+		if b.Uncommitted {
+			k = ""
+		}
+		j, ok := idx[k]
+		if !ok {
+			j = len(out)
+			idx[k] = j
+			out = append(out, blameCommit{BlameLine: b, first: i})
+		}
+		out[j].lines++
+	}
+	sort.SliceStable(out, func(a, b int) bool {
+		if out[a].Uncommitted != out[b].Uncommitted {
+			return out[a].Uncommitted
+		}
+		return out[a].Time.After(out[b].Time)
+	})
+	return out
+}
+
+func blameHash(b gitx.BlameLine) string {
+	if b.Uncommitted {
+		return theme.MutedStyle.Render("·······")
+	}
+	return theme.HashStyle.Render(b.Hash)
+}
+
+// blameLines is the annotated source: hash, author and age in front of
+// every line, the selected commit's lines marked so they stand out.
+func (p *Panel) blameLines(w int) []string {
+	sel := ""
+	selUn := false
+	if r := p.current(); r != nil && r.blame < len(p.blameCommits) {
+		sel, selUn = p.blameCommits[r.blame].Hash, p.blameCommits[r.blame].Uncommitted
+	}
+	numW := len(strconv.Itoa(len(p.Blame)))
+	out := make([]string, 0, len(p.Blame))
+	for i, b := range p.Blame {
+		src := ""
+		if i < len(p.BlameSrc) {
+			src = theme.ExpandTabs(p.BlameSrc[i])
+		}
+		mark, author := theme.MutedStyle.Render("  "), theme.MutedStyle
+		if (b.Uncommitted && selUn) || (!b.Uncommitted && b.Hash == sel) {
+			mark, author = theme.StatusOKStyle.Render("▌ "), theme.AuthorStyle
+		}
+		gutter := mark + blameHash(b) + " " + author.Render(fmt.Sprintf("%-12s", ansi.Truncate(b.Author, 12, "…"))) +
+			" " + theme.MutedStyle.Render(fmt.Sprintf("%-8s %*d │ ", gitx.Ago(b.Time), numW, i+1))
+		out = append(out, ansi.Truncate(gutter+src, w, "…"))
+	}
+	return out
 }

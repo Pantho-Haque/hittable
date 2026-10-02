@@ -110,6 +110,10 @@ type TextEditor struct {
 	status      string      // transient message shown in the status row
 	// Hint is a persistent note shown in the status row (e.g. JSON validity).
 	Hint string
+	// RowStyle, when set, tints whole rows (e.g. added lines while editing
+	// inside a diff). The style's background is re-asserted after every
+	// syntax-colour reset so it covers the row end to end.
+	RowStyle func(line int) (lipgloss.Style, bool)
 	// Annotations (one per line) render left of the gutter, e.g. git blame.
 	Annotations []string
 	AnnotWidth  int
@@ -272,6 +276,25 @@ func (t *TextEditor) writeBack() {
 func (t *TextEditor) SetSize(w, h int) {
 	t.Width = w
 	t.Height = h
+}
+
+// ScrollX is the horizontal scroll offset in cells (0 with wrap on).
+func (t *TextEditor) ScrollX() int { return t.cur.scrollX }
+
+// RowLines maps each visible content row to its source line (-1 past the
+// end) and whether it is the line's first row (false on wrapped
+// continuations).
+func (t *TextEditor) RowLines() (lines []int, first []bool) {
+	vr := t.layout(strings.Split(t.TextArea.Value(), "\n"), t.avail())
+	t.clampScroll()
+	for vi := t.cur.scrollY; vi < t.cur.scrollY+t.contentRows(); vi++ {
+		if vi < len(vr) {
+			lines, first = append(lines, vr[vi].line), append(first, vr[vi].first)
+		} else {
+			lines, first = append(lines, -1), append(first, false)
+		}
+	}
+	return lines, first
 }
 
 // SetContent loads content for path, reusing the buffer (cursor, undo
@@ -1080,7 +1103,13 @@ func (t *TextEditor) View() string {
 		if w := lipgloss.Width(text); w < avail {
 			text += strings.Repeat(" ", avail-w)
 		}
-		out = append(out, num+text)
+		rowStr := num + text
+		if t.RowStyle != nil {
+			if st, ok := t.RowStyle(i); ok {
+				rowStr = theme.TintRow(rowStr, st)
+			}
+		}
+		out = append(out, rowStr)
 	}
 	if t.comp != nil && curY >= 0 {
 		t.overlayCompletion(out, curX, curY)

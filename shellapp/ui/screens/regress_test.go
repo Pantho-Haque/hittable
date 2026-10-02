@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/hittable/shellapp/ui/components/gitpanel"
 
 	tea "github.com/charmbracelet/bubbletea"
 	zone "github.com/lrstanley/bubblezone"
@@ -25,7 +26,7 @@ func newTestScreen(t *testing.T) (*MainScreen, string) {
 	os.WriteFile(filepath.Join(hd, "a.hit"), []byte(`{"method":"GET","url":"<<BASE_URL>>/a","headers":{},"params":{},"body":"","response":null}`), 0o644)
 	os.WriteFile(filepath.Join(hd, "notes.md"), []byte("hello\n"), 0o644)
 	m := NewMainScreen(tmp, zone.New())
-	m.SetSize(120, 40)
+	m.SetSize(160, 40)
 	return m, hd
 }
 
@@ -270,7 +271,7 @@ func TestGitPanel(t *testing.T) {
 	os.WriteFile(filepath.Join(hd, "notes.md"), []byte("hello\nchanged\n"), 0o644)
 
 	m = NewMainScreen(root, m.Zones) // re-open now that it is a repo
-	m.SetSize(120, 40)
+	m.SetSize(160, 40)               // the sidebar stays beside the git panel
 	if m.Repo == nil {
 		t.Fatal("repo not detected")
 	}
@@ -381,13 +382,13 @@ func TestMergeConflictInPanel(t *testing.T) {
 	git("merge", "feature") // conflicts
 
 	m = NewMainScreen(root, m.Zones)
-	m.SetSize(120, 40)
+	m.SetSize(160, 40)
 	if b := m.Explorer.GitStatus[filepath.Join(hd, "notes.md")]; b != "!" {
 		t.Errorf("conflict badge = %q", b)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyF5})
 	v := m.View()
-	if !strings.Contains(v, "merge in progress · 1 conflict") || !strings.Contains(v, "abort merge") {
+	if !strings.Contains(v, "merge · 1 conflict") || !strings.Contains(v, "abort merge") {
 		t.Fatalf("merge header missing:\n%s", v)
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // cursor sits on the conflicted file
@@ -503,4 +504,66 @@ func stripAnsi(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// The sidebar stays beside the Git panel. On the Blame tab, clicking a file in
+// the explorer blames it in place: the left column groups the commits that
+// wrote it, the right column annotates every line, and the panel stays open.
+func TestBlameFollowsExplorerClick(t *testing.T) {
+	m, hd := newTestScreen(t)
+	root := filepath.Dir(hd)
+	run := func(date string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Ann", "GIT_AUTHOR_EMAIL=a@x", "GIT_COMMITTER_NAME=Ann", "GIT_COMMITTER_EMAIL=a@x",
+			"GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	run("", "init", "-q", "-b", "main")
+	run("", "add", ".")
+	run("2020-01-01T00:00:00", "commit", "-q", "-m", "init") // older, so "add second" sorts first
+	os.WriteFile(filepath.Join(hd, "notes.md"), []byte("hello\nsecond\n"), 0o644)
+	run("2021-01-01T00:00:00", "commit", "-q", "-am", "add second")
+
+	m = NewMainScreen(root, m.Zones)
+	m.SetSize(160, 40)
+	m.Update(tea.KeyMsg{Type: tea.KeyF5})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	if m.explorerHidden() {
+		t.Fatal("sidebar hidden behind the git panel")
+	}
+	// Expand the (collapsed) folder, then click notes.md. Explorer rows start
+	// under the top bar and the tree header.
+	rowY := func(i int) int { return 1 + m.Explorer.HeaderLines() + i }
+	click := func(y int) {
+		m.Update(tea.MouseMsg{X: 3, Y: y, Type: tea.MouseLeft, Action: tea.MouseActionPress})
+		m.Update(tea.MouseMsg{X: 3, Y: y, Type: tea.MouseRelease, Action: tea.MouseActionRelease})
+	}
+	click(rowY(0))
+	y := -1
+	for i, n := range m.Explorer.Visible {
+		if filepath.Base(n.Path) == "notes.md" {
+			y = i
+		}
+	}
+	if y < 0 {
+		t.Fatalf("notes.md not in the tree: %+v", m.Explorer.Visible)
+	}
+	click(rowY(y))
+	if !m.GitOpen || m.Git.Section != gitpanel.SecBlame {
+		t.Fatalf("panel closed or left blame: open=%v section=%d", m.GitOpen, m.Git.Section)
+	}
+	v := zone.New().Scan(m.View())
+	for _, want := range []string{"notes.md", "add second", "init", "1 ln", "Ann", "1 │ hello", "2 │ second"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("blame view missing %q:\n%s", want, v)
+		}
+	}
+	// ⏎ on the newest commit opens the editor at its first line (line 2).
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.GitOpen || m.TextEd.GetCursorRow() != 1 {
+		t.Fatalf("enter: open=%v row=%d", m.GitOpen, m.TextEd.GetCursorRow())
+	}
 }

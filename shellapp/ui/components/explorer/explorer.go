@@ -375,7 +375,7 @@ func (e *Explorer) clampCursor() {
 
 // headerLines is the number of rows above the first file row: the header
 // plus any prompt / delete-confirm / context-menu rows.
-func (e *Explorer) headerLines() int {
+func (e *Explorer) HeaderLines() int {
 	n := 1
 	if e.PromptKind != PromptNone {
 		n++
@@ -387,7 +387,7 @@ func (e *Explorer) headerLines() int {
 }
 
 func (e *Explorer) viewportLines() int {
-	lines := e.Height - e.headerLines()
+	lines := e.Height - e.HeaderLines()
 	if lines < 1 {
 		lines = 1
 	}
@@ -396,7 +396,7 @@ func (e *Explorer) viewportLines() int {
 
 // rowAtY translates a screen Y to a visible-list index, or -1.
 func (e *Explorer) rowAtY(y int) int {
-	h := e.headerLines()
+	h := e.HeaderLines()
 	if y < h {
 		return -1
 	}
@@ -580,9 +580,9 @@ func (e *Explorer) overlayMenu(lines []string) {
 	if x < 0 {
 		x = 0
 	}
-	y := e.headerLines() + (e.Cursor - e.ScrollStart) + 1
+	y := e.HeaderLines() + (e.Cursor - e.ScrollStart) + 1
 	if y+len(rendered) > len(lines) {
-		y = e.headerLines() + (e.Cursor - e.ScrollStart) - len(rendered)
+		y = e.HeaderLines() + (e.Cursor - e.ScrollStart) - len(rendered)
 	}
 	if y < 0 {
 		y = 0

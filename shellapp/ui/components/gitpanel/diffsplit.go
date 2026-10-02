@@ -66,21 +66,28 @@ func sideRows(n int, text string, st lipgloss.Style, half int, wrap bool) []stri
 // the width of the old column, set by dragging the divider. Removed / added
 // runs inside a hunk are paired line by line; file headers span the full
 // width. With wrap on, a line too long for its column continues on further
-// rows instead of being clipped.
-func splitDiff(unified []string, width, half int, wrap bool) []string {
-	if half < 8 || width-half-1 < 8 {
-		return unified
-	}
+// rows instead of being clipped. The second result maps each row to the
+// unified-diff line(s) it shows — two for a paired removed / added row.
+func splitDiff(unified []string, width, half int, wrap bool, sepSt lipgloss.Style) ([]string, [][]int) {
 	var out []string
+	var src [][]int
+	if half < 8 || width-half-1 < 8 {
+		for i, l := range unified {
+			out = append(out, l)
+			src = append(src, []int{i})
+		}
+		return out, src
+	}
 	var dels, adds []string
+	var delIdx, addIdx []int
 	oldN, newN := 0, 0
 	rhalf := width - half - 1
-	sep := theme.MutedStyle.Render("│")
+	sep := sepSt.Render("│")
 	blank, rblank := strings.Repeat(" ", half), strings.Repeat(" ", rhalf)
 
 	// emit lays one wrapped left column beside one wrapped right column,
 	// padding whichever ran out of rows first.
-	emit := func(l, r []string) {
+	emit := func(l, r []string, from []int) {
 		for i := 0; i < max(len(l), len(r)); i++ {
 			lc, rc := blank, rblank
 			if i < len(l) {
@@ -90,50 +97,60 @@ func splitDiff(unified []string, width, half int, wrap bool) []string {
 				rc = r[i]
 			}
 			out = append(out, lc+sep+rc)
+			src = append(src, from)
 		}
 	}
 	flush := func() {
 		for i := 0; i < max(len(dels), len(adds)); i++ {
 			var l, r []string
+			var from []int
 			if i < len(dels) {
 				l = sideRows(oldN, dels[i], theme.DiffDelLineStyle, half, wrap)
+				from = append(from, delIdx[i])
 				oldN++
 			}
 			if i < len(adds) {
 				r = sideRows(newN, adds[i], theme.DiffAddLineStyle, rhalf, wrap)
+				from = append(from, addIdx[i])
 				newN++
 			}
-			emit(l, r)
+			emit(l, r, from)
 		}
-		dels, adds = dels[:0], adds[:0]
+		dels, adds, delIdx, addIdx = dels[:0], adds[:0], delIdx[:0], addIdx[:0]
+	}
+	full := func(rows []string, i int) {
+		for _, r := range rows {
+			out = append(out, r)
+			src = append(src, []int{i})
+		}
 	}
 	plain := lipgloss.NewStyle()
-	for _, line := range unified {
+	for i, line := range unified {
 		switch {
 		case strings.HasPrefix(line, "@@"):
 			flush()
 			fmt.Sscanf(line, "@@ -%d", &oldN)
-			if i := strings.Index(line, "+"); i >= 0 {
-				fmt.Sscanf(line[i:], "+%d", &newN)
+			if j := strings.Index(line, "+"); j >= 0 {
+				fmt.Sscanf(line[j:], "+%d", &newN)
 			}
-			out = append(out, fullWidth(theme.DiffHunkStyle.Render(line), width, wrap)...)
+			full(fullWidth(theme.DiffHunkStyle.Render(line), width, wrap), i)
 		case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
-			dels = append(dels, line[1:])
+			dels, delIdx = append(dels, line[1:]), append(delIdx, i)
 		case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
-			adds = append(adds, line[1:])
+			adds, addIdx = append(adds, line[1:]), append(addIdx, i)
 		case strings.HasPrefix(line, " "):
 			flush()
-			emit(sideRows(oldN, line[1:], plain, half, wrap), sideRows(newN, line[1:], plain, rhalf, wrap))
+			emit(sideRows(oldN, line[1:], plain, half, wrap), sideRows(newN, line[1:], plain, rhalf, wrap), []int{i})
 			oldN++
 			newN++
 		case strings.HasPrefix(line, "\\"):
 			flush()
-			out = append(out, theme.MutedStyle.Render(line))
+			full([]string{theme.MutedStyle.Render(line)}, i)
 		default: // diff/index/---/+++ headers, commit text
 			flush()
-			out = append(out, fullWidth(diffLine(line), width, wrap)...)
+			full(fullWidth(diffLine(line), width, wrap), i)
 		}
 	}
 	flush()
-	return out
+	return out, src
 }

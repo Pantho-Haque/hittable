@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,8 +46,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // contained to the pane that misbehaved. It runs after Scan so the zone
 // coordinates match what is actually on screen.
 func (a *App) View() string {
-	return clipToTerminal(Zones.Scan(a.screen.View()), a.screen.Width, a.screen.Height)
+	frame := clipToTerminal(a.screen.OverlaySelection(Zones.Scan(a.screen.View())), a.screen.Width, a.screen.Height)
+	// The mouse pointer is the terminal's, not ours: OSC 22 asks for a shape
+	// (kitty, Ghostty, WezTerm, foot, xterm); others ignore it. It rides on
+	// the first line, so it only reaches the terminal when the shape changes.
+	return pointerShape(a.screen.PointerShape()) + frame
 }
+
+func pointerShape(shape string) string { return "\x1b]22;" + shape + "\x1b\\" }
 
 func clipToTerminal(s string, w, h int) string {
 	if w <= 0 || h <= 0 {
@@ -65,6 +72,7 @@ func clipToTerminal(s string, w, h int) string {
 }
 
 func (a *App) Cleanup() {
+	os.Stdout.WriteString(pointerShape("default"))
 	// Flush any pending file writes before tearing down the terminal.
 	if wq := a.screen.WriteQueue; wq != nil {
 		wq.FlushNow()

@@ -16,13 +16,14 @@ func TestRowHitAgreesWithHover(t *testing.T) {
 	f := gitx.FileStatus{Path: "a.go"}
 	p.rows = []row{{file: &f, action: "+", undo: "⟲"}}
 
-	// "[ + ]" sits at the right edge, "[ ⟲ ]" immediately left of it.
-	aLeft := p.Width - 2 - 1 - 3
+	// "[ + ]" sits at the right edge of the list column, "[ ⟲ ]" immediately
+	// left of it.
+	aLeft := p.listW() - 1 - 3
 	cases := []struct {
 		x    int
 		want string
 	}{
-		{p.Width - 3, "action"},
+		{p.listW() - 1, "action"},
 		{aLeft, "action"},
 		{aLeft - 1, "undo"},
 		{aLeft - 5, "undo"},
@@ -64,13 +65,13 @@ func TestSplitDividerDrag(t *testing.T) {
 
 	press := tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, X: p.dividerX(), Y: p.detailTop()}
 	p.HandleMouse(press)
-	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: 25, Y: p.detailTop()})
-	if got := p.splitHalf(); got != 24 {
-		t.Errorf("after drag, half = %d, want 24", got)
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: p.rightX() + 12, Y: p.detailTop()})
+	if got := p.splitHalf(); got != 12 {
+		t.Errorf("after drag, half = %d, want 12", got)
 	}
 
 	// Dragged past the edge, both columns keep their minimum width.
-	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: 1, Y: p.detailTop()})
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: p.rightX(), Y: p.detailTop()})
 	if got := p.splitHalf(); got < 8 {
 		t.Errorf("left column collapsed to %d", got)
 	}
@@ -82,8 +83,42 @@ func TestSplitDividerDrag(t *testing.T) {
 	// Mouse-up ends the drag; later motion must not keep moving it.
 	p.EndDrag()
 	before := p.splitHalf()
-	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: 30, Y: p.detailTop()})
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: p.rightX() + 20, Y: p.detailTop()})
 	if p.splitHalf() != before {
 		t.Error("divider still moving after the drag ended")
 	}
+}
+
+// The column divider and the list / graph rule are draggable, and both stay
+// inside their limits however far the mouse goes.
+func TestColumnAndRuleDrag(t *testing.T) {
+	p := New(nil)
+	p.Width, p.Height = 100, 30
+	body := p.bodyRows()
+
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, X: p.listW() + 1, Y: listTop + 1})
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: 51, Y: listTop + 1})
+	if p.listW() != 50 {
+		t.Errorf("list width after drag = %d, want 50", p.listW())
+	}
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: 2, Y: listTop + 1})
+	if p.listW() < 16 || p.rightW() < 20 {
+		t.Errorf("columns collapsed: list %d, diff %d", p.listW(), p.rightW())
+	}
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: 99, Y: listTop + 1})
+	if p.rightW() < 20 {
+		t.Errorf("diff column collapsed to %d", p.rightW())
+	}
+	p.EndDrag()
+
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionPress, X: 3, Y: p.ruleY()})
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: 3, Y: listTop + 5})
+	if p.listRows() != 5 || p.listRows()+1+p.graphRows() != body {
+		t.Errorf("rows after drag: list %d graph %d body %d", p.listRows(), p.graphRows(), body)
+	}
+	p.HandleMouse(tea.MouseMsg{Type: tea.MouseLeft, Action: tea.MouseActionMotion, X: 3, Y: 200})
+	if p.graphRows() < 1 {
+		t.Errorf("graph pane collapsed to %d rows", p.graphRows())
+	}
+	p.EndDrag()
 }

@@ -426,10 +426,15 @@ send binding.
 | Send (mouse)          | click `▶ Send`  | URL bar              |
 | Terminal toggle/focus | `ctrl+j`, `ctrl+\``, click strip | Global (`ctrl+j` is the reliable one; ctrl+` only in terminals that emit NUL for it) |
 | Terminal leave        | `ctrl+b`        | Terminal focused (all other keys go to the shell) |
-| Terminal select/copy  | drag, `ctrl+c`  | Terminal focused (ctrl+c interrupts the shell only with no selection) |
+| Terminal select/copy  | drag (copies on release), `ctrl+c` | Terminal focused (ctrl+c interrupts the shell only with no selection) |
+| Terminal resize       | drag the `▸ TERMINAL` strip | Terminal open (a still click still toggles / focuses) |
 | Git panel             | `ctrl+g` (outside editors), `alt+g`, `F5`, `g` in explorer, click `⎇ Git` | Global |
-| Git: sections         | `1-5`, `tab`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
-| Git: diff layout      | drag `│`, `z`/`alt+z`/`⌥z`, `v`, `w` | resize split columns · wrap lines · inline⇄split · ignore whitespace |
+| Git: sections         | `1-5`, `h`/`l`, `←/→`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
+| Git: list ⇄ diff      | `tab`, click    | Moves the keyboard between the file list (left) and the diff (right); `esc` returns to the list |
+| Git: diff lines       | `jk`/`↑↓`, `shift+↑↓`, `s`, `u`, `d`, click `[ ⟲ revert ]` / `[ + stage ]` / `[ − unstage ]` on a hunk header | Diff focused: move · select lines · stage / unstage-or-revert / revert the selection or the cursor's hunk (revert confirms) |
+| Git: diff layout      | drag `│` (list width, split columns), drag `─` (list / graph), `z`/`alt+z`/`⌥z`, `v`, `w` | resize · wrap lines · inline⇄split · ignore whitespace |
+| Git: edit in split    | click the new (right) side of a split diff | the editor takes the right column at that line, the index side on the left. Live diff (`editdiff.go`): removed lines red on the left, added lines green in the editor, `⟲` / `+` per hunk in the 5-cell gutter between them (revert in the buffer, undoable · stage via `git apply --cached --unidiff-zero` without leaving the editor); `esc` saves and returns |
+| Resize cursor         | hover any splitter | the splitter lights up; terminals that honour OSC 22 (kitty, Ghostty, WezTerm, foot, xterm) also show a resize pointer |
 | Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `z` `d` `D` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · wrap lines · discard · undo all · commit · stash · push · pull · fetch · open/collapse · filter |
 | Git: commit type      | `←/→`, first letter, `⏎`, `esc` | Type picker (conventional repos only) |
 | Git: compose message  | `ctrl+s` commit · `ctrl+r` redraft · `esc` cancel | Message editor (full text editor: undo, selection, folding) |
@@ -443,9 +448,46 @@ send binding.
 | Git: blame            | `⏎` `b`         | go to line · toggle inline blame in editor |
 | Click                 | mouse left      | Everything: files, folders, tabs, toggle, method, URL cursor, editor cursor, response, body/headers label |
 | Scroll                | wheel           | Explorer, editor, response |
-| Resize explorer       | drag `│`        | Separator            |
+| Select any text       | drag over it (copied on release) · `ctrl+c` re-copies | Anywhere: explorer, response, preview, help, git lists; editors, the terminal panel and the git diff keep their own selections |
+| Resize explorer       | drag `│`        | Separator (`ctrl+b` is the only keyboard toggle; arrows never leave the sidebar) |
+| Resize runner split   | drag the border between the editor and response boxes | Runner view |
+| Resize markdown split | drag the seam between editor and preview | Markdown split view |
 
 ## 10. Changelog
+
+### v3.1 — Resizable panes, Git side-by-side, line-level revert
+- Every pane drags. The `▸ TERMINAL` strip resizes the panel (a still click
+  still toggles it, as before); the runner's editor / response border and the
+  Markdown editor / preview seam drag too. Each remembers its size for the
+  session (`TermRows`, `EditorRows`, `MdSplitLeft`; 0 = the old default) and
+  `SetSize` keeps clamping, so a drag can never produce a layout the frame
+  tests reject. All splitters share one `dragKind` in the screen.
+- Any text on screen selects. A drag that starts outside a pane with its own
+  selection (editors, terminal panel, git diff, palette) selects a block of the
+  rendered frame — `OverlaySelection` highlights it after bubblezone's Scan, so
+  the cells are exactly the ones drawn — and copies it on release. Block, not
+  reading order: the frame is panes side by side, and a linear sweep would drag
+  the sidebar into every copy. Any key drops it; `ctrl+c` re-copies instead of
+  quitting while it shows.
+- Terminal copy on select. The host terminal never sees the panel's cells
+  while mouse tracking is on, and `cmd+c` cannot reach a terminal program, so
+  a drag over the terminal is copied the moment the button is released (the
+  footer says so); `ctrl+c` with a selection still copies too.
+- The sidebar is left only with `ctrl+b` (or `tab`): `→` in the explorer no
+  longer jumps to the main pane.
+- Git panel is two columns, like the VS Code SCM view: the section list on
+  the left with a commit graph (`git log --graph --oneline`) of the checked-out
+  branch under it — the branch under the cursor in the Branches section — and
+  the diff on the right at full height. The column divider and the list / graph
+  rule drag. `tab` moves the keyboard into the diff, where `jk` move a cursor,
+  `shift+↑↓` select rows, and `s` / `u` / `d` stage, unstage-or-revert, or
+  revert the selection or the cursor's hunk; every hunk header carries
+  `[ ⟲ revert ] [ + stage ]` (or `[ − unstage ]`) buttons. `gitx.SubPatchLines`
+  builds the partial patch the way `git add -p` does — unselected lines become
+  context or are dropped depending on which side is on disk — and
+  `Repo.Apply` runs `git apply --recount [--cached] [--reverse]`. Untracked
+  files and `-w` diffs are excluded, since neither patch applies. The `e`
+  edit-in-place mode is unchanged and now has the whole right column.
 
 ### v1.0 — Initial build (all phases 0–8)
 - Built from scratch: CLI, scaffolding, data layer, HTTP engine, document model,
@@ -680,9 +722,13 @@ send binding.
 4. **Explorer decorations**: VS Code-style status colours and M/A/D/U/! badges on
    files, `●` on folders containing changes. Refreshed on open, save (rate-limited),
    explorer `r`, and after every git action.
-5. **Blame in the editor**: `b` in the Blame section toggles a GitLens-style gutter
-   annotation (author, age, summary) per line and a current-line blame note in the
-   status row. `⏎` on a blame row jumps the editor to that line.
+5. **Blame**: the left column lists the commits that wrote the file (grouped from
+   `git blame`, newest first, with line counts); the right column is the annotated
+   source — hash, author, age and line number in front of every line, the selected
+   commit's lines marked. The sidebar stays beside the panel, and clicking a file
+   there re-blames it without leaving the tab. `⏎` opens the editor at the commit's
+   first line (or the cursor line after `tab`). `b` toggles a GitLens-style gutter
+   annotation per line and a current-line blame note in the status row.
 6. Not included (GitLens features without a terminal equivalent here): commit graph,
    worktrees, GitHub/GitLab integrations, interactive rebase editor, line history,
    compare refs, launchpad.
@@ -959,8 +1005,9 @@ send binding.
   write queue.
 
 ### v2.8.5
-- The Git panel and the find palette take the full window width; the sidebar
-  hides while either is open and returns when it closes. Visibility is derived
+- The find palette takes the full window width; the sidebar hides while it is
+  open and returns when it closes. (The Git panel used to as well; since the
+  Blame tab is fed from the explorer, it now keeps the sidebar.) Visibility is derived
   (explorerHidden() = user preference OR a panel is up) rather than saved and
   restored, so every close path restores it, and a sidebar the user hid stays
   hidden. The layout is recomputed once at the end of Update when that value

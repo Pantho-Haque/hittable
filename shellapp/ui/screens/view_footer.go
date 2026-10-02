@@ -27,10 +27,10 @@ func (m *MainScreen) footerText() string {
 		if m.Git.Resolving {
 			return "merge conflict · c current · i incoming · b both · n/p next/prev · a mark resolved · o open in editor · esc back"
 		}
-		return "git · 1-5 sections · jk move · ⏎ action · y sync/push · esc close · ctrl+b explorer"
+		return "git · 1-5 sections · tab list⇄diff · jk move · ⏎ action · y sync/push · esc close · ctrl+b explorer"
 	}
 	if m.TermFocused {
-		return "terminal · keys go to the shell · ctrl+j hide · ctrl+b explorer · click editor to leave"
+		return "terminal · keys go to the shell · drag selects & copies · ctrl+j hide · ctrl+b explorer"
 	}
 	var hints []string
 

@@ -45,6 +45,9 @@ func (m *MainScreen) View() string {
 	sepStyle := lipgloss.NewStyle().
 		Foreground(theme.BorderColor).
 		Background(theme.BgColor)
+	if m.dragKind == "explorer" || m.sepHover == "explorer" {
+		sepStyle = sepStyle.Foreground(theme.PrimaryColor).Bold(true)
+	}
 	separator := sepStyle.Render("│")
 
 	mainCol := lipgloss.JoinVertical(lipgloss.Left, mainView, m.renderTermStrip())
@@ -360,6 +363,8 @@ var helpSections = []struct {
 		{"ctrl+j  ctrl+`", "toggle integrated terminal"},
 		{"ctrl+g  alt+g  F5", "toggle Git panel"},
 		{"alt+b", "hide / show the sidebar"},
+		{"drag borders", "resize sidebar · terminal · editor/response · md split"},
+		{"drag any text", "select a block of the screen · copied on release"},
 		{"esc", "close file / dismiss"},
 		{"?  F1", "this help"},
 		{"ctrl+c", "quit (copies a selection first)"},
@@ -395,14 +400,17 @@ var helpSections = []struct {
 	{"Terminal (ctrl+j)", []helpRow{
 		{"ctrl+b", "back to the explorer"},
 		{"ctrl+c", "copy selection, else interrupt"},
-		{"drag", "select output text"},
+		{"drag", "select output text (copied on release)"},
 		{"wheel  shift+↑↓", "scroll back (5000 lines)"},
 		{"ctrl+v", "paste"},
 		{"any key", "restart the shell after exit"},
 	}},
 	{"Git (ctrl+g)", []helpRow{
-		{"1-5  tab", "switch section"},
+		{"1-5  h l", "switch section"},
+		{"tab", "file list ⇄ diff"},
 		{"s u  a A", "stage · unstage · all · all"},
+		{"s u d in diff", "stage · unstage/revert · revert hunk or selected lines"},
+		{"shift+↑↓", "select diff lines"},
 		{"d  D", "discard file · undo all changes"},
 		{"c  S", "commit (type picker, then compose) · stash"},
 		{"←/→ ⏎", "pick commit type · open the message editor"},
@@ -411,7 +419,7 @@ var helpSections = []struct {
 		{"p P f  y", "push · pull · fetch · sync"},
 		{"e", "edit working copy in preview"},
 		{"v  z  w", "inline⇄split · wrap · ignore ws"},
-		{"drag │", "resize the diff columns"},
+		{"drag │ ─", "resize list · graph · diff columns"},
 		{"drag  ctrl+c", "select diff lines · copy"},
 		{"n d", "new / delete branch"},
 		{"b", "inline blame in the editor"},
@@ -536,12 +544,12 @@ func (m *MainScreen) renderTermStrip() string {
 	}
 	hint := "  ctrl+j toggle"
 	if m.TermFocused {
-		hint = "  ctrl+j hide · ctrl+b explorer · wheel scrolls back"
+		hint = "  ctrl+j hide · ctrl+b explorer · drag selects & copies · drag this bar to resize"
 	}
 	if off := m.Term.ScrollOffset; off > 0 {
 		hint = fmt.Sprintf("  ↑ scrollback %d/%d · any key returns", off, m.Term.ScrollbackLen())
 	}
-	line := theme.Hoverable(m.HoverZone == "term_strip", st).Render(label) +
+	line := theme.Hoverable(m.HoverZone == "term_strip" || m.dragKind == "term", st).Render(label) +
 		theme.MutedStyle.Background(theme.SurfaceColor).Render(hint)
 	line = ansi.Truncate(line, m.MainWidth, "")
 	if w := lipgloss.Width(line); w < m.MainWidth {

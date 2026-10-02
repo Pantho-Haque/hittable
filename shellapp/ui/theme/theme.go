@@ -298,3 +298,16 @@ func Hoverable(on bool, st lipgloss.Style) lipgloss.Style {
 	}
 	return st.Underline(true).Bold(true)
 }
+
+// TintRow lays st's background under an already-styled row: every SGR
+// reset inside it is followed by the background again, so syntax colours
+// keep their foreground while the tint reaches the row's end.
+func TintRow(row string, st lipgloss.Style) string {
+	probe := lipgloss.NewStyle().Background(st.GetBackground()).Render(" ")
+	i := strings.IndexByte(probe, ' ')
+	if i <= 0 {
+		return row // no colour profile (tests, dumb terminals)
+	}
+	bg := probe[:i]
+	return bg + strings.ReplaceAll(row, "\x1b[0m", "\x1b[0m"+bg) + "\x1b[0m"
+}

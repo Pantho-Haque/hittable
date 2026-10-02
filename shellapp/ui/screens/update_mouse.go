@@ -21,23 +21,79 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// branches below only have to deal with clicks.
 	if msg.Type == tea.MouseMotion {
 		m.HoverZone = m.findZoneAt(msg)
+		m.sepHover = ""
+		if m.ActiveFile != "" && !m.GitOpen && !m.Palette.Open && !m.ShowHelp { // zones of a hidden main pane go stale
+			m.sepHover = m.splitterAt(msg)
+		}
+		switch {
+		case m.HoverZone == "term_strip":
+			m.sepHover = "term"
+		case !m.explorerHidden() && x == m.ExplorerWidth && msg.Y > 0 && msg.Y < m.Height-1:
+			m.sepHover = "explorer"
+		}
 	}
 
+	if press {
+		// Every press re-anchors the frame selection; it only becomes one
+		// if the mouse moves, and a click elsewhere drops the last one.
+		m.frameSel = frameSel{ax: x, ay: msg.Y}
+	}
 	if msg.Type == tea.MouseRelease {
-		m.Dragging = false
+		kind, moved := m.dragKind, m.dragMoved
+		m.dragKind = ""
 		m.Git.EndDrag()
+		if kind == "term" && !moved {
+			m.toggleTerminal() // a press on the strip that never moved is a click
+		}
+		if kind != "" {
+			return m, nil
+		}
+		if m.frameSel.active {
+			m.copyFrameSel()
+			return m, nil
+		}
+		// Copy on select, as terminal emulators do: the host terminal never
+		// sees these cells (mouse tracking is on), and cmd+c cannot reach a
+		// terminal program, so releasing a drag is the moment to copy.
+		if m.termSel {
+			m.termSel = false
+			if n := m.Term.CopySelection(); n > 0 {
+				m.StatusBar = fmt.Sprintf("copied %d line(s) · ctrl+v / cmd+v pastes", n)
+			}
+			return m, nil
+		}
 		if ed := m.focusedEditor(); ed != nil {
 			ed.Update(m.editorRelative(msg))
 		}
 		return m, nil
 	}
-	if drag && m.Dragging {
-		m.ExplorerWidth += x - m.DragStartX
-		m.DragStartX = x
-		m.SetSize(m.Width, m.Height) // clamps width and resizes children
+	if drag && m.dragKind != "" {
+		m.dragMoved = true
+		switch m.dragKind {
+		case "explorer":
+			m.ExplorerWidth += x - m.DragStartX
+			m.DragStartX = x
+		// Sizes stay >= 1: 0 means "default", and a drag past the edge
+		// should pin the pane at its minimum, not snap it back.
+		case "term":
+			if m.Term.Open {
+				m.TermRows = max(m.Height-2-msg.Y, 1) // strip row, then the panel, then the footer
+			}
+		case "editor":
+			m.EditorRows = max(msg.Y-m.dragBase+1, 1)
+		case "md":
+			m.MdSplitLeft = max(msg.X-m.dragBase+1, 1)
+		}
+		m.SetSize(m.Width, m.Height) // clamps and resizes children
 		return m, nil
 	}
 	if drag {
+		// A drag that began outside a self-selecting pane selects the frame.
+		if m.frameSel.active || !m.anchorOwned() {
+			m.frameSel.active = true
+			m.frameSel.bx, m.frameSel.by = x, msg.Y
+			return m, nil
+		}
 		// Text selection drag inside the focused editor, terminal or git pane.
 		if ed := m.focusedEditor(); ed != nil {
 			return m, ed.Update(m.editorRelative(msg))
@@ -83,7 +139,7 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	// Separator column between explorer and main pane.
 	if press && !m.explorerHidden() && x == m.ExplorerWidth {
-		m.Dragging = true
+		m.dragKind, m.dragMoved = "explorer", false
 		m.DragStartX = x
 		return m, nil
 	}
@@ -103,7 +159,6 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.Focus = FocusExplorerPane
 		}
 		if press || msg.Type == tea.MouseRight {
-			m.GitOpen = false
 			m.Palette.Close()
 		}
 		em := msg
@@ -126,12 +181,14 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if press {
 		if z := m.Zones.Get("term_strip"); z != nil && z.InBounds(msg) {
-			m.toggleTerminal()
+			// Drag resizes the panel; a plain click toggles it on release.
+			m.dragKind, m.dragMoved = "term", false
 			return m, nil
 		}
 		if z := m.Zones.Get("term_view"); m.Term.Open && z != nil && z.InBounds(msg) {
 			m.focusTerminal()
 			m.Term.SelectStart(msg.X-z.StartX, msg.Y-z.StartY)
+			m.termSel = true
 			return m, nil
 		}
 	}
@@ -181,7 +238,7 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			rel.Y -= z.StartY
 			m.Git.HandleMouse(rel)
 		} else if msg.Type == tea.MouseMotion {
-			m.Git.HoverRow = -1
+			m.Git.ClearHover()
 		}
 		return m, nil
 	}
@@ -200,6 +257,12 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.ActiveFile == "" {
 		return m, nil
+	}
+	if press {
+		if kind := m.splitterAt(msg); kind != "" {
+			m.dragKind, m.dragMoved = kind, false
+			return m, nil
+		}
 	}
 	switch msg.Type {
 	case tea.MouseWheelLeft, tea.MouseWheelRight:
@@ -323,6 +386,54 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, m.handleBodyMouse(m.editorRelative(msg))
 	}
 	return m, nil
+}
+
+// splitterAt names the main-pane splitter under a press, recording where the
+// pane it resizes starts: "editor" for the border between the runner's editor
+// and response boxes, "md" for the seam between a Markdown editor and its
+// preview.
+// PointerShape is the xterm pointer (OSC 22) the frame asks the terminal
+// for: a resize arrow over or while dragging a splitter, "default" elsewhere.
+func (m *MainScreen) PointerShape() string {
+	kind := m.dragKind
+	if kind == "" {
+		kind = m.sepHover
+	}
+	switch kind {
+	case "explorer", "md":
+		return "ew-resize"
+	case "term", "editor":
+		return "ns-resize"
+	}
+	if m.GitOpen {
+		if a := m.Git.ResizeAxis(); a != "" {
+			return a
+		}
+	}
+	return "default"
+}
+
+func (m *MainScreen) splitterAt(msg tea.MouseMsg) string {
+	ez := m.Zones.Get("editor")
+	if ez == nil || ez.IsZero() {
+		return ""
+	}
+	if m.ViewMode == ViewRunner && !m.isMarkdown() {
+		rz := m.Zones.Get("response")
+		if msg.X >= ez.StartX && msg.X <= ez.EndX && (msg.Y == ez.EndY || (rz != nil && !rz.IsZero() && msg.Y == rz.StartY)) {
+			m.dragBase = ez.StartY
+			return "editor"
+		}
+		return ""
+	}
+	if m.isMarkdown() && m.MdMode == MdSplit {
+		mz := m.Zones.Get("md_pane")
+		if msg.Y >= ez.StartY && msg.Y <= ez.EndY && (msg.X == ez.EndX || (mz != nil && !mz.IsZero() && msg.X == mz.StartX)) {
+			m.dragBase = ez.StartX
+			return "md"
+		}
+	}
+	return ""
 }
 
 func (m *MainScreen) handleBodyMouse(msg tea.MouseMsg) tea.Cmd {

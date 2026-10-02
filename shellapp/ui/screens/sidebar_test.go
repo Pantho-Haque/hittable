@@ -28,7 +28,6 @@ func TestFullWidthPanelsHideTheSidebar(t *testing.T) {
 		open  func()
 		close func()
 	}{
-		{"git", m.toggleGit, m.toggleGit},
 		{"palette", func() { m.openPalette(0) }, m.Palette.Close},
 	}
 	for _, c := range cases {
@@ -53,6 +52,15 @@ func TestFullWidthPanelsHideTheSidebar(t *testing.T) {
 			t.Errorf("%s: pane is %d wide after closing, want %d", c.name, m.MainWidth, docked)
 		}
 	}
+
+	// The Git panel keeps the sidebar (its Blame tab is fed from it).
+	m.toggleGit()
+	m.Update(nil)
+	if m.explorerHidden() || m.MainWidth != docked {
+		t.Errorf("git panel hid the sidebar (main %d, want %d)", m.MainWidth, docked)
+	}
+	m.toggleGit()
+	m.Update(nil)
 
 	// A sidebar the user hid stays hidden after a panel closes.
 	m.toggleExplorer()

@@ -87,6 +87,9 @@ type MainScreen struct {
 	MainWidth        int
 	MainH            int // rows of the main pane above the terminal strip
 	EditorHeight     int
+	TermRows         int // dragged terminal panel height (0 = a third of the window)
+	EditorRows       int // dragged runner editor box height (0 = a third of the pane)
+	MdSplitLeft      int // dragged markdown split editor width (0 = half)
 	TermFocused      bool
 	GitOpen          bool
 	ExplorerHidden   bool // the user's preference (alt+b, ☰)
@@ -100,8 +103,14 @@ type MainScreen struct {
 	spinning         bool // a spinner tick loop is already running
 	StatusBar        string
 	ExplorerFocused  bool
-	Dragging         bool
+	dragKind         string // splitter being dragged: explorer · term · editor · md
+	sepHover         string // splitter under the mouse (same names), "" = none
+	dragMoved        bool   // the mouse moved since the press (a still press is a click)
+	dragBase         int    // screen row / column the dragged pane starts at
 	DragStartX       int
+	termSel          bool     // a drag selection is in progress in the terminal panel
+	frameSel         frameSel // drag-selected block of the rendered frame
+	lastFrame        []string // the frame as last drawn, for copying the block
 	HoverZone        string
 	HelpScroll       int // the help overlay scrolls when it outgrows the pane
 	ShowHelp         bool
@@ -250,7 +259,11 @@ func (m *MainScreen) SetSize(w, h int) {
 	// scrolled the terminal; keep the identity and let the frame clip handle
 	// panes too short for any layout.
 	avail := max(m.MainH-7, 4)
-	m.EditorHeight = max(avail/3, 4) // outer rows of the editor box (incl. border)
+	m.EditorHeight = avail / 3 // outer rows of the editor box (incl. border)
+	if m.EditorRows > 0 {
+		m.EditorHeight = m.EditorRows
+	}
+	m.EditorHeight = max(m.EditorHeight, 4)
 	m.EditorHeight = min(m.EditorHeight, avail-2)
 	respInner := max(avail-m.EditorHeight-2, 0)
 
@@ -266,6 +279,9 @@ func (m *MainScreen) SetSize(w, h int) {
 	m.Preview.SetSize(m.MainWidth, m.MainH-1)
 	if m.isMarkdown() && m.MdMode == MdSplit {
 		left := m.MainWidth / 2
+		if m.MdSplitLeft > 0 && m.MainWidth >= 24 {
+			left = min(max(m.MdSplitLeft, 12), m.MainWidth-12)
+		}
 		m.TextEd.SetSize(left-2, m.MainH-3)
 		m.Preview.SetSize(m.MainWidth-left, m.MainH-1)
 	}
@@ -280,11 +296,15 @@ func (m *MainScreen) isMarkdown() bool {
 	return doc != nil && doc.Kind == document.KindMarkdown
 }
 
-// termRows is the terminal panel height when open.
+// termRows is the terminal panel height when open: the dragged height, else
+// a third of the window.
 func (m *MainScreen) termRows() int {
 	r := (m.Height - 2) / 3
 	if r < 6 {
 		r = 6
+	}
+	if m.TermRows > 0 {
+		r = m.TermRows
 	}
 	return r
 }
@@ -293,10 +313,11 @@ func (m *MainScreen) OpenFile(path string) {
 	m.openFileRaw(path)
 }
 
-// explorerHidden reports whether the sidebar is off screen. The Git panel and
-// the find palette take the full width while they are up, so the file tree
-// gets out of the way and comes back when they close; ExplorerHidden itself
-// stays the user's own preference.
+// explorerHidden reports whether the sidebar is off screen. The find palette
+// takes the full width while it is up, so the file tree gets out of the way
+// and comes back when it closes; ExplorerHidden itself stays the user's own
+// preference. The Git panel keeps the tree: clicking a file there feeds the
+// Blame tab.
 func (m *MainScreen) explorerHidden() bool {
-	return m.ExplorerHidden || m.GitOpen || m.Palette.Open
+	return m.ExplorerHidden || m.Palette.Open
 }

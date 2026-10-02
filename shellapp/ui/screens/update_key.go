@@ -14,6 +14,16 @@ import (
 func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.StatusBar = ""
 	key := msg.String()
+	// A frame selection is already on the clipboard; ctrl+c re-copies it
+	// rather than quitting, and any other key lets it go.
+	if m.frameSel.active {
+		m.frameSel.active = false
+		if key == "ctrl+c" {
+			m.frameSel.active = true
+			m.copyFrameSel()
+			return m, nil
+		}
+	}
 	if keyLog != nil {
 		fmt.Fprintf(keyLog, "%q type=%d alt=%v\n", key, msg.Type, msg.Alt)
 	}
@@ -377,7 +387,7 @@ func (m *MainScreen) handleExplorerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.ActiveFile != "" {
 			m.closeFile()
 		}
-	case "tab", "right":
+	case "tab":
 		if m.ActiveFile != "" {
 			m.toggleExplorerFocus()
 		}
@@ -458,7 +468,9 @@ func (m *MainScreen) focusedEditor() *texteditor.TextEditor {
 	// focusTerminal leaves m.Focus pointing at whatever was focused before, so
 	// the terminal has to be ruled out explicitly — otherwise a drag over the
 	// terminal panel is handed to the editor and selection never happens.
-	if m.TermFocused || m.ExplorerFocused || m.ActiveFile == "" {
+	// The Git panel, palette and help draw over the editor, so a drag while
+	// they are up belongs to them.
+	if m.TermFocused || m.ExplorerFocused || m.ActiveFile == "" || m.GitOpen || m.Palette.Open || m.ShowHelp {
 		return nil
 	}
 	switch m.Focus {
