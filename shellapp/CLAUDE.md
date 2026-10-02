@@ -715,7 +715,12 @@ send binding.
    are sub-directories and macOS symlinked paths via `--show-prefix`.
 3. **`ui/components/gitpanel`**: main-pane panel with Status / Commits (repo or
    file history, search) / Branches / Stashes / Blame lists plus a detail pane
-   (coloured unified diff, commit, stash, or the commit behind a blamed line).
+   (coloured unified diff, stash, or a commit as a VS Code-style accordion:
+   `commitview.go` splits `git show -p` into per-file sections with `+n −m`
+   headers that fold on click / ⏎; folds persist per path). The commit graph
+   under the list is clickable (selects that commit into the detail pane,
+   `graphSel`) and doubles its history when scrolled to the end. Wheel
+   scrolling everywhere in the app moves one row per event.
    Prompts for commit message, branch name, stash message, filter; y/n confirms for
    discard, delete, drop, pop. Network ops run async with a busy indicator. Mouse:
    tabs, rows (click selects, click again acts), wheel on list or detail.

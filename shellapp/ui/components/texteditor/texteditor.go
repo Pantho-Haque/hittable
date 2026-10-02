@@ -571,13 +571,13 @@ func (t *TextEditor) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		if msg.Shift && !t.Wrap {
 			b.scrollX -= 6
 		} else {
-			b.scrollY -= 3
+			b.scrollY-- // one row per wheel event: the finest scroll a terminal reports
 		}
 	case tea.MouseWheelDown:
 		if msg.Shift && !t.Wrap {
 			b.scrollX += 6
 		} else {
-			b.scrollY += 3
+			b.scrollY++
 		}
 	case tea.MouseWheelLeft:
 		b.scrollX -= 6

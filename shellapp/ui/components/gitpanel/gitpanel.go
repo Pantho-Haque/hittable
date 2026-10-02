@@ -131,6 +131,14 @@ type Panel struct {
 	graph              []string // commit graph of the selected branch
 	graphFor           string
 	graphScroll        int
+	graphN             int    // commits loaded; doubles when scrolled to the end
+	graphSel           int    // graph row shown in the detail pane, -1 = the list drives it
+	graphSelHash       string // its hash, to find it again after a reload
+
+	// Commit accordion (Commits tab and graph clicks): message, files, folds.
+	commitHead  []string
+	commitFiles []commitFile
+	foldedFiles map[string]bool
 
 	// FocusDiff moves the keyboard to the diff: diffCursor is the rendered
 	// row under it, and line ops (stage / revert / unstage) act on the
@@ -250,7 +258,7 @@ type GenDoneMsg struct {
 }
 
 func New(repo *gitx.Repo) *Panel {
-	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1, HoverRow: -1, hoverHunk: -1, Wrap: true,
+	return &Panel{Repo: repo, Width: 80, Height: 24, selAnchor: -1, selEnd: -1, HoverRow: -1, hoverHunk: -1, Wrap: true, graphSel: -1, graphN: 200,
 		composeRules: commitmsg.DefaultRules()}
 }
 
@@ -338,9 +346,29 @@ func (p *Panel) loadGraph(force bool) {
 	if p.Repo == nil {
 		return
 	}
+	same := ref == p.graphFor
 	p.graphFor = ref
-	p.graph, _ = p.Repo.Graph(ref, 200)
-	p.graphScroll = 0
+	p.graph, _ = p.Repo.Graph(ref, p.graphN)
+	if !same {
+		p.graphScroll, p.graphSel, p.graphSelHash = 0, -1, ""
+	} else if p.graphSelHash != "" {
+		p.graphSel = -1
+		for i, l := range p.graph {
+			if graphHash(l) == p.graphSelHash {
+				p.graphSel = i
+			}
+		}
+	}
+	p.clamp()
+}
+
+// moreGraph loads more history when the graph is scrolled to its end.
+func (p *Panel) moreGraph() {
+	if p.Repo == nil || len(p.graph) < p.graphN || p.graphScroll+p.graphRows() < len(p.graph) {
+		return
+	}
+	p.graphN *= 2
+	p.graph, _ = p.Repo.Graph(p.graphFor, p.graphN)
 }
 
 // SetBlameSource supplies the editor's current lines for the blame list.
@@ -469,6 +497,7 @@ func (p *Panel) loadDetail() {
 	p.detailScroll, p.diffCursor = 0, 0
 	p.selAnchor, p.selEnd = -1, -1
 	p.hunkBtns = ""
+	p.graphSel, p.graphSelHash = -1, ""
 	r := p.current()
 	if r == nil || p.Repo == nil {
 		return
@@ -494,7 +523,8 @@ func (p *Panel) loadDetail() {
 			}
 		}
 	case r.commit != nil:
-		text = p.Repo.Show(r.commit.Hash)
+		p.commitDetail(r.commit.Hash)
+		return
 	case r.branch != nil:
 		text, _ = p.Repo.Run("log", "-n", "30", "--date=relative", "--format=%h  %ad  %an: %s", r.branch.Name)
 	case r.stash != nil:
@@ -551,6 +581,7 @@ func (p *Panel) detailLines() []string {
 			}
 		}
 	}
+	p.decorateFileHeads(out, src, w)
 	// Hunk headers carry the line-op buttons, right-aligned.
 	if p.hunkBtns != "" {
 		bw := lipgloss.Width(p.hunkBtns)
@@ -1516,6 +1547,11 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			}
 			if msg.Action == tea.MouseActionPress {
 				p.FocusDiff = true
+				if path := p.fileHeadAt(drow); path != "" {
+					p.toggleFile(path)
+					p.diffCursor = drow
+					return
+				}
 				if b := p.hunkBtnAt(drow, col); b != "" {
 					p.selAnchor, p.selEnd = -1, -1
 					p.diffCursor = drow
@@ -1542,6 +1578,10 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			return
 		}
 		if msg.Action != tea.MouseActionPress || !inLeft {
+			return
+		}
+		if msg.Y > p.ruleY() {
+			p.selectGraph(p.graphScroll + msg.Y - p.ruleY() - 1)
 			return
 		}
 		if i := p.rowAtY(msg.Y); i >= 0 {
@@ -1571,9 +1611,9 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			ed.Update(msg)
 		}
 	case tea.MouseWheelUp, tea.MouseWheelDown:
-		d := 3
+		d := 1 // one row per wheel event: the finest scroll a terminal reports
 		if msg.Type == tea.MouseWheelUp {
-			d = -3
+			d = -1
 		}
 		switch {
 		case inRight && p.detailEditor() != nil:
@@ -1586,6 +1626,7 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			p.clamp()
 		case inLeft && msg.Y > p.ruleY():
 			p.graphScroll += d
+			p.moreGraph()
 			p.clamp()
 		case inLeft:
 			p.listScroll += d
@@ -1805,7 +1846,22 @@ func (p *Panel) View(z *zone.Manager) string {
 	mode = z.Mark("git_wrap", theme.Hoverable(p.Hover == "git_wrap", wrapSt).Render("[wrap]")) + " " + mode
 	right := branch + "  " +
 		z.Mark("git_sync", theme.Hoverable(p.Hover == "git_sync", theme.SendButtonStyle).Render(p.SyncLabel())) + "  " + mode
-	if gap := inner - lipgloss.Width(head) - lipgloss.Width(right); gap > 0 {
+	// The loader (sync, commit, message generation) and the last result sit
+	// in the header's spare room, right-aligned against the controls, so
+	// they never cover the diff. When the header is too narrow they fall
+	// back to the hint row.
+	var status string
+	switch {
+	case p.Busy != "":
+		status = theme.WordmarkStyle.Render(p.Spinner + " " + p.Busy + p.genElapsed())
+	case p.Message != "":
+		status = theme.MutedStyle.Render(p.Message)
+	}
+	gap := inner - lipgloss.Width(head) - lipgloss.Width(right)
+	statusInHead := status != "" && lipgloss.Width(status)+4 <= gap
+	if statusInHead {
+		head += strings.Repeat(" ", gap-lipgloss.Width(status)-2) + status + "  "
+	} else if gap > 0 {
 		head += strings.Repeat(" ", gap)
 	}
 	lines := []string{ansi.Truncate(head+right, inner, "")}
@@ -1828,9 +1884,9 @@ func (p *Panel) View(z *zone.Manager) string {
 		foot = theme.PromptStyle.Render(" "+p.promptTitle+": "+p.promptText+"▏") + theme.MutedStyle.Render("  ⏎ ok · esc cancel")
 	case p.Resolving:
 		foot = theme.MutedStyle.Render(fmt.Sprintf(" resolving %s · c/i/b accept current/incoming/both · n/p next/prev · a mark resolved · o open · esc back", p.ResolveRel))
-	case p.Busy != "":
+	case p.Busy != "" && !statusInHead:
 		foot = theme.WordmarkStyle.Render(" " + p.Spinner + " " + p.Busy + p.genElapsed())
-	case p.Message != "":
+	case p.Message != "" && !statusInHead:
 		foot = theme.MutedStyle.Render(" " + p.Message)
 	default:
 		foot = theme.MutedStyle.Render(" " + p.hints())
@@ -1873,7 +1929,11 @@ func (p *Panel) leftColumn() []string {
 			out = append(out, pad("", w))
 			continue
 		}
-		out = append(out, pad(renderGraphLine(p.graph[i]), w))
+		line := pad(renderGraphLine(p.graph[i]), w)
+		if i == p.graphSel {
+			line = theme.CursorFocusedStyle.Render(pad(ansi.Strip(line), w))
+		}
+		out = append(out, line)
 	}
 	return out[:p.bodyRows()]
 }
@@ -2048,7 +2108,7 @@ func (p *Panel) hints() string {
 	case SecStatus:
 		return "tab diff · +/− stage · e edit · v split · z wrap · w -w · c commit · y sync · S stash · d discard · P pull · f fetch"
 	case SecCommits:
-		return "⏎/jk browse · J/K scroll diff · f file↔repo history · / search · y hash"
+		return "⏎/jk browse · J/K scroll diff · click a file header to fold it · f file↔repo history · / search · y hash"
 	case SecBranches:
 		return "⏎ checkout · n new · d delete · f fetch"
 	case SecStashes:

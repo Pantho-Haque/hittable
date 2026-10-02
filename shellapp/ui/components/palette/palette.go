@@ -384,12 +384,12 @@ func (p *Palette) HandleMouse(msg tea.MouseMsg) {
 			}
 		}
 	case tea.MouseWheelUp:
-		p.Cursor -= 3
+		p.Cursor--
 		if p.Cursor < 0 {
 			p.Cursor = 0
 		}
 	case tea.MouseWheelDown:
-		p.Cursor += 3
+		p.Cursor++
 		if p.Cursor >= len(p.Results) {
 			p.Cursor = len(p.Results) - 1
 		}

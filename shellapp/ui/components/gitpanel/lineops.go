@@ -15,7 +15,7 @@ import (
 // canPatch reports whether the row's diff can be applied by line: a tracked,
 // non-conflicting file, diffed without -w (a -w diff does not apply).
 func (p *Panel) canPatch(r *row) bool {
-	return r != nil && r.file != nil && !r.file.Conflict() && !r.file.Untracked() && !p.IgnoreWS &&
+	return r != nil && r.file != nil && !r.file.Conflict() && !r.file.Untracked() && !p.IgnoreWS && p.graphSel < 0 &&
 		r.file.Index != 'D' && r.file.Worktree != 'D'
 }
 
@@ -149,6 +149,12 @@ func (p *Panel) handleDiffKey(msg tea.KeyMsg) bool {
 		p.setDiffCursor(0)
 	case "G", "end":
 		p.setDiffCursor(len(p.detailLines()))
+	case "enter":
+		if path := p.fileHeadAt(p.diffCursor); path != "" {
+			p.toggleFile(path)
+			return true
+		}
+		return false
 	case "s", "+":
 		p.lineOp("stage", p.diffCursor)
 	case "u", "-":

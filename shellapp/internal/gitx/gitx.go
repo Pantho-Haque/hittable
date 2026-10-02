@@ -300,6 +300,13 @@ func (r *Repo) LogEntries(n int) (string, error) {
 	return r.Run("log", "-n", strconv.Itoa(n), "--pretty=format:%s%n%b%x00")
 }
 
+// ShowPatch is Show without the stat block: the message, then one `diff
+// --git` section per file.
+func (r *Repo) ShowPatch(rev string) string {
+	out, _ := r.Run("show", "-p", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n    %s%n%n%b", rev)
+	return out
+}
+
 // Show returns `git show --stat -p` for a revision.
 func (r *Repo) Show(rev string) string {
 	out, _ := r.Run("show", "--stat", "-p", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n    %s%n%n%b", rev)

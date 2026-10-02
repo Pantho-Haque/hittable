@@ -195,7 +195,7 @@ sections:
 | Section | What it holds |
 | :--- | :--- |
 | Status | *Staged Changes* and *Changes* groups, per-row `[ + ]` / `[ − ]` / `[ ⟲ ]` buttons, and the selected file's diff below |
-| Commits | repo history, or `f` for the open file's history; `/` searches message, author or hash |
+| Commits | repo history, or `f` for the open file's history; `/` searches message, author or hash. A commit opens as an accordion: one header per file with `+n −m`, click or `⏎` folds it. The graph under the file list is clickable too and loads more history as you scroll |
 | Branches | `⏎` checkout, `n` new, `d` delete |
 | Stashes | `⏎` pop, `s` stash, `d` drop |
 | Blame | the commits that wrote the open file on the left (newest first, line counts); every source line with its hash, author and age on the right, the selected commit's lines marked. Click a file in the explorer to blame it; `⏎` opens the editor at that line; `b` turns on inline blame in the editor gutter |

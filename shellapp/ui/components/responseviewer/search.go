@@ -138,9 +138,9 @@ func (r *ResponseViewer) Update(msg tea.Msg) tea.Cmd {
 // Scroll moves the viewport (mouse wheel).
 func (r *ResponseViewer) Scroll(up bool) {
 	if up {
-		r.ScrollY -= 3
+		r.ScrollY--
 	} else {
-		r.ScrollY += 3
+		r.ScrollY++
 	}
 	r.clampScroll()
 }

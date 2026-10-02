@@ -172,9 +172,9 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.Term.Open && (msg.Type == tea.MouseWheelUp || msg.Type == tea.MouseWheelDown) {
 		if z := m.Zones.Get("term_view"); z != nil && z.InBounds(msg) {
 			if msg.Type == tea.MouseWheelUp {
-				m.Term.Scroll(3)
+				m.Term.Scroll(1)
 			} else {
-				m.Term.Scroll(-3)
+				m.Term.Scroll(-1)
 			}
 			return m, nil
 		}
@@ -247,9 +247,9 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.ShowHelp {
 		switch msg.Type {
 		case tea.MouseWheelUp:
-			m.HelpScroll -= 3
+			m.HelpScroll--
 		case tea.MouseWheelDown:
-			m.HelpScroll += 3
+			m.HelpScroll++
 		case tea.MouseLeft:
 			m.ShowHelp = false
 		}
@@ -273,9 +273,9 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseWheelUp, tea.MouseWheelDown:
 		if z := m.Zones.Get("md_pane"); z != nil && !z.IsZero() && z.InBounds(msg) {
 			if msg.Type == tea.MouseWheelUp {
-				m.Preview.Scroll(-3)
+				m.Preview.Scroll(-1)
 			} else {
-				m.Preview.Scroll(3)
+				m.Preview.Scroll(1)
 			}
 			return m, nil
 		}

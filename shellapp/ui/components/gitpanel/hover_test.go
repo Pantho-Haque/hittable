@@ -1,9 +1,12 @@
 package gitpanel
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+	zone "github.com/lrstanley/bubblezone"
 
 	"github.com/hittable/shellapp/internal/gitx"
 )
@@ -121,4 +124,26 @@ func TestColumnAndRuleDrag(t *testing.T) {
 		t.Errorf("graph pane collapsed to %d rows", p.graphRows())
 	}
 	p.EndDrag()
+}
+
+// The loader and the last result live in the header's spare room (never
+// over the diff); a header too narrow for them falls back to the hint row.
+func TestStatusInHeader(t *testing.T) {
+	repo, _ := lineRepo(t)
+	p := New(repo)
+	p.SetSize(160, 30)
+	p.Refresh()
+	p.Busy, p.Spinner = "committing…", "⠋"
+	lines := strings.Split(ansi.Strip(p.View(zone.New())), "\n")
+	if !strings.Contains(lines[1], "⠋ committing…") || !strings.Contains(lines[1], "[wrap]") {
+		t.Fatalf("loader should sit in the header row: %q", lines[1])
+	}
+	if foot := lines[len(lines)-2]; strings.Contains(foot, "committing") || !strings.Contains(foot, "tab diff") {
+		t.Fatalf("hint row should keep the hints: %q", foot)
+	}
+	p.SetSize(70, 30) // no room next to the controls
+	lines = strings.Split(ansi.Strip(p.View(zone.New())), "\n")
+	if !strings.Contains(lines[len(lines)-2], "committing") || strings.Contains(lines[1], "committing") {
+		t.Fatalf("narrow header should fall back to the hint row: head=%q foot=%q", lines[1], lines[len(lines)-2])
+	}
 }
