@@ -7,15 +7,16 @@ import WorkspaceSwitcher from "@/components/workspace/WorkspaceSwitcher";
 export default function Topbar() {
   const pathname = usePathname();
   const isApp = pathname === "/hittable";
+  const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
 
   return (
-    <header className="relative z-50 flex items-center justify-between px-6 h-11 border-b border-white/5 bg-[#060d18]/90 backdrop-blur-md shrink-0">
+    <header className="relative z-50 flex items-center justify-between px-6 h-11 border-b border-white/5 bg-(--ink-950)/90 backdrop-blur-md shrink-0">
       {/* Left — logo + breadcrumb */}
       <div className="flex items-center gap-3">
         <Link href="/" className="flex items-center gap-3 group outline-none">
-          <div className="relative flex items-center justify-center w-8 h-8 rounded-xl bg-linear-to-b from-zinc-800 to-zinc-900 border border-white/10 transition-all duration-300 group-hover:shadow-[0_4px_16px_rgba(255,255,255,0.1)] group-hover:border-white/20">
+          <div className="relative flex items-center justify-center w-8 h-8 rounded-xl bg-linear-to-b from-(--ink-500) to-(--ink-800) border border-white/10 transition-all duration-300 group-hover:shadow-[0_4px_16px_rgba(255,255,255,0.1)] group-hover:border-white/20">
             <div className="absolute inset-0 rounded-xl bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-100 transition-transform duration-300 group-hover:scale-110">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-100 transition-transform duration-300 group-hover:scale-110">
               <path d="M10 3L6 21M18 3l-4 18M4 12h16" />
             </svg>
           </div>
@@ -24,11 +25,11 @@ export default function Topbar() {
           </span>
         </Link>
 
-        {isApp && (
+        {(isApp || isDocs) && (
           <>
             <span className="text-white/15 text-xs">/</span>
             <span className="text-[11px] tracking-[0.15em] uppercase text-cyan-400/70">
-              App
+              {isApp ? "App" : "Docs"}
             </span>
           </>
         )}
@@ -40,6 +41,7 @@ export default function Topbar() {
           {[
             { label: "Features", href: "/#features" },
             { label: "Shortcuts", href: "/#shortcuts" },
+            { label: "Docs", href: "/docs" },
             {
               label: "GitHub",
               href: "https://github.com/Pantho-Haque/hittable",
@@ -51,7 +53,7 @@ export default function Topbar() {
               href={item.href}
               target={item.external ? "_blank" : undefined}
               rel={item.external ? "noopener noreferrer" : undefined}
-              className="text-[10px] tracking-[0.2em] uppercase text-white/30 hover:text-cyan-400 transition-colors"
+              className={`text-[10px] tracking-[0.2em] uppercase transition-colors hover:text-cyan-400 ${item.href === "/docs" && isDocs ? "text-cyan-400" : "text-white/30"}`}
             >
               {item.label}
             </a>

@@ -17,7 +17,7 @@ export default function PortfolioSection({
 }) {
   return (
     <section className="max-w-6xl mx-auto px-6 py-20 border-t border-white/5">
-      <div className="rounded-3xl border border-white/10 bg-zinc-900/40 p-8 md:p-12 relative overflow-hidden flex flex-col md:flex-row items-center gap-10 shadow-2xl">
+      <div className="rounded-3xl border border-white/10 bg-(--ink-800)/60 p-8 md:p-12 relative overflow-hidden flex flex-col md:flex-row items-center gap-10 shadow-2xl">
         <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
           <Code2 size={240} />
         </div>
@@ -46,7 +46,7 @@ export default function PortfolioSection({
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
             {hero.name || PORTFOLIO_DATA.hero.name}
           </h2>
-          <p className="text-zinc-400 leading-relaxed mb-6 max-w-2xl text-sm md:text-base font-light">
+          <p className="text-slate-400 leading-relaxed mb-6 max-w-2xl text-sm md:text-base font-light">
             {hero.comment_one || PORTFOLIO_DATA.hero.comment_one}
             <br />
             <br />
@@ -57,7 +57,7 @@ export default function PortfolioSection({
             {skills.map((skill: string) => (
               <span
                 key={skill}
-                className="px-3 py-1.5 rounded border border-white/10 bg-white/5 text-xs text-zinc-300 font-medium"
+                className="px-3 py-1.5 rounded border border-white/10 bg-white/5 text-xs text-slate-300 font-medium"
               >
                 {skill}
               </span>
@@ -76,7 +76,7 @@ export default function PortfolioSection({
                   href={link.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+                  className="flex items-center gap-2 text-sm font-medium text-slate-400 hover:text-white transition-colors"
                 >
                   <Icon size={18} /> {link.label}
                 </a>

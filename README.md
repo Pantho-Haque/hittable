@@ -130,6 +130,10 @@ hittable/
 
 ---
 
+## 📚 Documentation
+
+The full developer documentation for the web app, the terminal app and the shared project format lives at **[hittable.vercel.app/docs](https://hittable.vercel.app/docs)**. The pages are plain markdown in [`content/docs/`](content/docs/); edit one and open a pull request.
+
 ## 🏁 Getting Started
 
 ### 1. Clone & Install

@@ -3,12 +3,12 @@
 @import "./components/index.css";
 @import "./font.css";
 @import "./workspace.css";
+@import "./docs.css";
 
 @theme inline {
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "SFMono-Regular", Consolas, monospace;
 }
-
 body { font-family: var(--font-geist-sans), system-ui, sans-serif; }
 
 :where(button, a, input, textarea, select, [tabindex]):focus-visible {

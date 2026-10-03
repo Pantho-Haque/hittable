@@ -1,0 +1,18 @@
+/* The app's navy palette (see styles/workspace.css and the /hittable chrome).
+   The landing page and docs use it through arbitrary-value utilities such as
+   bg-(--ink-900), so every surface matches the app.
+
+   This lives in its own file, imported from app/layout.tsx rather than from
+   app.css: Turbopack's incremental build does not re-process edits to the
+   Tailwind entry stylesheet until a cold start, while a plain stylesheet
+   updates on save. */
+:root {
+  --ink-950: #060d18; /* top bar */
+  --ink-900: #091728; /* page background — sampled from the app’s main pane */
+  --ink-800: #0d2038; /* cards, panels: one step above the page */
+  --ink-700: #0c1422; /* editor / code background */
+  --ink-600: #101c2d; /* toolbars, raised chips */
+  --ink-500: #0e1f35; /* hover, selection */
+  --ink-400: #1e3a5f; /* strong borders */
+  --brand: #00e5cc;   /* accent (teal) */
+}

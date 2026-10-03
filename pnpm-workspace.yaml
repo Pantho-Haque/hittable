@@ -1,3 +1,5 @@
+# pnpm 10+ runs no dependency build scripts unless they are listed here.
+# sharp: next/image's native binary · unrs-resolver: eslint's import resolver
 allowBuilds:
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
+  sharp: true
+  unrs-resolver: true
