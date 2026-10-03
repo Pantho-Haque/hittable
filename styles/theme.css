@@ -16,3 +16,7 @@
   --ink-400: #1e3a5f; /* strong borders */
   --brand: #00e5cc;   /* accent (teal) */
 }
+
+/* The top bar is translucent; without this it blends with a white body and
+   turns grey. Also keeps overscroll and route transitions navy. */
+html, body { background: var(--ink-900); }

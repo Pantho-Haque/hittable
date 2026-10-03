@@ -3,6 +3,8 @@ title: Hittable documentation
 description: One API client in two shapes. A browser app that keeps your collections in a folder you own, and a terminal app that opens the same folder with an editor, a Git panel and a shell. These pages describe the current main branch.
 ---
 
+![Hittable: a terminal API client, .hit files shared with the web app](/docs/intro.png)
+
 ## What Hittable is
 
 Hittable is an API client without an account, a cloud or a database. Your requests are `.hit` files, your variables are a `hittable/env.json`, your notes are markdown, all inside your own repository. Two tools read and write that folder:

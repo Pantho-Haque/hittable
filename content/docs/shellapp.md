@@ -3,6 +3,8 @@ title: Terminal app
 description: hittable.sh is the terminal client. It opens a project directory, runs the .hit files inside it, and brings an editor, a Git panel and a real shell along. This page installs it and gets you to your first request.
 ---
 
+![The terminal app: the project tree on the left with git badges on every row, the welcome screen with the shell commands to get started on the right](/docs/still-term.png)
+
 ## What it is
 
 `hittable` is a terminal UI written in Go. It is **directory-mode only**: launching the binary *is* opening a directory. There is no global store, no account, no mode to pick. Whatever folder you point it at is the workspace, and the `.hit` files and `hittable/env.json` inside it are exactly the files the [web app](/docs/web-app) reads and writes. One folder opens in either tool.

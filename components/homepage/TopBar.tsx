@@ -4,6 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import WorkspaceSwitcher from "@/components/workspace/WorkspaceSwitcher";
 
+type NavLink = { label: string; href: string; external?: boolean };
+const GITHUB: NavLink = { label: "GitHub", href: "https://github.com/Pantho-Haque/hittable", external: true };
+
+// Landing page: sections of the page. Docs: the three places a reader goes.
+const HOME_NAV_LINKS: NavLink[] = [
+  { label: "Features", href: "/#features" },
+  { label: "Shortcuts", href: "/#shortcuts" },
+  { label: "Docs", href: "/docs" },
+  GITHUB,
+];
+const DOCS_NAV_LINKS: NavLink[] = [
+  { label: "Overview", href: "/docs" },
+  { label: "Web app", href: "/docs/web-app" },
+  { label: "Terminal app", href: "/docs/shellapp" },
+  GITHUB,
+];
+
 export default function Topbar() {
   const pathname = usePathname();
   const isApp = pathname === "/hittable";
@@ -38,22 +55,17 @@ export default function Topbar() {
       {/* Center — nav links (hidden on app page to save space) */}
       {!isApp && (
         <nav className="hidden sm:flex items-center gap-6 absolute left-1/2 -translate-x-1/2">
-          {[
-            { label: "Features", href: "/#features" },
-            { label: "Shortcuts", href: "/#shortcuts" },
-            { label: "Docs", href: "/docs" },
-            {
-              label: "GitHub",
-              href: "https://github.com/Pantho-Haque/hittable",
-              external: true,
-            },
-          ].map((item) => (
+          {(isDocs ? DOCS_NAV_LINKS : HOME_NAV_LINKS).map((item) => (
             <a
               key={item.label}
               href={item.href}
               target={item.external ? "_blank" : undefined}
               rel={item.external ? "noopener noreferrer" : undefined}
-              className={`text-[10px] tracking-[0.2em] uppercase transition-colors hover:text-cyan-400 ${item.href === "/docs" && isDocs ? "text-cyan-400" : "text-white/30"}`}
+              className={`text-[10px] tracking-[0.2em] uppercase transition-colors hover:text-cyan-400 ${
+                (item.href === "/docs" && pathname === "/docs") || (item.href !== "/docs" && !item.external && pathname.startsWith(item.href))
+                  ? "text-cyan-400"
+                  : "text-white/30"
+              }`}
             >
               {item.label}
             </a>

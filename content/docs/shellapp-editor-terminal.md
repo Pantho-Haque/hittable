@@ -50,4 +50,6 @@ If a program misrenders inside the panel, `HITTABLE_PTYLOG=<path>` records the r
 
 ## Response viewer
 
+![The response panel after ctrl+r: 200 OK, 199ms, 421B, and the JSON body syntax-highlighted](/docs/s3.png)
+
 Status, duration and size sit above a body highlighted by Chroma (bodies over 256 KB render plain). <kbd>h</kbd> flips to the response headers. <kbd>ctrl+f</kbd> opens a search overlay with match highlighting and next/previous. <kbd>ctrl+y</kbd> copies the body, or the request as a `curl` command when the Runner has focus. The response is also written into the `.hit` file's `response` field, so the last result travels with the request and shows up in the web app too.

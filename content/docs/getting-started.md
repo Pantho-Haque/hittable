@@ -39,6 +39,8 @@ cd ~/code/my-api
 hittable
 ```
 
+![The explorer: hittable/ with notes and a users collection, .hit files marked M and U by git status](/docs/s1.png)
+
 The explorer shows the whole tree. Pick `hittable/testcollection/test.hit` with <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>⏎</kbd>, press <kbd>ctrl+r</kbd> to send, <kbd>ctrl+t</kbd> to see the raw JSON, <kbd>?</kbd> for every key. If the browser was open on the same folder, the response you just got there is already in the file.
 
 Had you started here instead, `hittable init` scaffolds the same three files the browser does.

@@ -3,6 +3,8 @@ title: Git panel
 description: Status and staging by file, hunk or line; split diffs you can edit in place; commits as a per-file accordion; blame; branches, stashes, sync and conflict resolution.
 ---
 
+![The Git panel: Staged Changes and Changes with per-row stage and undo buttons on the left, the selected file's diff with added lines tinted green on the right](/docs/s2.png)
+
 Open it with <kbd>ctrl+g</kbd>, <kbd>alt+g</kbd>, <kbd>F5</kbd>, <kbd>g</kbd> in the explorer, or the `⎇ Git` button. The panel takes the main pane and keeps the file tree beside it. It has two columns like the VS Code source control view: the section list on the left with a clickable commit graph under it, and a detail pane on the right at full height. <kbd>esc</kbd> closes it.
 
 Git state is polled every two seconds off the UI thread, so a `git checkout` in the integrated terminal or a commit from another window shows up without a refresh. The explorer carries the same information: `M` `A` `D` `U` `!` badges on files and a `●` on folders that contain changes.
