@@ -29,6 +29,9 @@ export default function PortfolioSection({
             <img
               src={PORTFOLIO_DATA.hero.photo}
               alt={hero.name || "Pantho Haque"}
+              // Below the fold: load it when it is about to scroll into view.
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover scale-[1.7]"
             />
           </div>

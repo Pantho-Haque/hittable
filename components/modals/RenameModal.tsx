@@ -39,7 +39,7 @@ export default function RenameModal({
   const { collections } = useDataContext();
 
   const handleRename = () => {
-    if (!value.trim() || value === currentName) return setOpen(false);
+    if (!value.trim() || value.trim() === currentName) return setOpen(false);
 
     if (type === "collection") {
       if (collectionCurlList[value.trim()]) {

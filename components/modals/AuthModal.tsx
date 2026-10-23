@@ -32,14 +32,14 @@ export default function AuthModal() {
     }
   };
 
+  // Header names are case-insensitive, so a pasted "authorization" must go too.
+  const withoutAuth = (headers: Record<string, string>) => {
+    const drop = ["authorization", apiKeyHeader.toLowerCase()];
+    return Object.fromEntries(Object.entries(headers).filter(([k]) => !drop.includes(k.toLowerCase())));
+  };
+
   const applyAuth = () => {
-    const headers = getCurrentHeaders();
-
-    // Remove any existing auth headers
-    delete headers["Authorization"];
-    delete headers[apiKeyHeader];
-
-    const newHeaders = { ...headers };
+    const newHeaders = withoutAuth(getCurrentHeaders());
 
     switch (selectedPreset) {
       case "bearer":
@@ -49,7 +49,9 @@ export default function AuthModal() {
         break;
       case "basic":
         if (username || password) {
-          const encoded = btoa(`${username}:${password}`);
+          // UTF-8 first: btoa alone throws on anything outside Latin-1.
+          const bytes = new TextEncoder().encode(`${username}:${password}`);
+          const encoded = btoa(String.fromCharCode(...bytes));
           newHeaders["Authorization"] = `Basic ${encoded}`;
         }
         break;
@@ -68,9 +70,7 @@ export default function AuthModal() {
   };
 
   const clearAuth = () => {
-    const headers = getCurrentHeaders();
-    delete headers["Authorization"];
-    delete headers[apiKeyHeader];
+    const headers = withoutAuth(getCurrentHeaders());
     setFormInput({
       ...formInput,
       headers: JSON.stringify(headers, null, "\t"),

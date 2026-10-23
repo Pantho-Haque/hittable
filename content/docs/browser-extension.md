@@ -35,9 +35,9 @@ Three messages, all through `window.postMessage`:
 | :--- | :--- | :--- |
 | `HITTABLE_PING` | app → extension | is anyone there? |
 | `HITTABLE_EXTENSION_READY` | extension → app | yes |
-| `HITTABLE_REQUEST` / `HITTABLE_RESPONSE` | app → extension → app | `{ url, method, headers, body }` in; `{ success, data, status, statusText, ok, headers, cookies }` or `{ success: false, error }` out |
+| `HITTABLE_REQUEST` / `HITTABLE_RESPONSE` | app → extension → app | `{ id, payload: { url, method, headers, body } }` in; `{ id, success, data, status, statusText, ok, headers, cookies }` or `{ id, success: false, error }` out |
 
-The content script relays `HITTABLE_REQUEST` to the service worker, which performs the `fetch` (omitting the body for `GET` and `HEAD`), parses JSON when the content type says so, flattens the headers, reads the origin's cookies and replies. The app gives up after 10 seconds with **Extension request timed out**.
+The content script relays `HITTABLE_REQUEST` to the service worker, which performs the `fetch` (omitting the body for `GET` and `HEAD`), parses JSON when the content type says so, flattens the headers, reads the origin's cookies and replies. The `id` pairs each reply with its request, so requests sent at the same time cannot swap responses. Messages are posted to the page's own origin, never `*`, and the service worker refuses any URL that is not `localhost`, `127.0.0.1` or `0.0.0.0`. The app gives up after 30 seconds with **Extension request timed out**.
 
 ## Self-hosted instances
 

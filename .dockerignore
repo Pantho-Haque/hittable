@@ -1,0 +1,16 @@
+.git
+.github
+.husky
+.next
+node_modules
+shellapp
+marketing
+browserExtension
+graft
+hittable
+test-results
+playwright-report
+tests
+.env
+*.md
+!content/**/*.md

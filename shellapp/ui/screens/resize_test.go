@@ -142,6 +142,10 @@ func TestFrameSelectionCopiesAnyVisibleText(t *testing.T) {
 		t.Fatal("overlay broke the frame")
 	}
 	m.handleMouse(release(col+4, row+1))
+	if m.StatusBar != "" && !strings.Contains(m.StatusBar, "ctrl+c") {
+		t.Errorf("release should not copy, status = %q", m.StatusBar)
+	}
+	m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if !strings.HasPrefix(m.StatusBar, "copied 2 line(s)") && m.StatusBar != "clipboard unavailable" {
 		t.Errorf("status = %q", m.StatusBar)
 	}

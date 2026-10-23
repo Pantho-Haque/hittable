@@ -1,6 +1,7 @@
 package screens_test
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 
 func TestDoubleClickOpensFile(t *testing.T) {
 	// Use the shellapp directory which has predictable structure.
-	root := "/Users/guess/Desktop/hittable/shellapp"
+	root, _ := filepath.Abs("../..") // the shellapp module
 	z := zone.New()
 	m := screens.NewMainScreen(root, z)
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hittable/shellapp/internal/hitfile"
+	"github.com/hittable/shellapp/ui/components/explorer"
 )
 
 func (m *MainScreen) applyRename(oldPath, newPath string) {
@@ -22,16 +23,25 @@ func (m *MainScreen) applyRename(oldPath, newPath string) {
 		m.StatusBar = "Rename failed"
 		return
 	}
-	if doc := m.Store.Get(oldPath); doc != nil {
-		m.Store.Delete(oldPath)
-		doc.Path = newPath
-		m.Store.Set(newPath, doc)
-	}
-	m.TextEd.RemoveEditor(oldPath)
-	if m.ActiveFile == oldPath {
-		m.ActiveFile = newPath
-		if m.ViewMode == ViewText {
-			m.TextEd.SetContent(newPath, m.TextEd.GetContent())
+	// Every open document at or under oldPath moves: a renamed folder takes
+	// its open files with it, or their next autosave targets a path that no
+	// longer exists and the edit is lost.
+	for _, p := range m.Store.Paths() {
+		if p != oldPath && !strings.HasPrefix(p, oldPath+string(os.PathSeparator)) {
+			continue
+		}
+		np := newPath + strings.TrimPrefix(p, oldPath)
+		if doc := m.Store.Get(p); doc != nil {
+			m.Store.Delete(p)
+			doc.Path = np
+			m.Store.Set(np, doc)
+		}
+		m.TextEd.RemoveEditor(p)
+		if m.ActiveFile == p {
+			m.ActiveFile = np
+			if m.ViewMode == ViewText {
+				m.TextEd.SetContent(np, m.TextEd.GetContent())
+			}
 		}
 	}
 	_ = m.Explorer.RebuildTree()
@@ -81,6 +91,16 @@ func (m *MainScreen) applyAdd(parent, name string, isDir bool) {
 		}
 	}
 	_ = m.Explorer.RebuildTree()
+	// Reveal it: expand each collapsed folder from the root down to it.
+	var dirs []string
+	for d := filepath.Dir(full); len(d) > len(m.Explorer.Root.Path); d = filepath.Dir(d) {
+		dirs = append([]string{d}, dirs...)
+	}
+	for _, d := range dirs {
+		if n := explorer.FindByPath(m.Explorer.Root, d); n != nil && !n.Expanded {
+			m.Explorer.Toggle(n)
+		}
+	}
 	for i, n := range m.Explorer.Visible {
 		if n.Path == full {
 			m.Explorer.Cursor = i

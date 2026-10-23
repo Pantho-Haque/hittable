@@ -30,17 +30,6 @@ export type THitFileContent = {
 
 export type TEnvFile = Record<string, string>;
 
-export type TWorkspaceState = {
-  mode: TWorkspaceMode;
-  directoryHandle: FileSystemDirectoryHandle | null;
-  tree: TDirectoryNode[];
-  activeFile: {
-    path: string[];
-    handle: FileSystemFileHandle;
-  } | null;
-  isRefreshing: boolean;
-};
-
 export type DataSource = {
   formInput: THittableCurlJson;
   setFormInput: React.Dispatch<React.SetStateAction<THittableCurlJson>>;

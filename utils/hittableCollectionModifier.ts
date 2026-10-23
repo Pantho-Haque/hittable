@@ -181,8 +181,6 @@ export const deleteItem = (
   });
 };
 
-export const deleteCurlName = deleteItem;
-export const deleteFolderName = deleteItem;
 
 export const updateEnv = (
   prev: THittableCollections,
@@ -204,7 +202,7 @@ export function resolveEnv(formInput: THittableCurlJson, env?: THittableEnv): TH
     if (typeof val === 'string') {
       (newFormInput as Record<string, unknown>)[key] = val.replace(
         /<<(\w+)>>/g,
-        (_, envKey: string) => env[envKey] ?? `<<${envKey}>>`
+        (match, envKey: string) => (Object.hasOwn(env, envKey) ? env[envKey] : match)
       );
     }
   });

@@ -7,6 +7,7 @@ import { hittableProxy } from "@/utils/hittableProxy";
 import { getParamsfromUrl } from "@/utils/responsePanelUtils";
 import { addHistoryEntry } from "@/utils/historyModifier";
 import { updateEnv } from "@/utils/hittableCollectionModifier";
+import { ensureEnvVarsForText } from "@/utils/importers/variableSyntax";
 import { CheckCircle2, Terminal, Loader2, Save, Send } from "lucide-react";
 import { useCallback, useState, useRef, useEffect } from "react";
 import { useDataContext } from "@/context/dataContext";
@@ -132,25 +133,21 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
     setFormInput({ ...formInput, url: pasted });
 
     e.preventDefault(); // stop it from being typed into the input
-    const parsed = curlConverter(pasted);
+    // Postman {{var}} and Insomnia {{ _.var }} become Hittable <<var>>, so the
+    // variables created below are the ones resolved at send time.
+    const parsed = curlConverter(pasted.replace(/\{\{\s*(?:_\.)?(\w+)\s*\}\}/g, "<<$1>>"));
     setTimeout(() => {
       setFormInput(parsed);
     }, 1000);
 
-    // Create env var entries for any Postman/Insomnia-style {{var}} references found in the curl
-    const postmanVars = [...pasted.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
-    const insomniaVars = [...pasted.matchAll(/\{\{\s*_\.(\w+)\s*\}\}/g)].map((m) => m[1]);
-    const allVarNames = [...new Set([...postmanVars, ...insomniaVars])];
-    if (allVarNames.length > 0 && selectorResponse?.collectionName) {
+    // Create empty env entries for the referenced variables, keeping existing values
+    if (selectorResponse?.collectionName) {
       const col = collections.find((c) => c.collectionName === selectorResponse.collectionName);
       if (col) {
-        const updatedEnv = { ...col.env };
-        for (const name of allVarNames) {
-          if (!(name in updatedEnv)) {
-            updatedEnv[name] = "";
-          }
+        const updatedEnv = ensureEnvVarsForText(pasted, col.env);
+        if (Object.keys(updatedEnv).length !== Object.keys(col.env).length) {
+          setCollections((prev) => updateEnv(prev, selectorResponse.collectionName, updatedEnv));
         }
-        setCollections((prev) => updateEnv(prev, selectorResponse.collectionName, updatedEnv));
       }
     }
   }
@@ -202,6 +199,7 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
       />
 
       <select
+        aria-label="HTTP method"
         className="w-full md:w-auto shrink-0 rounded-md border-0 bg-[#0e1f35] px-2 py-2 md:py-1.5 text-xs font-bold tracking-widest outline-none cursor-pointer min-h-[44px] md:min-h-0"
         style={{ color: mc }}
         value={formInput.method}
@@ -229,6 +227,7 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
         {/* Transparent textarea on top */}
         <textarea
           ref={textareaRef}
+          aria-label="Request URL"
           className="relative w-full bg-transparent py-1 text-[10px] md:text-xs text-transparent caret-white/80 outline-none resize-none overflow-hidden z-10"
           style={{ caretColor: "rgba(255,255,255,0.8)" }}
           placeholder="https://api.example.com/endpoint"

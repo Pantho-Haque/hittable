@@ -15,7 +15,6 @@ import {
   scaffoldHittable,
   validateHittable,
   readEnvFile,
-  readHitFile,
 } from "@/services/workspace/DirectoryService";
 import {
   saveDirectoryHandle,
@@ -24,6 +23,7 @@ import {
   verifyPermission,
 } from "@/services/workspace/HandleStore";
 import { serializeHitFile } from "@/utils/workspace/hitFileParser";
+import { classifyFile, type FileView } from "@/utils/workspace/fileKind";
 import { buildTree } from "@/utils/workspace/directoryTreeHelpers";
 
 type ActiveFileState = {
@@ -43,6 +43,11 @@ type WorkspaceContextType = {
   envContent: TEnvFile;
   isRefreshing: boolean;
   isFileLoaded: boolean;
+  /** What the open file is: editable text, an image, a binary or too large to edit. */
+  fileView: FileView;
+  fileSize: number;
+  /** An object URL for the open image, to show it. */
+  fileUrl: string | null;
   connectingStage: TConnectingStage | null;
   openFolder: () => Promise<void>;
   disconnectFolder: () => void;
@@ -87,11 +92,18 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
   const [envContent, setEnvContent] = useState<TEnvFile>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFileLoaded, setIsFileLoaded] = useState(false);
+  const [fileView, setFileView] = useState<FileView>({ kind: "text" });
+  const fileViewRef = useRef<FileView>({ kind: "text" });
+  const [fileSize, setFileSize] = useState(0);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [connectingStage, setConnectingStage] = useState<TConnectingStage | null>(null);
 
   const hasLoadedRef = useRef(false);
   const activeFileRef = useRef<ActiveFileState>(null);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  // The newest unwritten content per file. A burst of keystrokes becomes one
+  // write of the latest text, not one full-file write per key.
+  const pendingWritesRef = useRef(new Map<FileSystemFileHandle, string>());
   const hittableDirRef = useRef<FileSystemDirectoryHandle | null>(null);
 
   activeFileRef.current = activeFile;
@@ -240,9 +252,19 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     hasLoadedRef.current = false;
     setIsFileLoaded(false);
 
+    let url: string | null = null;
     const loadFile = async () => {
       try {
-        const content = await readHitFile(activeFile.handle);
+        const file = await activeFile.handle.getFile();
+        const view = await classifyFile(activeFile.path[activeFile.path.length - 1], file);
+        if (cancelled) return;
+        fileViewRef.current = view;
+        setFileView(view);
+        setFileSize(file.size);
+        if (view.kind === "image") url = URL.createObjectURL(file);
+        setFileUrl(url);
+        // Images, binaries and huge files never enter the editor.
+        const content = view.kind === "text" ? await file.text() : "";
         if (cancelled) return;
         setRawTextContent(content);
         setIsFileLoaded(true);
@@ -260,6 +282,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
 
     return () => {
       cancelled = true;
+      if (url) URL.revokeObjectURL(url);
     };
   }, [activeFile]);
 
@@ -271,11 +294,20 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     const file = activeFileRef.current;
     const workspaceDir = hittableDirRef.current;
     if (!file || !hasLoadedRef.current) return;
+    // Never write back a file the editor did not load as text.
+    if (fileViewRef.current.kind !== "text") return;
     // Capture the destination before awaiting, and serialize writes instead of
     // dropping keystrokes that arrive while a previous write is in flight.
+    const pending = pendingWritesRef.current;
+    const queued = pending.has(file.handle);
+    pending.set(file.handle, content);
+    if (queued) return writeQueueRef.current; // the queued write will carry this text
     writeQueueRef.current = writeQueueRef.current.then(async () => {
+      const latest = pending.get(file.handle);
+      pending.delete(file.handle);
+      if (latest === undefined) return;
       const writable = await file.handle.createWritable();
-      await writable.write(content);
+      await writable.write(latest);
       await writable.close();
       if (file.kind === "env" && workspaceDir && workspaceDir === hittableDirRef.current) {
         const env = await readEnvFile(workspaceDir);
@@ -308,7 +340,11 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     name: string,
     kind: "file" | "directory"
   ) => {
-    const { createFile, createDirectory } = await import("@/utils/workspace/fsHelpers");
+    const { createFile, createDirectory, fileExists, directoryExists } = await import("@/utils/workspace/fsHelpers");
+    // createFile truncates an existing file, so never create over a name in use.
+    if ((await fileExists(parentHandle, name)) || (await directoryExists(parentHandle, name))) {
+      throw new Error(`"${name}" already exists`);
+    }
     if (kind === "file") {
       const ext = name.split(".").pop();
       const content = ext === "hit" ? serializeHitFile({
@@ -339,6 +375,9 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
         envContent,
         isRefreshing,
         isFileLoaded,
+        fileView,
+        fileSize,
+        fileUrl,
         connectingStage,
         openFolder,
         disconnectFolder,

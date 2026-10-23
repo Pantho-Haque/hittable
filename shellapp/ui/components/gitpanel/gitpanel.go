@@ -2089,6 +2089,9 @@ func (p *Panel) SyncLabel() string {
 
 // SyncAction runs pull+push (or publish) in the background.
 func (p *Panel) SyncAction() {
+	if p.Repo == nil {
+		return
+	}
 	st := p.Status
 	label := "sync"
 	if st != nil && st.Upstream == "" {

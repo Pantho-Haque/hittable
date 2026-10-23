@@ -274,14 +274,18 @@ func (m *MainScreen) setMdMode(mode MdMode) {
 func (m *MainScreen) renderBinaryPlaceholder() string {
 	breadcrumb := theme.BreadcrumbStyle.Render(m.relPath())
 	doc := m.Store.Get(m.ActiveFile)
-	size := ""
+	label := ""
 	if doc != nil {
-		size = humanSize(len(doc.RawContent))
+		label = fileLabel(m.ActiveFile, doc.RawContent)
+	}
+	note := "Not shown as text, and never changed from here."
+	if isImage(m.ActiveFile) {
+		note = "A terminal can't draw it; the web app shows it as a picture. Never changed from here."
 	}
 	msg := lipgloss.NewStyle().
 		Foreground(theme.MutedColor).
 		Padding(2, 2).
-		Render(fmt.Sprintf("Binary file (%s)\n\nPreview disabled. Open this file in an external editor to inspect its contents.", size))
+		Render(label + "\n\n" + note)
 	return lipgloss.JoinVertical(lipgloss.Left, breadcrumb, msg)
 }
 
@@ -364,7 +368,7 @@ var helpSections = []struct {
 		{"ctrl+g  alt+g  F5", "toggle Git panel"},
 		{"alt+b", "hide / show the sidebar"},
 		{"drag borders", "resize sidebar · terminal · editor/response · md split"},
-		{"drag any text", "select a block of the screen · copied on release"},
+		{"drag any text", "select a block of the screen · ctrl+c copies"},
 		{"esc", "close file / dismiss"},
 		{"?  F1", "this help"},
 		{"ctrl+c", "quit (copies a selection first)"},
@@ -389,18 +393,18 @@ var helpSections = []struct {
 	{"Explorer", []helpRow{
 		{"↑↓  j k", "move"},
 		{"⏎  l  h", "open · expand · collapse"},
-		{"g  G", "top / bottom"},
+		{"home end  G", "top / bottom"},
 		{"pgup pgdn", "page up / down"},
 		{"x  right-click", "context menu"},
 		{"ctrl+n  ctrl+f", "new file / new folder"},
 		{"ctrl+e  ctrl+d", "rename / delete"},
 		{"r", "refresh tree"},
-		{"/", "find file by name"},
+		{"/  g", "find file by name · git panel"},
 	}},
 	{"Terminal (ctrl+j)", []helpRow{
 		{"ctrl+b", "back to the explorer"},
 		{"ctrl+c", "copy selection, else interrupt"},
-		{"drag", "select output text (copied on release)"},
+		{"drag  ctrl+c", "select output text · copy it"},
 		{"wheel  shift+↑↓", "scroll back (5000 lines)"},
 		{"ctrl+v", "paste"},
 		{"any key", "restart the shell after exit"},
@@ -544,7 +548,7 @@ func (m *MainScreen) renderTermStrip() string {
 	}
 	hint := "  ctrl+j toggle"
 	if m.TermFocused {
-		hint = "  ctrl+j hide · ctrl+b explorer · drag selects & copies · drag this bar to resize"
+		hint = "  ctrl+j hide · ctrl+b explorer · drag selects, ctrl+c copies · drag this bar to resize"
 	}
 	if off := m.Term.ScrollOffset; off > 0 {
 		hint = fmt.Sprintf("  ↑ scrollback %d/%d · any key returns", off, m.Term.ScrollbackLen())

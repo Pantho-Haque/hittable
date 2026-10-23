@@ -27,7 +27,7 @@ export default function Menu({
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -47,7 +47,10 @@ export default function Menu({
       ref={menuRef}
       className="hidden group-hover/menu:flex items-center justify-center shrink-0 pr-1"
     >
-      <div
+      <button
+        type="button"
+        aria-label={`Actions for ${currentName}`}
+        aria-expanded={open}
         onClick={() => {
           if (!open && triggerRef.current) {
             const rect = triggerRef.current.getBoundingClientRect();
@@ -59,10 +62,11 @@ export default function Menu({
         className="p-1 rounded text-white/20 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors cursor-pointer"
       >
         <EllipsisVertical size={14} />
-      </div>
+      </button>
 
-      {open && (
-        <div className="absolute left-full top-0 z-999">
+      {/* Always mounted, only hidden: the actions own their dialogs, which must
+          outlive the menu. Picking an action closes the menu. */}
+      <div className={`absolute left-full top-0 z-999 ${open ? "" : "hidden"}`} onClickCapture={() => setOpen(false)}>
           <div
             style={{
               position: "fixed",
@@ -98,8 +102,7 @@ export default function Menu({
               />
             )}
           </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

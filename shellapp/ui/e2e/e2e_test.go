@@ -87,13 +87,46 @@ func (h *harness) screen() []string {
 // find returns the terminal (x, y) of the first occurrence of s on screen.
 // vt10x stores a double-width emoji in a single cell, so the real column is
 // the display width of the prefix, not its cell count.
+//
+// Frames reach the emulator asynchronously (and slowly under -race), so it
+// waits up to findWait for s to show up.
 func (h *harness) find(s string) (int, int, bool) {
-	for y, line := range h.screen() {
-		if x := strings.Index(line, s); x >= 0 {
-			return lipgloss.Width(line[:x]), y, true
+	deadline := time.Now().Add(findWait)
+	for {
+		for y, line := range h.screen() {
+			if x := strings.Index(line, s); x >= 0 {
+				return lipgloss.Width(line[:x]), y, true
+			}
 		}
+		if time.Now().After(deadline) {
+			return 0, 0, false
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	return 0, 0, false
+}
+
+const findWait = 3 * time.Second
+
+// gone reports whether s is absent from the screen, waiting up to findWait
+// for it to disappear.
+func (h *harness) gone(s string) bool {
+	deadline := time.Now().Add(findWait)
+	for {
+		found := false
+		for _, line := range h.screen() {
+			if strings.Contains(line, s) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func TestMouseThroughRealTerminal(t *testing.T) {
@@ -173,7 +206,7 @@ func TestIntegratedTerminal(t *testing.T) {
 	x, y, _ = h.find("TERMINAL")
 	h.click(x, y)
 	time.Sleep(200 * time.Millisecond)
-	if _, _, ok := h.find("e2e_42"); ok {
+	if !h.gone("e2e_42") {
 		t.Errorf("panel should be hidden after second click")
 	}
 }
@@ -190,7 +223,7 @@ func TestGitButtonInTopBar(t *testing.T) {
 		t.Fatalf("git panel did not open:\n%s", strings.Join(h.screen(), "\n"))
 	}
 	h.click(x, y)
-	if _, _, ok := h.find("Not a git repository"); ok {
+	if !h.gone("Not a git repository") {
 		t.Error("second click should close the panel")
 	}
 }
@@ -214,7 +247,7 @@ func TestUndoThroughRealTerminal(t *testing.T) {
 	}
 	fmt.Fprint(h.in, "\x1a\x1a\x1a") // ctrl+z x3
 	time.Sleep(200 * time.Millisecond)
-	if _, _, ok := h.find("ZZZalpha"); ok {
+	if !h.gone("ZZZalpha") {
 		t.Fatalf("ctrl+z did not undo:\n%s", strings.Join(h.screen(), "\n"))
 	}
 }

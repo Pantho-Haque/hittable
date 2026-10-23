@@ -3,6 +3,7 @@ package hithome
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -38,27 +39,30 @@ func TestDirHonoursEnv(t *testing.T) {
 	}
 }
 
-func TestDirFallsBackToHome(t *testing.T) {
-	t.Setenv(EnvHome, "")
-
+func TestUserDirIsUnderHome(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip("no user home directory in this environment")
 	}
-	if got, want := Dir(), filepath.Join(home, ".hittable"); got != want {
-		t.Errorf("Dir() = %q, want %q", got, want)
+	if got, want := userDir(), filepath.Join(home, ".hittable"); got != want {
+		t.Errorf("userDir() = %q, want %q", got, want)
 	}
 }
 
-func TestDirIgnoresBlankEnv(t *testing.T) {
-	t.Setenv(EnvHome, "   ")
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no user home directory in this environment")
-	}
-	if got, want := Dir(), filepath.Join(home, ".hittable"); got != want {
-		t.Errorf("Dir() with blank env = %q, want %q", got, want)
+// Under go test, an unset or blank HITTABLE_HOME must never resolve to the
+// developer's real ~/.hittable: that would read their config and start their
+// installed model.
+func TestDirNeverUsesRealHomeInTests(t *testing.T) {
+	t.Setenv("HITTABLE_AI_E2E", "")
+	for _, v := range []string{"", "   "} {
+		t.Setenv(EnvHome, v)
+		got := Dir()
+		if got == userDir() {
+			t.Fatalf("Dir() with HITTABLE_HOME=%q = real home %q", v, got)
+		}
+		if !strings.HasPrefix(got, os.TempDir()) {
+			t.Errorf("Dir() = %q, want a path under %q", got, os.TempDir())
+		}
 	}
 }
 

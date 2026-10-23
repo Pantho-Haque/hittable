@@ -1,199 +1,145 @@
 import { THittableCollection, THittableItem } from "@/types";
+import { base64Utf8, jsonToCurl } from "@/utils/curlConverter";
+import { addMissingVars, fromInsomnia } from "./variableSyntax";
 
-interface InsomniaExport {
-  _type?: string;
-  resources?: InsomniaResource[];
-}
+// Mirrors the terminal app's importer (shellapp/internal/collection): each
+// workspace becomes a collection, request groups become folders nested by
+// parentId, and requests keep their headers, parameters, auth and body.
+
+type NV = { name?: string; value?: unknown; disabled?: boolean; fileName?: string };
 
 interface InsomniaResource {
   _type?: string;
   _id?: string;
-  parentId?: string;
+  parentId?: string | null;
   name?: string;
   url?: string;
   method?: string;
-  headers?: Record<string, string>;
-  body?: { mimeType?: string; text?: string };
-  data?: Record<string, string>;
-  environment?: Record<string, string>;
-  _kvPairData?: { name: string; value: string; enabled: boolean }[];
+  headers?: NV[] | Record<string, unknown>;
+  parameters?: NV[];
+  body?: { mimeType?: string; text?: string; params?: NV[] };
+  authentication?: { type?: string; token?: string; prefix?: string; username?: string; password?: string; key?: string; value?: string; disabled?: boolean };
+  data?: Record<string, unknown>;
+  _kvPairData?: { name?: string; value?: unknown; enabled?: boolean }[];
 }
 
-function resolveVariableSyntax(text: string): string {
-  return text.replace(/\{\{\s*_\.(\w+)\s*\}\}/g, "<<$1>>");
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const list = <T,>(v: unknown): T[] => (Array.isArray(v) ? v.filter(isObject) as T[] : []);
+const str = (v: unknown) => (v === undefined || v === null ? "" : String(v));
+
+function resourcesOf(json: unknown): InsomniaResource[] {
+  if (Array.isArray(json)) return list(json);
+  return isObject(json) ? list(json.resources) : [];
 }
 
-function parseInsomniaRequest(req: InsomniaResource): { name: string; curl: string; response: string } {
-  const method = req.method ?? "GET";
-  const url = resolveVariableSyntax(req.url ?? "");
-  const headers = req.headers ?? {};
-  const body = req.body;
+function buildCurl(req: InsomniaResource): string {
+  const method = str(req.method || "GET").toUpperCase();
+  const headers: Record<string, string> = {};
 
-  let curl = `curl -X ${method} ${url}`;
-
-  for (const [k, v] of Object.entries(headers)) {
-    curl += ` -H "${k}: ${resolveVariableSyntax(v)}"`;
+  const a = req.authentication;
+  if (isObject(a) && !a.disabled) {
+    if (a.type === "bearer") headers.Authorization = `${a.prefix || "Bearer"} ${fromInsomnia(str(a.token))}`;
+    else if (a.type === "basic") {
+      const creds = `${fromInsomnia(str(a.username))}:${fromInsomnia(str(a.password))}`;
+      headers.Authorization = /<<\w+>>/.test(creds)
+        ? `Basic <<BASIC_${fromInsomnia(str(a.username)).replace(/\W/g, "_")}>>`
+        : `Basic ${base64Utf8(creds)}`;
+    } else if (a.type === "apikey" && a.key) headers[fromInsomnia(a.key)] = fromInsomnia(str(a.value));
   }
 
-  const noBody = ["GET", "HEAD", "DELETE"].includes(method.toUpperCase());
-  if (!noBody && body?.text) {
-    curl += ` -d '${resolveVariableSyntax(body.text).replace(/'/g, "'\\''")}'`;
+  // Headers: an array of {name, value, disabled} (v4) or a plain object.
+  if (Array.isArray(req.headers)) {
+    for (const h of list<NV>(req.headers)) if (h.name && !h.disabled) headers[h.name] = fromInsomnia(str(h.value));
+  } else if (isObject(req.headers)) {
+    for (const [k, v] of Object.entries(req.headers)) headers[k] = fromInsomnia(str(v));
   }
 
-  return { name: req.name ?? "Unnamed", curl, response: "" };
-}
-
-function buildNestedItems(
-  groupId: string,
-  byId: Map<string, InsomniaResource>,
-): THittableItem[] {
-  const items: THittableItem[] = [];
-
-  // Find child request groups (sub-folders)
-  const childGroups = Array.from(byId.values()).filter(
-    (r) => r._type === "request_group" && r.parentId === groupId,
-  );
-  for (const group of childGroups) {
-    items.push({
-      type: "folder",
-      name: group.name ?? "Unnamed Folder",
-      items: buildNestedItems(group._id ?? "", byId),
-    });
+  let url = fromInsomnia(str(req.url));
+  const params = list<NV>(req.parameters).filter((p) => p.name && !p.disabled);
+  if (params.length) {
+    const enc = (v: unknown) => encodeURIComponent(fromInsomnia(str(v))).replace(/%3C%3C(\w+)%3E%3E/g, "<<$1>>");
+    url += (url.includes("?") ? "&" : "?") + params.map((p) => `${enc(p.name)}=${enc(p.value)}`).join("&");
   }
 
-  // Find child requests
-  const childRequests = Array.from(byId.values()).filter(
-    (r) => r._type === "request" && r.parentId === groupId,
-  );
-  for (const req of childRequests) {
-    const parsed = parseInsomniaRequest(req);
-    items.push({
-      type: "route",
-      name: parsed.name,
-      curl: parsed.curl,
-      response: parsed.response,
-    });
-  }
-
-  return items;
-}
-
-export function parseInsomniaExport(json: unknown): THittableCollection[] {
-  const collections: THittableCollection[] = [];
-
-  if (!json || typeof json !== "object") return collections;
-
-  const data = json as InsomniaExport;
-  const resources = data.resources ?? [];
-  if (!resources.length) return collections;
-
-  // Build parent-child map
-  const byId = new Map<string, InsomniaResource>();
-  for (const r of resources) {
-    if (r._id) byId.set(r._id, r);
-  }
-
-  // Find workspace(s)
-  const workspaces = resources.filter((r) => r._type === "workspace" || r._type === "export_type");
-
-  // If no workspace, treat all request_groups as collections
-  const topLevelGroups = resources.filter((r) => {
-    if (r._type !== "request_group") return false;
-    const parent = byId.get(r.parentId ?? "");
-    return !parent || parent._type === "workspace" || parent._type === "export_type";
-  });
-
-  const envVars = extractEnvironmentVars(resources);
-
-  if (topLevelGroups.length === 0) {
-    // No folders — all requests go into one collection
-    const requests = resources.filter((r) => r._type === "request");
-    if (requests.length > 0) {
-      const items = requests.map((r) => {
-        const parsed = parseInsomniaRequest(r);
-        return {
-          type: "route" as const,
-          name: parsed.name,
-          curl: parsed.curl,
-          response: parsed.response,
-        };
-      });
-      for (const item of items) {
-        scanItemForVariables(item, envVars);
-      }
-      collections.push({
-        collectionName: workspaces[0]?.name ?? "Imported Collection",
-        items,
-        env: envVars,
-        secrets: {},
-      });
+  let body = "";
+  const b = isObject(req.body) ? req.body : undefined;
+  if (b?.text) {
+    body = fromInsomnia(str(b.text));
+    if (b.mimeType) headers["Content-Type"] ??= b.mimeType;
+  } else if (b && list<NV>(b.params).length) {
+    const obj: Record<string, string> = {};
+    for (const p of list<NV>(b.params)) {
+      if (p.name && !p.disabled) obj[p.name] = p.fileName ? `@${p.fileName}` : fromInsomnia(str(p.value));
     }
-  } else {
-    for (const group of topLevelGroups) {
-      const groupName = group.name ?? "Imported";
-      const items = buildNestedItems(group._id ?? "", byId);
-      for (const item of items) {
-        scanItemForVariables(item, envVars);
-      }
-      collections.push({
-        collectionName: groupName,
-        items,
-        env: envVars,
-        secrets: {},
-      });
-    }
+    body = JSON.stringify(obj, null, "\t");
+    if (b.mimeType) headers["Content-Type"] ??= b.mimeType;
   }
 
-  return collections;
+  return jsonToCurl({ method, url, headers: JSON.stringify(headers), body, params: "{}" });
 }
 
 function extractEnvironmentVars(resources: InsomniaResource[]): Record<string, string> {
-  const envVars: Record<string, string> = {};
-  const envs = resources.filter((r) => r._type === "environment");
-
-  for (const env of envs) {
-    // Try kvPairData first (Insomnia v5+)
-    if (env._kvPairData?.length) {
-      for (const pair of env._kvPairData) {
-        if (pair.enabled && pair.name) {
-          envVars[pair.name] = pair.value;
-        }
-      }
+  const env: Record<string, string> = {};
+  for (const r of resources.filter((r) => r._type === "environment")) {
+    for (const pair of list<{ name?: string; value?: unknown; enabled?: boolean }>(r._kvPairData)) {
+      if (pair.enabled !== false && pair.name) env[pair.name] = str(pair.value);
     }
-    // Fallback to data object
-    if (env.data) {
-      for (const [k, v] of Object.entries(env.data)) {
-        if (typeof v === "string" && k) {
-          envVars[k] = v;
-        }
+    if (isObject(r.data)) {
+      for (const [k, v] of Object.entries(r.data)) {
+        if (k && (typeof v === "string" || typeof v === "number" || typeof v === "boolean")) env[k] = String(v);
       }
     }
   }
-
-  return envVars;
+  return env;
 }
 
-function scanItemForVariables(item: THittableItem, env: Record<string, string>): void {
-  if (item.type === "route") {
-    for (const m of item.curl.matchAll(/<<(\w+)>>/g)) {
-      if (!(m[1] in env)) {
-        env[m[1]] = "";
+export function parseInsomniaExport(json: unknown): THittableCollection[] {
+  const resources = resourcesOf(json);
+  const byId = new Map<string, InsomniaResource>();
+  for (const r of resources) if (r._id) byId.set(r._id, r);
+
+  const childrenOf = (parentId: string, seen: Set<string>): THittableItem[] => {
+    const items: THittableItem[] = [];
+    for (const r of resources) {
+      if (str(r.parentId) !== parentId) continue;
+      if (r._type === "request_group" && r._id && !seen.has(r._id)) {
+        seen.add(r._id);
+        items.push({ type: "folder", name: r.name || "Unnamed Folder", items: childrenOf(r._id, seen) });
+      } else if (r._type === "request") {
+        items.push({ type: "route", name: r.name || "Unnamed", curl: buildCurl(r), response: "" });
       }
     }
-  } else if (item.type === "folder") {
-    for (const child of item.items) {
-      scanItemForVariables(child, env);
-    }
+    return items;
+  };
+
+  const env = extractEnvironmentVars(resources);
+  // Each workspace is a collection. Groups and requests whose parent is not in
+  // the export (a bare resource list, a placeholder id) form one more.
+  const roots: [string[], string][] = resources
+    .filter((r) => r._type === "workspace" && r._id)
+    .map((w) => [[str(w._id)], w.name || "Imported Collection"]);
+  const orphanParents = [...new Set(resources
+    .filter((r) => (r._type === "request" || r._type === "request_group") && !byId.has(str(r.parentId)))
+    .map((r) => str(r.parentId)))];
+  if (orphanParents.length) roots.push([orphanParents, roots[0]?.[1] ?? "Imported Collection"]);
+
+  const collections: THittableCollection[] = [];
+  const seen = new Set<string>();
+  for (const [parentIds, name] of roots) {
+    const items = parentIds.flatMap((id) => childrenOf(id, seen));
+    if (!items.length) continue;
+    const colEnv = { ...env };
+    const scan = (i: THittableItem): void => (i.type === "route" ? addMissingVars(i.curl, colEnv) : i.items.forEach(scan));
+    items.forEach(scan);
+    collections.push({ collectionName: name, items, env: colEnv, secrets: {} });
   }
+  return collections;
 }
 
 export function isInsomniaExport(json: unknown): boolean {
-  if (!json || typeof json !== "object") return false;
-  const obj = json as Record<string, unknown>;
-  if (obj._type === "export" || obj.__export_format === 4) return true;
-  if (Array.isArray(obj.resources) && obj.resources.length > 0) {
-    const first = obj.resources[0] as Record<string, unknown>;
-    if (first?._type) return true;
-  }
-  return false;
+  if (Array.isArray(json)) return json.length > 0 && isObject(json[0]) && typeof json[0]._type === "string";
+  if (!isObject(json)) return false;
+  if (json._type === "export" || json.__export_format === 4) return true;
+  const first = Array.isArray(json.resources) ? json.resources[0] : undefined;
+  return isObject(first) && typeof first._type === "string";
 }

@@ -162,7 +162,7 @@ export default function SaveFromHistoryModal() {
   const handleCreateFolder = (name: string) => {
     if (!selectedCollection) return;
     let folderName = name;
-    if (selectedCol && isAlreadyExistsInPath(selectedCol, folderPath, folderName)) {
+    while (selectedCol && isAlreadyExistsInPath(selectedCol, folderPath, folderName)) {
       folderName += " - New";
     }
     setCollections((prev) =>
@@ -184,43 +184,48 @@ export default function SaveFromHistoryModal() {
   const handleSave = () => {
     if (!selectorResponse) return;
 
+    // Validate everything before touching collections, so a failed save
+    // leaves nothing half-created behind.
+    const trimmedRoute = routeName.trim();
+    const trimmedCollection = newCollectionName.trim();
+    if (isCreatingCollection && !trimmedCollection) {
+      setError("Collection name is required");
+      return;
+    }
+    if (!isCreatingCollection && !selectedCol) {
+      setError("Choose a collection");
+      return;
+    }
+    if (!trimmedRoute) {
+      setError("Route name is required");
+      return;
+    }
+
     let targetCollection = selectedCollection;
+    // A brand-new collection has no folders yet.
+    const targetPath = isCreatingCollection ? [] : folderPath;
     if (isCreatingCollection) {
-      const trimmed = newCollectionName.trim();
-      if (!trimmed) {
-        setError("Collection name is required");
-        return;
-      }
-      let name = trimmed;
-      if (collections.some((c) => c.collectionName === name)) {
+      let name = trimmedCollection;
+      while (collections.some((c) => c.collectionName === name)) {
         name += " - New";
       }
       setCollections((prev) => createCollectionName(prev, name));
       targetCollection = name;
     }
 
-    const trimmedRoute = routeName.trim();
-    if (!trimmedRoute) {
-      setError("Route name is required");
-      return;
-    }
-
     let finalName = trimmedRoute;
-    const col = isCreatingCollection
-      ? collections.find((c) => c.collectionName === targetCollection)
-      : selectedCol;
-    if (col && isAlreadyExistsInPath(col, folderPath, finalName)) {
+    while (!isCreatingCollection && isAlreadyExistsInPath(selectedCol, targetPath, finalName)) {
       finalName += " - New";
     }
 
     const curlString = jsonToCurl(selectorResponse.curlJson);
     setCollections((prev) =>
-      createCurlName(prev, targetCollection, finalName, curlString, folderPath),
+      createCurlName(prev, targetCollection, finalName, curlString, targetPath),
     );
 
     const pathParam =
-      folderPath.length > 0
-        ? `&p=${encodeURIComponent(folderPath.join("/"))}`
+      targetPath.length > 0
+        ? `&p=${encodeURIComponent(targetPath.join("/"))}`
         : "";
     router.push(
       `/hittable?c=${encodeURIComponent(targetCollection)}&r=${encodeURIComponent(finalName)}${pathParam}`,
@@ -228,7 +233,7 @@ export default function SaveFromHistoryModal() {
 
     setSelectorResponse({
       collectionName: targetCollection,
-      folderPath,
+      folderPath: targetPath,
       curlName: finalName,
       curlJson: selectorResponse.curlJson,
       responseJson: selectorResponse.responseJson,

@@ -19,18 +19,15 @@ import CopyButton from "./RequestForm/ResponsePanelComponents/CopyButton";
 import FloatingSearch from "./RequestForm/ResponsePanelComponents/FloatingSearch";
 import {
   Highlight,
-  MatchMark,
 } from "./RequestForm/ResponsePanelComponents/Highlight";
 import JsonNode from "./RequestForm/ResponsePanelComponents/JsonNode";
 import {
   MatchCtx,
-  MatchRegistry,
 } from "./RequestForm/ResponsePanelComponents/MatchContext";
 
 import Selector from "./hittable/Selector";
 import RequestForm from "./hittable/RequestForm";
 import NoExtensionModal from "./modals/NoExtensionModal";
-import SyntaxHighlighter from "./hittable/SyntaxHighlighter";
 import Menu from "./hittable/Menu";
 import Topbar from "./homepage/TopBar";
 import HistoryPanel from "./hittable/HistoryPanel";
@@ -38,7 +35,6 @@ import HistoryPanel from "./hittable/HistoryPanel";
 export * from "./ui/SharedModal";
 
 import PortfolioSection from "./homepage/PortfolioSection";
-import { TerminalDemo } from "./homepage/TerminalDemo";
 
 export {
   RenameModal,
@@ -58,17 +54,13 @@ export {
   CopyButton,
   FloatingSearch,
   Highlight,
-  MatchMark,
   JsonNode,
   MatchCtx,
   Selector,
   RequestForm,
   Menu,
-  SyntaxHighlighter,
   Topbar,
   NoExtensionModal,
   PortfolioSection,
-  TerminalDemo,
   HistoryPanel,
 };
-export type { MatchRegistry };

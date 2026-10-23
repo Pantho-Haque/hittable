@@ -22,7 +22,7 @@ All chords use <kbd>ctrl</kbd> for cross-platform reach. A terminal cannot deliv
 | `?`, `F1` | help overlay (scrolls with `↑↓`, `pgup/pgdn`, `g/G`, wheel) |
 | `ctrl+c` | quit (copies a selection first, if there is one) |
 | drag borders | resize sidebar · terminal · editor/response · markdown split |
-| drag any text | select a block of the screen, copied on release |
+| drag any text | select a block of the screen; `ctrl+c` copies it |
 
 ## Explorer
 
@@ -98,7 +98,7 @@ Every editor is the same component: the Text view, the Params / Headers / Body t
 | `ctrl+j`, click the `▸ TERMINAL` strip | toggle / focus |
 | `ctrl+b` | back to the explorer; every other key goes to the shell |
 | `ctrl+c` | copy the selection, else interrupt the shell |
-| drag | select output text, copied on release |
+| drag | select output text; `ctrl+c` copies it |
 | wheel, `shift+↑↓`, `shift+pgup/pgdn` | scroll back (5000 lines); any key returns to the bottom |
 | `ctrl+v` | paste (multi-line pastes arrive as one bracketed block) |
 | drag the strip | resize the panel |
@@ -172,6 +172,6 @@ Every editor is the same component: the Text view, the Params / Headers / Body t
 | :--- | :--- |
 | click | files, folders, tabs, toggles, the method badge, the URL cursor, the editor cursor, the response, every button in the Git panel |
 | wheel | one row per event, everywhere |
-| drag over text | select and copy on release, anywhere; editors, the terminal and the Git diff keep their own selections |
+| drag over text | select anywhere, `ctrl+c` copies; editors, the terminal and the Git diff keep their own selections |
 | drag a splitter | sidebar `│`, the `▸ TERMINAL` strip, the editor/response border, the markdown seam, the Git panel's `│` and `─` |
 | hover a splitter | it lights up; terminals that honour OSC 22 also show a resize pointer |

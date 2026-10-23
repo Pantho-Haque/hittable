@@ -4,7 +4,6 @@ import {
   createFile,
   createDirectory,
   readFileText,
-  writeFileText,
 } from "@/utils/workspace/fsHelpers";
 
 const HITTABLE_DIR = "hittable";
@@ -74,16 +73,6 @@ export async function validateHittable(
   return hittableDir;
 }
 
-export async function getHittableDir(
-  root: FileSystemDirectoryHandle
-): Promise<FileSystemDirectoryHandle | null> {
-  try {
-    return await root.getDirectoryHandle(HITTABLE_DIR);
-  } catch {
-    return null;
-  }
-}
-
 export async function readEnvFile(
   hittableDir: FileSystemDirectoryHandle
 ): Promise<Record<string, string>> {
@@ -94,38 +83,4 @@ export async function readEnvFile(
   } catch {
     return {};
   }
-}
-
-export async function writeEnvFile(
-  hittableDir: FileSystemDirectoryHandle,
-  env: Record<string, string>
-): Promise<void> {
-  const handle = await hittableDir.getFileHandle(ENV_FILE, { create: true });
-  await writeFileText(handle, JSON.stringify(env, null, 2) + "\n");
-}
-
-export async function readHitFile(
-  handle: FileSystemFileHandle
-): Promise<string> {
-  return readFileText(handle);
-}
-
-export async function writeHitFile(
-  handle: FileSystemFileHandle,
-  content: string
-): Promise<void> {
-  await writeFileText(handle, content);
-}
-
-export async function readMarkdownFile(
-  handle: FileSystemFileHandle
-): Promise<string> {
-  return readFileText(handle);
-}
-
-export async function writeMarkdownFile(
-  handle: FileSystemFileHandle,
-  content: string
-): Promise<void> {
-  await writeFileText(handle, content);
 }

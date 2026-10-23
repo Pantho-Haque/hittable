@@ -12,7 +12,8 @@ export function useExtension() {
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
-      if (e.data?.type === "HITTABLE_EXTENSION_READY") {
+      if (e.source === window && e.data?.type === "HITTABLE_EXTENSION_READY") {
+        clearInterval(poll);
         window.__hittableExtension = true;
         setAvailable(true);
         setChecked(true);
@@ -23,7 +24,7 @@ export function useExtension() {
 
     let attempts = 0;
     const poll = setInterval(() => {
-      window.postMessage({ type: "HITTABLE_PING" }, "*");
+      window.postMessage({ type: "HITTABLE_PING" }, window.location.origin);
       attempts++;
       if (attempts >= 10) {
         clearInterval(poll);

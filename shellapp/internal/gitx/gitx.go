@@ -148,16 +148,20 @@ type Status struct {
 	Files    []FileStatus
 }
 
-// Status runs `git status --porcelain=v2 --branch`.
+// Status runs `git status --porcelain=v2 --branch -z`. -z keeps paths
+// verbatim: without it git C-quotes any name with non-ASCII bytes, quotes or
+// control characters ("caf\303\251.txt"), which no later git call accepts.
 func (r *Repo) Status() (*Status, error) {
 	// --no-optional-locks: status must never write the index (and take
 	// index.lock) while the user runs another git command.
-	out, err := r.Run("--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=all")
+	out, err := r.Run("--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z")
 	if err != nil {
 		return nil, err
 	}
 	st := &Status{}
-	for _, line := range strings.Split(out, "\n") {
+	entries := strings.Split(out, "\x00")
+	for i := 0; i < len(entries); i++ {
+		line := entries[i]
 		switch {
 		case strings.HasPrefix(line, "# branch.head "):
 			st.Branch = strings.TrimPrefix(line, "# branch.head ")
@@ -165,29 +169,19 @@ func (r *Repo) Status() (*Status, error) {
 			st.Upstream = strings.TrimPrefix(line, "# branch.upstream ")
 		case strings.HasPrefix(line, "# branch.ab "):
 			fmt.Sscanf(strings.TrimPrefix(line, "# branch.ab "), "+%d -%d", &st.Ahead, &st.Behind)
-		case strings.HasPrefix(line, "1 ") || strings.HasPrefix(line, "2 "):
-			f := strings.SplitN(line, " ", 9)
-			if len(f) < 9 {
-				continue
+		case strings.HasPrefix(line, "1 "):
+			if f := strings.SplitN(line, " ", 9); len(f) == 9 {
+				st.Files = append(st.Files, FileStatus{Path: f[8], Index: dot(f[1][0]), Worktree: dot(f[1][1])})
 			}
-			path := f[8]
-			if line[0] == '2' { // rename: "path<TAB>origPath"
-				if i := strings.IndexByte(path, '\t'); i >= 0 {
-					path = path[:i]
-				}
-				// v2 rename lines carry a score field before the path
-				g := strings.SplitN(line, " ", 10)
-				if len(g) == 10 {
-					path = g[9]
-					if i := strings.IndexByte(path, '\t'); i >= 0 {
-						path = path[:i]
-					}
-				}
+		case strings.HasPrefix(line, "2 "):
+			// Rename / copy: a score field before the path, and the original
+			// path as the next NUL-separated entry.
+			if f := strings.SplitN(line, " ", 10); len(f) == 10 {
+				st.Files = append(st.Files, FileStatus{Path: f[9], Index: dot(f[1][0]), Worktree: dot(f[1][1])})
 			}
-			st.Files = append(st.Files, FileStatus{Path: path, Index: dot(f[1][0]), Worktree: dot(f[1][1])})
+			i++
 		case strings.HasPrefix(line, "u "):
-			f := strings.SplitN(line, " ", 11)
-			if len(f) == 11 {
+			if f := strings.SplitN(line, " ", 11); len(f) == 11 {
 				st.Files = append(st.Files, FileStatus{Path: f[10], Index: 'U', Worktree: 'U'})
 			}
 		case strings.HasPrefix(line, "? "):

@@ -7,7 +7,7 @@ export const PORTFOLIO_DATA = {
     company_name: "Pathao Ltd.",
     comment_one: "Building scalable, high-quality software — from pixel-perfect frontends to production-ready deployments. Currently architecting robust dashboards and shipping critical features powering logistics & rides.",
     comment_two: "Hittable is one of my projects built out of a passion for clean tooling, great Developer Experience, and a frustration with bloated API clients. Let's build something meaningful together.",
-    photo: "https://domiknows.vercel.app/api/cdn/smile_dp.png",
+    photo: "/assets/images/avatar.png",
     contactLinks: [
       {
         icon: "github",

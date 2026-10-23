@@ -19,7 +19,6 @@ hittable/
 │   └── ui/            the Bubble Tea UI: screens, components, theme
 ├── content/docs/      these pages, one markdown file each
 ├── hittable/          a live example project folder
-├── video/             Remotion project for the walkthrough video (separate workspace)
 └── install.sh         the terminal app installer
 ```
 
@@ -31,8 +30,13 @@ hittable/
 pnpm install
 pnpm dev            # http://localhost:3000, Turbopack
 pnpm lint
+pnpm typecheck
+pnpm test           # Vitest: unit and component tests in tests/unit
+pnpm build && pnpm test:e2e   # Playwright against the production build, tests/e2e
 pnpm build && pnpm start
 ```
+
+Node 22.19 or newer. The E2E suite starts its own fake upstream API and a production server on port 3100 (run `pnpm exec playwright install chromium webkit` once). It covers Chrome, Safari (desktop and iPhone) and phone layouts locally; CI adds Firefox, which Playwright cannot start on macOS 27 yet. CI (`.github/workflows/ci.yml`) runs all of the above for every push and pull request.
 
 Conventions: TypeScript strict, the `@/` alias points at the repository root, components are re-exported from `components/index.ts`, interactive components carry `"use client"`, icons come from `lucide-react`, styling is Tailwind utility classes with a few `@apply` helpers in `styles/`. There is no light theme.
 
@@ -46,7 +50,7 @@ Go 1.25 or newer.
 cd shellapp
 make build      # ./hittable
 make install    # build, install to ~/.local/bin, overwrite every hittable on PATH
-make test       # go vet ./... && go test ./... -timeout 300s
+make test       # go vet ./... && go test ./... -timeout 300s  (CI also runs -race)
 ```
 
 `make test` passes on a machine with nothing downloaded, no `llama-server` and no network. Tests point `HITTABLE_HOME` at a temp directory and set `HITTABLE_AI=0`. Among them, a frame-overflow test renders every view at seven terminal sizes down to 50×16 and asserts the frame is exactly the terminal's size, because one row too many scrolls the terminal and misaligns every mouse coordinate.

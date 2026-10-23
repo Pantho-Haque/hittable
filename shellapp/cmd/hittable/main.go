@@ -65,21 +65,16 @@ plain .hit files (shared with the Hittable web app), variables in hittable/env.j
 
   hittable update              update to the latest release (verified download)
   hittable uninstall           remove hittable, its data and the model from this machine`,
-	Args:          cobra.MaximumNArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		return cobra.MaximumNArgs(1)(cmd, exportFormatArg(args))
+	},
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if flagIcons == "emoji" {
 			explorer.IconMode = "emoji"
 		}
-		// `hittable -e insomnia`: the format lands in args because -e takes an
-		// optional value; treat a bare format word as the format, not a path.
-		if flagExport != "" && len(args) == 1 {
-			switch strings.ToLower(args[0]) {
-			case "postman", "insomnia":
-				flagExport, args = strings.ToLower(args[0]), nil
-			}
-		}
+		args = exportFormatArg(args)
 		root, err := rootdir.Resolve(args)
 		if err != nil {
 			return fmt.Errorf("resolving root: %w", err)
@@ -160,6 +155,20 @@ var uninstallCmd = &cobra.Command{
 		fmt.Println("hittable has been uninstalled. Your project files (hittable/ folders) were left untouched.")
 		return nil
 	},
+}
+
+// exportFormatArg handles `hittable -e insomnia [path]`: the format lands in
+// args because -e takes an optional value, so a leading bare format word is
+// taken as the format, not as the path.
+func exportFormatArg(args []string) []string {
+	if flagExport != "" && len(args) > 0 {
+		switch f := strings.ToLower(args[0]); f {
+		case "postman", "insomnia":
+			flagExport = f
+			return args[1:]
+		}
+	}
+	return args
 }
 
 func runTUI(root string) error {

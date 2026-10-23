@@ -12,29 +12,38 @@ function isLocalUrl(url: string): boolean {
   }
 }
 
+let extensionRequestSeq = 0;
+
 export function fetchViaExtension(
   url: string,
   method: string,
   headers: Record<string, string>,
   body: string | null,
+  timeoutMs = 30_000,
 ): Promise<{ data: unknown; status: number; ok: boolean; error?: string }> {
   return new Promise((resolve, reject) => {
-    window.postMessage({ type: "HITTABLE_REQUEST", payload: { url, method, headers, body } }, "*");
+    // The id pairs each reply with its request, so two requests in flight
+    // cannot swap responses. Extensions older than 1.0.1 do not echo it.
+    const id = `${Date.now()}-${++extensionRequestSeq}`;
 
     const handler = (event: MessageEvent) => {
-      if (event.data?.type !== "HITTABLE_RESPONSE") return;
-      window.removeEventListener("message", handler);
+      if (event.source !== window || event.data?.type !== "HITTABLE_RESPONSE") return;
+      if (event.data.id !== undefined && event.data.id !== id) return;
+      cleanup();
       if (event.data.success) resolve(event.data);
-      else reject(new Error(event.data.error));
+      else reject(new Error(event.data.error || "Extension request failed"));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Extension request timed out"));
+    }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      window.removeEventListener("message", handler);
     };
 
     window.addEventListener("message", handler);
-
-    // Timeout after 10s
-    setTimeout(() => {
-      window.removeEventListener("message", handler);
-      reject(new Error("Extension request timed out"));
-    }, 10000);
+    window.postMessage({ type: "HITTABLE_REQUEST", id, payload: { url, method, headers, body } }, window.location.origin);
   });
 }
 

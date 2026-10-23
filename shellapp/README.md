@@ -183,8 +183,8 @@ finder that skips `node_modules`, `.git`, `.next`, `dist`, `build`, `vendor` and
 **Integrated terminal.** `ctrl+j`, or click the `▸ TERMINAL` strip. `$SHELL -l` on a real
 PTY, so full-screen programs work. While it has focus every key goes to the shell;
 `ctrl+b` returns to the explorer. 5000 lines of scrollback (wheel, or
-`shift+↑/↓`/`shift+pgup/pgdown`). Drag to select — the selection is copied the moment
-you release, and `ctrl+c` copies it too; with nothing selected `ctrl+c` still interrupts
+`shift+↑/↓`/`shift+pgup/pgdown`). Drag to select — the selection stays highlighted
+when you release and `ctrl+c` copies it; with nothing selected `ctrl+c` still interrupts
 the shell, as in VS Code. Drag the `▸ TERMINAL` strip to resize the panel. Multi-line pastes go through
 as one bracketed block rather than being executed line by line.
 
@@ -413,7 +413,7 @@ Environment variables override both:
 | Send (mouse)          | click `▶ Send`  | URL bar              |
 | Terminal toggle/focus | `ctrl+j`, `` ctrl+` ``, click strip | Global (`ctrl+j` is the reliable one; `` ctrl+` `` only in terminals that emit NUL for it) |
 | Terminal leave        | `ctrl+b`        | Terminal focused (all other keys go to the shell) |
-| Terminal select/copy  | drag (copies on release), `ctrl+c` | Terminal focused (ctrl+c interrupts the shell only with no selection) |
+| Terminal select/copy  | drag, then `ctrl+c` | Terminal focused (ctrl+c interrupts the shell only with no selection) |
 | Terminal resize       | drag the `▸ TERMINAL` strip | Terminal open |
 | Git panel             | `ctrl+g` (outside editors), `alt+g`, `F5`, `g` in explorer, click `⎇ Git` | Global |
 | Git: sections         | `1-5`, `h`/`l`, `←/→`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
@@ -434,7 +434,7 @@ Environment variables override both:
 | Git: blame            | `⏎` `b`         | go to line · toggle inline blame in editor |
 | Click                 | mouse left      | Everything: files, folders, tabs, toggle, method, URL cursor, editor cursor, response, body/headers label |
 | Scroll                | wheel           | Explorer, editor, response |
-| Select any text       | drag over it (copied on release) · `ctrl+c` re-copies | Anywhere: explorer, response, preview, help, git lists; editors, the terminal panel and the git diff keep their own selections |
+| Select any text       | drag over it, then `ctrl+c` | Anywhere: explorer, response, preview, help, git lists; editors, the terminal panel and the git diff keep their own selections |
 | Resize explorer       | drag `│`        | Separator (`ctrl+b` is the only keyboard toggle) |
 | Resize runner / markdown split | drag the editor/response border · the editor/preview seam | Runner view · Markdown split |
 
@@ -527,4 +527,3 @@ file "$(which hittable)"   # confirm the architecture
 - `ui/` — Bubble Tea UI: explorer, request editor, response viewer, code editor, markdown
   preview, find palette, integrated terminal, Git panel
 - `CLAUDE.md` — full spec, keybinding table and changelog
-- `docs/commit-message-generator-plan.md` — design notes for the commit-message feature

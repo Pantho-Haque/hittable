@@ -65,6 +65,8 @@ export default function JsonNode({
       >
         <button
           onClick={() => isExpandable && setOpen((o) => !o)}
+          aria-label={isExpandable ? (open ? "Collapse" : "Expand") : undefined}
+          aria-expanded={isExpandable ? open : undefined}
           className={`w-3.5 h-4 md:w-4 md:h-5 flex items-center justify-center shrink-0 transition-colors ${
             isExpandable
               ? "cursor-pointer text-white/30 hover:text-white/60"

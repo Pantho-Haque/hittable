@@ -13,40 +13,27 @@ function isLegacyCollection(col: unknown): col is THittableCollectionLegacy {
   return "collectionName" in c && "curls" in c && Array.isArray(c.curls);
 }
 
+// Legacy routes were flat, with "Folder/Sub/Name" names; the slashes become
+// real folders, and routes sharing a prefix share the folder.
 function buildFolderTree(
   routes: { name: string; curl: string; response: string }[],
 ): THittableItem[] {
   const topLevel: THittableItem[] = [];
-  const folderMap = new Map<string, THittableFolder>();
-
   for (const route of routes) {
-    const slashIdx = route.name.indexOf("/");
-    if (slashIdx <= 0) {
-      topLevel.push({
-        type: "route",
-        name: route.name,
-        curl: route.curl,
-        response: route.response,
-      });
-      continue;
+    const parts = route.name.split("/").map((p) => p.trim());
+    let level = topLevel;
+    // A leading "/" or an empty segment is not a folder.
+    while (parts.length > 1 && parts[0]) {
+      const name = parts.shift()!;
+      let folder = level.find((i): i is THittableFolder => i.type === "folder" && i.name === name);
+      if (!folder) {
+        folder = { type: "folder", name, items: [] };
+        level.push(folder);
+      }
+      level = folder.items;
     }
-
-    const folderName = route.name.substring(0, slashIdx).trim();
-    const remaining = route.name.substring(slashIdx + 1).trim();
-
-    let folder = folderMap.get(folderName);
-    if (!folder) {
-      folder = { type: "folder", name: folderName, items: [] };
-      folderMap.set(folderName, folder);
-      topLevel.push(folder);
-    }
-
-    // Recursively build nested structure
-    const subRoute = { name: remaining, curl: route.curl, response: route.response };
-    const subItems = buildFolderTree([subRoute]);
-    folder.items.push(...subItems);
+    level.push({ type: "route", name: parts.join("/"), curl: route.curl, response: route.response });
   }
-
   return topLevel;
 }
 

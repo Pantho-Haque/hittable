@@ -2,21 +2,25 @@ import { NextConfig } from "next";
 
 
 const nextConfig: NextConfig = {
-  images: {
-    dangerouslyAllowSVG: true,
-    remotePatterns: [
+  // The Docker image runs the self-contained server; Vercel and `next start` don't need it.
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
+
+  poweredByHeader: false,
+  async headers() {
+    return [
       {
-        protocol: "http",
-        hostname: "localhost",
-        port: "3000",
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'; object-src 'none'" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+        ],
       },
-      {
-        protocol: "https",
-        hostname: "domiknows.vercel.app",
-      },
-    ],
-    qualities: [25, 50, 75, 100],
-  }, 
+    ];
+  },
 };
 
 export default nextConfig;

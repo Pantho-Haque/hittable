@@ -43,7 +43,7 @@ function InputForm() {
   const [openDropdown, setOpenDropdown] = useState<
     "collection" | "route" | number | null
   >(null);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLElement>(null);
   const lastSyncedRouteRef = useRef<string | null>(null);
   const curlJsonRef = useRef(curlJson);
 
@@ -167,7 +167,8 @@ function InputForm() {
       />
 
       <div className="flex flex-col md:flex-row justify-between items-center">
-        <div
+        <nav
+          aria-label="Breadcrumb"
           className="flex justify-start items-center gap-2 h-3 w-full relative"
           ref={dropdownRef}
         >
@@ -324,7 +325,7 @@ function InputForm() {
               </div>
             )}
           </div>
-        </div>
+        </nav>
         {isUnsaved() && (
           <div className="flex items-center w-full justify-start md:justify-end gap-2">
             <button

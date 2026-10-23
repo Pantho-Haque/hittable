@@ -1,6 +1,9 @@
 package screens_test
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,47 +12,53 @@ import (
 	"github.com/hittable/shellapp/ui/screens"
 )
 
+// A user flips a request to Text mode, types, and flips back and forth:
+// the edit must survive every toggle.
 func TestTypeIntoTextEditorAndToggle(t *testing.T) {
-	root := "/Users/guess/Desktop/hittable"
-	z := zone.New()
-	m := screens.NewMainScreen(root, z)
-	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	root := t.TempDir()
+	dir := filepath.Join(root, "hittable", "test")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hitFile := filepath.Join(dir, "test.hit")
+	body := `{"method":"GET","url":"https://example.com/todos/1","headers":{},"params":{},"body":""}`
+	if err := os.WriteFile(hitFile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	hitFile := "/Users/guess/Desktop/hittable/hittable/test/test.hit"
+	m := screens.NewMainScreen(root, zone.New())
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 	m.OpenFile(hitFile)
 	if m.ActiveFile == "" {
-		t.Skipf("test.hit not found")
+		t.Fatal("test.hit did not open")
 	}
 
 	m.ExplorerFocused = false
-	m.Focus = 1 // FocusURLBar
-
-	// Switch to text mode
+	m.Focus = screens.FocusURLBar
 	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
-	t.Logf("ViewMode=%d", m.ViewMode)
-
-	// Focus text editor (in case toggle didn't auto-focus it)
-	m.Focus = 4 // FocusTextEditor
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
-	type cg interface{ GetContent() string }
-	text := interface{}(m.TextEd).(cg).GetContent()
-	t.Logf("after typing X: text=%q", text[:min(200, len(text))])
-
-	// Toggle back to runner
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
-	t.Logf("ViewMode after second Ctrl+T: %d", m.ViewMode)
-
-	// Toggle back to text
-	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
-	t.Logf("ViewMode after third Ctrl+T: %d", m.ViewMode)
-
-	text2 := interface{}(m.TextEd).(cg).GetContent()
-	t.Logf("after toggle round-trip, text=%q", text2[:min(200, len(text2))])
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
+	if m.Focus != screens.FocusTextEditor {
+		t.Fatalf("ctrl+t should focus the text editor, focus = %d", m.Focus)
 	}
-	return b
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
+
+	type cg interface{ GetContent() string }
+	if got := interface{}(m.TextEd).(cg).GetContent(); !strings.Contains(got, "X") {
+		t.Fatalf("typed X missing from text editor: %q", got)
+	}
+
+	// The stray X breaks the JSON: switching back must refuse, not lose it.
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if m.Focus != screens.FocusTextEditor || !strings.Contains(m.StatusBar, "Invalid JSON") {
+		t.Fatalf("invalid JSON should block the switch, focus=%d status=%q", m.Focus, m.StatusBar)
+	}
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT}) // valid again: back to runner
+	if m.Focus != screens.FocusURLBar {
+		t.Fatalf("valid JSON should switch to runner, focus=%d status=%q", m.Focus, m.StatusBar)
+	}
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlT}) // and to text again
+	if got := interface{}(m.TextEd).(cg).GetContent(); !strings.Contains(got, "example.com/todos/1") || strings.Contains(got, "X") {
+		t.Fatalf("request changed by the round-trip: %q", got)
+	}
 }

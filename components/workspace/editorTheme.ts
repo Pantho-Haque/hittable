@@ -15,7 +15,7 @@ const SELECTION = "#164e63";
 const BORDER = "#ffffff0f";
 const MUTED = "#a8b5c7";
 
-export const hittableEditorTheme = EditorView.theme(
+const hittableEditorTheme = EditorView.theme(
   {
     "&": {
       color: FOREGROUND,
@@ -115,7 +115,7 @@ export const hittableEditorTheme = EditorView.theme(
   { dark: true }
 );
 
-export const hittableHighlightStyle = HighlightStyle.define([
+const hittableHighlightStyle = HighlightStyle.define([
   { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: "#5d7290", fontStyle: "italic" },
 
   { tag: [t.keyword, t.modifier, t.controlKeyword, t.moduleKeyword], color: "#c084fc" },

@@ -9,9 +9,11 @@
 package hithome
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"testing"
 )
 
 // EnvHome is the environment variable that overrides the root directory.
@@ -25,6 +27,17 @@ func Dir() string {
 	if v := strings.TrimSpace(os.Getenv(EnvHome)); v != "" {
 		return v
 	}
+	// A test that forgot HITTABLE_HOME must never read the developer's real
+	// config or start their installed model (a multi-GB llama-server per test
+	// binary). Opt in to the real home only for the real-model tests.
+	if testing.Testing() && os.Getenv("HITTABLE_AI_E2E") == "" {
+		return filepath.Join(os.TempDir(), fmt.Sprintf("hittable-test-home-%d", os.Getpid()))
+	}
+	return userDir()
+}
+
+// userDir is ~/.hittable, the default outside tests.
+func userDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return ".hittable"

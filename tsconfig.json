@@ -38,7 +38,7 @@
   ],
   "exclude": [
     "node_modules",
-    "video",
+    "marketing",
     "shellapp",
     "graft"
   ]

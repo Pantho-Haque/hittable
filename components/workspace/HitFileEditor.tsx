@@ -39,22 +39,6 @@ export default function HitFileEditor() {
 
   const [proxyResponse, setProxyResponse] = useState<TResponseJson>(null);
 
-  useEffect(() => {
-    if (!isFileLoaded || !parsedContent) return;
-    if (fileChangedRef.current) {
-      lastSerializedRef.current = "";
-      fileChangedRef.current = false;
-    }
-    setFormInput({
-      method: parsedContent.method,
-      url: parsedContent.url,
-      headers: JSON.stringify(parsedContent.headers, null, 2),
-      body: parsedContent.body,
-      params: JSON.stringify(parsedContent.params, null, 2),
-    });
-    setProxyResponse(parsedContent.response ?? null);
-  }, [isFileLoaded, parsedContent]);
-
   const selectorResponse = {
     collectionName: "",
     folderPath: [] as string[],
@@ -65,35 +49,47 @@ export default function HitFileEditor() {
     responseJson: proxyResponse,
   };
 
-  const hasLoadedRef = useRef(false);
+  // What the file held when the Runner last matched it: saving the same thing
+  // again is skipped, so opening a file or switching views never rewrites it.
   const lastSerializedRef = useRef("");
-  const fileChangedRef = useRef(false);
+
+  // The Runner is filled from the file only when a file opens or the user
+  // switches to it, never while typing in it: re-reading after each save would
+  // pretty-print the tab under the cursor.
+  const loadRunner = useCallback((content: THitFileContent) => {
+    setFormInput({
+      method: content.method,
+      url: content.url,
+      headers: JSON.stringify(content.headers, null, 2),
+      body: content.body,
+      params: JSON.stringify(content.params, null, 2),
+    });
+    setProxyResponse(content.response ?? null);
+    lastSerializedRef.current = serializeHitFile({ ...content, response: content.response ?? null });
+  }, []);
+
+  // A file that parses opens in the Runner, like the terminal app; one that
+  // doesn't opens in Text so it can be fixed.
   useEffect(() => {
-    fileChangedRef.current = true;
-  }, [activeFile]);
+    if (!isFileLoaded) return;
+    if (parsedContent) loadRunner(parsedContent);
+    setViewMode(parsedContent ? "runner" : "text");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opened file
+  }, [isFileLoaded, activeFile]);
+
   useEffect(() => {
-    if (isFileLoaded) {
-      hasLoadedRef.current = true;
+    if (!isFileLoaded || viewMode !== "runner") return;
+    // Half-typed JSON in Params or Headers is not saved: the file keeps its
+    // last valid value instead of having them replaced with {}.
+    let headers: Record<string, string>;
+    let params: Record<string, string>;
+    try {
+      headers = JSON.parse(formInput.headers || "{}");
+      params = JSON.parse(formInput.params || "{}");
+    } catch {
+      return;
     }
-  }, [isFileLoaded]);
-
-  useEffect(() => {
-    if (!hasLoadedRef.current || viewMode !== "runner") return;
-
-    const content: THitFileContent = {
-      method: formInput.method,
-      url: formInput.url,
-      headers: (() => {
-        try { return JSON.parse(formInput.headers || "{}"); } catch { return {}; }
-      })(),
-      params: (() => {
-        try { return JSON.parse(formInput.params || "{}"); } catch { return {}; }
-      })(),
-      body: formInput.body,
-      response: proxyResponse,
-    };
-
-    const serialized = serializeHitFile(content);
+    const serialized = serializeHitFile({ method: formInput.method, url: formInput.url, headers, params, body: formInput.body, response: proxyResponse });
     if (serialized === lastSerializedRef.current) return;
     lastSerializedRef.current = serialized;
     updateRawTextContent(serialized);
@@ -102,10 +98,10 @@ export default function HitFileEditor() {
   }, [formInput, proxyResponse]);
 
   useEffect(() => {
-    if (!hasLoadedRef.current || viewMode !== "text") return;
+    if (!isFileLoaded || viewMode !== "text") return;
     saveRawTextContent();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only save when content changes in text mode
-  }, [rawTextContent, viewMode]);
+  }, [rawTextContent]);
 
   const isUnsaved = useCallback(() => {
     if (!parsedContent) return false;
@@ -179,16 +175,7 @@ export default function HitFileEditor() {
         <button
           aria-pressed={viewMode === "runner"}
           onClick={() => {
-            if (parsedContent) {
-              setFormInput({
-                method: parsedContent.method,
-                url: parsedContent.url,
-                headers: JSON.stringify(parsedContent.headers, null, 2),
-                body: parsedContent.body,
-                params: JSON.stringify(parsedContent.params, null, 2),
-              });
-              setProxyResponse(parsedContent.response ?? null);
-            }
+            if (parsedContent) loadRunner(parsedContent);
             setViewMode("runner");
           }}
           className="workspace-button"

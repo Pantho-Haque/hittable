@@ -190,7 +190,7 @@ func TestResponseViewIsCheap(t *testing.T) {
 	}
 	perFrame := time.Since(start) / 50
 	t.Logf("SetResponse %s (%.1f MB), View %s/frame", setCost, float64(sb.Len())/1e6, perFrame)
-	if perFrame > 20*time.Millisecond {
+	if perFrame > 20*time.Millisecond*raceSlowdown {
 		t.Errorf("View too slow: %s per frame", perFrame)
 	}
 }

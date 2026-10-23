@@ -186,6 +186,13 @@ export default function TabEditor({
     return error;
   }, [currentContent, viewMode]);
 
+  // Send stays blocked while any tab holds invalid JSON, not just the one
+  // being edited.
+  useEffect(() => {
+    const tabs = ["params", "body", "headers"] as const;
+    setError(tabs.map((t) => formatJson(formInput[t]).error).find(Boolean) ?? null);
+  }, [formInput.params, formInput.body, formInput.headers, setError]); // eslint-disable-line react-hooks/exhaustive-deps -- formInput read field by field
+
   const [tableEntries, setTableEntries] = useState<Record<string, [string, string][]>>({
     params: [],
     headers: [],

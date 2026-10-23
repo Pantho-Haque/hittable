@@ -9,7 +9,7 @@ import { useDataContext } from "@/context/dataContext";
 import { useNotification } from "@/hooks";
 import { parsePostmanCollection, isPostmanCollection } from "@/utils/importers/postmanImporter";
 import { parseInsomniaExport, isInsomniaExport } from "@/utils/importers/insomniaImporter";
-import { collectAllRouteNames } from "@/utils/treeHelpers";
+import { collectAllRouteNames, migrateCollections } from "@/utils/treeHelpers";
 
 type ImportFormat = "hittable" | "postman" | "insomnia" | "unknown";
 
@@ -39,30 +39,24 @@ function detectFormat(input: string): { format: ImportFormat; data: unknown } {
   return { format: "unknown", data: parsed };
 }
 
-function decompressHittable(code: string): THittableCollection {
-  const decompressed = decompressString(code);
-  const parsed = JSON.parse(decompressed);
-  if (!parsed || typeof parsed.collectionName !== "string") {
+// Accepts the compressed string or the plain collection object, current
+// nested `items` form or the legacy flat `curls` form (upgraded on the way in).
+function toHittableCollection(data: unknown): THittableCollection {
+  let parsed = data;
+  if (typeof data === "string") {
+    const text = decompressString(data);
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error("Invalid or corrupted import data");
+    }
+  }
+  const p = parsed as Record<string, unknown> | null;
+  if (!p || typeof p !== "object" || typeof p.collectionName !== "string" || !(Array.isArray(p.items) || Array.isArray(p.curls))) {
     throw new Error("Invalid collection structure");
   }
-  // Handle both old format (curls) and new format (items)
-  if (Array.isArray(parsed.items)) {
-    return { ...parsed, secrets: parsed.secrets ?? {} } as THittableCollection;
-  }
-  if (Array.isArray(parsed.curls)) {
-    // Convert old format to new format
-    return {
-      ...parsed,
-      items: parsed.curls.map((c: { name: string; curl: string; response: string }) => ({
-        type: "route" as const,
-        name: c.name,
-        curl: c.curl,
-        response: c.response,
-      })),
-      secrets: parsed.secrets ?? {},
-    };
-  }
-  throw new Error("Invalid collection structure");
+  const [col] = migrateCollections([p]);
+  return { ...col, env: col.env ?? {}, secrets: col.secrets ?? {} };
 }
 
 export default function ImportModal() {
@@ -73,24 +67,23 @@ export default function ImportModal() {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
 
-  const getUniqueName = (baseName: string) => {
-    const existingNames = collections.map((c) => c.collectionName);
-    if (!existingNames.includes(baseName)) return baseName;
-    let counter = 1;
-    while (existingNames.includes(`${baseName} - ${counter}`)) {
-      counter++;
-    }
-    return `${baseName} - ${counter}`;
-  };
-
   const importCollection = () => {
     setError("");
+    // Names taken so far, including ones this same import hands out, so two
+    // imported collections called "API" become "API" and "API - 1".
+    const taken = collections.map((c) => c.collectionName);
+    const getUniqueName = (baseName: string) => {
+      let name = baseName;
+      for (let counter = 1; taken.includes(name); counter++) name = `${baseName} - ${counter}`;
+      taken.push(name);
+      return name;
+    };
     try {
       const { format, data } = detectFormat(input.trim());
 
       switch (format) {
         case "hittable": {
-          const collection = decompressHittable(input.trim());
+          const collection = toHittableCollection(data);
           const uniqueName = getUniqueName(collection.collectionName);
           setCollections((prev) => [...prev, { ...collection, collectionName: uniqueName }]);
           toast.success({ title: "Imported", desc: `Collection "${uniqueName}" imported (Hittable native)` });
@@ -161,6 +154,7 @@ export default function ImportModal() {
           setError("");
           setOpen(true);
         }}
+        title="Import"
         className="modal-button-mini mt-2"
       >
         <Import size={14} />

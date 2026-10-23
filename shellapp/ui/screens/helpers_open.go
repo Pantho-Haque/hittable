@@ -1,10 +1,16 @@
 package screens
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif" // decoders for image.DecodeConfig: dimensions on the image card
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/hittable/shellapp/internal/document"
 	"github.com/hittable/shellapp/internal/hitfile"
@@ -26,6 +32,31 @@ func detectBinary(buf []byte) bool {
 }
 
 // humanSize formats a byte count as B / KB / MB.
+// The same rules and wording as the web app (utils/workspace/fileKind.ts):
+// images by extension, binaries by a NUL byte, text over 1 MiB not edited.
+var imageExts = map[string]string{".png": "PNG", ".jpg": "JPG", ".jpeg": "JPG", ".gif": "GIF", ".webp": "WEBP", ".avif": "AVIF", ".bmp": "BMP", ".ico": "ICO"}
+
+func isImage(path string) bool {
+	_, ok := imageExts[strings.ToLower(filepath.Ext(path))]
+	return ok
+}
+
+// fileLabel names a file the editor won't open: "PNG image · 3 × 2 · 74 B",
+// "Binary file · 12 B" or "Too large to edit · 1.0 MB".
+func fileLabel(path string, content []byte) string {
+	if t, ok := imageExts[strings.ToLower(filepath.Ext(path))]; ok {
+		label := t + " image"
+		if c, _, err := image.DecodeConfig(bytes.NewReader(content)); err == nil {
+			label += fmt.Sprintf(" · %d × %d", c.Width, c.Height)
+		}
+		return label + " · " + humanSize(len(content))
+	}
+	if len(content) > texteditor.MaxEditableBytes && !detectBinary(content) {
+		return "Too large to edit · " + humanSize(len(content))
+	}
+	return "Binary file · " + humanSize(len(content))
+}
+
 func humanSize(n int) string {
 	const k = 1024
 	if n < k {
@@ -57,12 +88,9 @@ func (m *MainScreen) loadDoc(path string) (*document.DocumentModel, error) {
 		kind = document.KindMarkdown
 	}
 	if kind == document.KindGeneric || kind == document.KindMarkdown {
-		if len(content) > texteditor.MaxEditableBytes {
+		if isImage(path) || len(content) > texteditor.MaxEditableBytes || detectBinary(content) {
 			kind = document.KindBinary
-			m.StatusBar = fmt.Sprintf("File too large (%s) — preview disabled", humanSize(len(content)))
-		} else if detectBinary(content) {
-			kind = document.KindBinary
-			m.StatusBar = fmt.Sprintf("Binary file (%s) — preview disabled", humanSize(len(content)))
+			m.StatusBar = fileLabel(path, content)
 		}
 	}
 	doc := m.Store.GetOrCreate(path, kind, string(content), content)

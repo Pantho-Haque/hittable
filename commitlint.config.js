@@ -18,7 +18,7 @@ module.exports = {
         'revert',   // Reverts a previous commit
       ],
     ],
-    'type-case': [2, 'always', 'lower'],
+    'type-case': [2, 'always', 'lower-case'],
     'type-empty': [2, 'never'],
     'subject-case': [
       2,

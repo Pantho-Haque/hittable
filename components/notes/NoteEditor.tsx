@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Eye, Pencil, Columns2 } from "lucide-react";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import type { NoteId } from "@/types";
 
 marked.setOptions({
@@ -28,9 +29,13 @@ export default function NoteEditor({
   const [isPreview, setIsPreview] = useState(true);
   const [isSplit, setIsSplit] = useState(false);
 
-  const renderedHtml = content
-    ? marked.parse(content, { async: false }) as string
-    : '<span style="opacity:0.3">Nothing to preview</span>';
+  // Notes can come from a shared folder or an import, so sanitize before
+  // rendering. DOMPurify needs a DOM; on the server the preview stays empty.
+  const renderedHtml = !content
+    ? '<span style="opacity:0.3">Nothing to preview</span>'
+    : typeof window === "undefined"
+      ? ""
+      : DOMPurify.sanitize(marked.parse(content, { async: false }) as string);
 
   const togglePreview = () => {
     setIsSplit(false);

@@ -18,7 +18,10 @@ export const decompressString = (code: string): string => {
     const base64 = code.replace(/-/g, "+").replace(/_/g, "/");
     const binary = atob(base64);
     const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-    return new TextDecoder().decode(pako.inflate(bytes));
+    // A truncated stream makes pako return undefined instead of throwing.
+    const inflated = pako.inflate(bytes);
+    if (!inflated) throw new Error("truncated");
+    return new TextDecoder().decode(inflated);
   } catch {
     throw new Error("Invalid or corrupted import data");
   }

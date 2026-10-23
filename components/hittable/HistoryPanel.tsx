@@ -21,12 +21,15 @@ export default function HistoryPanel() {
   };
 
   const handleReplay = (entry: THistoryEntry) => {
+    // History keeps the URL template, which `new URL` rejects.
+    let label = entry.url;
+    try { label = new URL(entry.url).pathname; } catch { /* keep the template */ }
     setFormInput(entry.curlJson);
     setProxyResponse(entry.responseJson ?? null);
     setSelectorResponse({
       collectionName: "",
       folderPath: [],
-      curlName: `History: ${entry.method} ${new URL(entry.url).pathname}`,
+      curlName: `History: ${entry.method} ${label}`,
       curlJson: entry.curlJson,
       responseJson: entry.responseJson,
     });
@@ -41,6 +44,7 @@ export default function HistoryPanel() {
           setIsOpen(true);
         }}
         title="History"
+        aria-label={history.length > 0 ? `History, ${history.length} requests` : "History"}
         className="modal-button-mini relative"
       >
         <Clock size={14} />

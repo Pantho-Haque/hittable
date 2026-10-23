@@ -4,9 +4,9 @@
 # Go TUI: built and released separately
 shellapp/
 
-# Remotion project for the walkthrough video: its own pnpm workspace, and its
-# dependencies are never installed here
-video/
+# Videos, screenshots and other promo material: the Remotion project is its own
+# pnpm workspace, and its dependencies are never installed here
+marketing/
 
 # Prebuilt code-graph notes
 graft/

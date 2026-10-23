@@ -92,6 +92,7 @@ export default function NoteModal() {
     <>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        title="Notes"
         className="modal-button-mini mt-2"
       >
         <NotebookIcon size={14} />
@@ -106,6 +107,9 @@ export default function NoteModal() {
           }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Notebook"
             className="relative bg-[#0a1628] border border-white/10 rounded-xl shadow-2xl shadow-black/80 w-[95vw] max-w-[1100px] h-[85vh] flex flex-col font-mono outline-none"
             style={{ boxShadow: "0 0 0 1px rgba(0,229,204,0.08), 0 24px 80px rgba(0,0,0,0.8)" }}
             onMouseDown={(e) => e.stopPropagation()}

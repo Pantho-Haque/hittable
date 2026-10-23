@@ -682,15 +682,6 @@ func (e *Explorer) renderRow(n *Node, idx int) string {
 	return ansi.Truncate(indent+iconStyled+" "+nameStyled, e.Width-1, "…") + pad
 }
 
-// fit pads/truncates a rendered line to exactly Width cells.
-func (e *Explorer) fit(s string) string {
-	s = ansi.Truncate(s, e.Width, "")
-	if w := lipgloss.Width(s); w < e.Width {
-		s += strings.Repeat(" ", e.Width-w)
-	}
-	return s
-}
-
 // SetGitStatus installs explorer decorations from a path→badge map.
 func (e *Explorer) SetGitStatus(st map[string]string) {
 	e.GitStatus = st

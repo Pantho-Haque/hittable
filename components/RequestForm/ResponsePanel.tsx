@@ -95,7 +95,7 @@ function detectViewMode(headers: Record<string, string>): ResponseViewMode {
 
 export default function ResponsePanel({ dataSource: propDataSource }: { dataSource?: DataSource } = {}) {
   const contextData = useDataContext();
-  const { proxyResponse } = propDataSource ?? contextData;
+  const { proxyResponse, selectorResponse, formInput } = propDataSource ?? contextData;
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -178,9 +178,13 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
     setSearchQuery("");
   }, []);
 
-  // Get request URL for HTML base href
-  const { selectorResponse } = useDataContext();
-  const requestUrl = selectorResponse?.curlJson?.url;
+  // Request URL for the HTML preview's base href, with <<KEY>> resolved the
+  // way the request was sent (secrets win). The URL in the bar, not the
+  // last saved one: that is what was sent.
+  const requestUrl = formInput.url?.replace(
+    /<<(\w+)>>/g,
+    (m, k: string) => selectorResponse?.secrets?.[k] ?? selectorResponse?.env?.[k] ?? m,
+  );
 
   const showCopyButton = activeTab === "body" && effectiveViewMode !== "html";
 
@@ -246,7 +250,7 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
 
   return (
     <MatchCtx.Provider value={matchCtxValue}>
-      <div className="relative flex flex-col rounded-lg border border-white/8 bg-[#0a1628]/60 overflow-hidden h-full">
+      <section aria-label="Response" className="relative flex flex-col rounded-lg border border-white/8 bg-[#0a1628]/60 overflow-hidden h-full">
         {/* ── Header ── */}
         <div className="flex items-center gap-3 border-b border-white/5 bg-[#0e1f35]/50 px-2 md:px-4 py-1 md:py-2 shrink-0">
           <span className="text-[7px] md:text-[9px] tracking-[0.25em] uppercase text-white/25">
@@ -514,7 +518,7 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
             </span>
           </div>
         )}
-      </div>
+      </section>
     </MatchCtx.Provider>
   );
 }

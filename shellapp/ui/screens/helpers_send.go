@@ -36,7 +36,7 @@ func (m *MainScreen) sendRequestAsync() tea.Cmd {
 		m.StatusBar = "URL is empty"
 		return nil
 	}
-	if m.Sending || teaProgram == nil {
+	if m.Sending || prog.Load() == nil {
 		return nil
 	}
 	m.reloadEnv()
@@ -51,7 +51,7 @@ func (m *MainScreen) sendRequestAsync() tea.Cmd {
 
 	go func() {
 		result, err := hitfile.ExecuteAndCapture(&req, envSnap)
-		teaProgram.Send(responseMsg{path: path, result: result, err: err})
+		send(responseMsg{path: path, result: result, err: err})
 	}()
 	return m.Spinner.Tick
 }

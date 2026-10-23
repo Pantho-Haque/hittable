@@ -81,7 +81,8 @@ export async function removeEntry(
   dir: FileSystemDirectoryHandle,
   name: string
 ): Promise<void> {
-  await dir.removeEntry(name);
+  // A non-empty folder is refused without `recursive`.
+  await dir.removeEntry(name, { recursive: true });
 }
 
 export async function renameEntry(
@@ -90,11 +91,15 @@ export async function renameEntry(
   newName: string,
   kind: "file" | "directory"
 ): Promise<void> {
+  // The copy would overwrite the target (or, on a case-insensitive disk, be
+  // the source itself and get deleted), so an existing name is refused.
+  if ((await fileExists(dir, newName)) || (await directoryExists(dir, newName))) {
+    throw new Error(`"${newName}" already exists`);
+  }
   if (kind === "file") {
-    const oldHandle = await dir.getFileHandle(oldName);
-    const content = await readFileText(oldHandle);
+    // Write the copy before removing the original, so a failure loses nothing.
+    await copyFile(await dir.getFileHandle(oldName), dir, newName);
     await removeEntry(dir, oldName);
-    await createFile(dir, newName, content);
   } else {
     const oldDir = await dir.getDirectoryHandle(oldName);
     const newDir = await createDirectory(dir, newName);
@@ -103,14 +108,24 @@ export async function renameEntry(
   }
 }
 
+// Copies bytes, not text, so images and other binary files survive.
+async function copyFile(
+  src: FileSystemFileHandle,
+  dest: FileSystemDirectoryHandle,
+  name: string
+): Promise<void> {
+  const writable = await (await dest.getFileHandle(name, { create: true })).createWritable();
+  await writable.write(await src.getFile());
+  await writable.close();
+}
+
 async function copyDirectoryContents(
   src: FileSystemDirectoryHandle,
   dest: FileSystemDirectoryHandle
 ): Promise<void> {
   for await (const [name, handle] of src.entries()) {
     if (handle.kind === "file") {
-      const content = await readFileText(handle as FileSystemFileHandle);
-      await createFile(dest, name, content);
+      await copyFile(handle as FileSystemFileHandle, dest, name);
     } else {
       const newSubDir = await createDirectory(dest, name);
       await copyDirectoryContents(

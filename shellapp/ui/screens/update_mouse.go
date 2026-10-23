@@ -48,18 +48,20 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if kind != "" {
 			return m, nil
 		}
+		// Release keeps the selection highlighted; ctrl+c copies it.
 		if m.frameSel.active {
-			m.copyFrameSel()
+			m.StatusBar = "ctrl+c copies the selection"
 			return m, nil
 		}
-		// Copy on select, as terminal emulators do: the host terminal never
-		// sees these cells (mouse tracking is on), and cmd+c cannot reach a
-		// terminal program, so releasing a drag is the moment to copy.
 		if m.termSel {
 			m.termSel = false
-			if n := m.Term.CopySelection(); n > 0 {
-				m.StatusBar = fmt.Sprintf("copied %d line(s) · ctrl+v / cmd+v pastes", n)
-			}
+			m.StatusBar = "ctrl+c copies the selection"
+			return m, nil
+		}
+		// A click on the help overlay (a press that never became a drag)
+		// dismisses it. Closing on press would leave no way to select its text.
+		if m.ShowHelp && msg.Y > 0 && (m.explorerHidden() || x > m.ExplorerWidth) {
+			m.ShowHelp = false
 			return m, nil
 		}
 		if ed := m.focusedEditor(); ed != nil {
@@ -250,8 +252,6 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.HelpScroll--
 		case tea.MouseWheelDown:
 			m.HelpScroll++
-		case tea.MouseLeft:
-			m.ShowHelp = false
 		}
 		return m, nil
 	}

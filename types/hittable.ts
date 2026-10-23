@@ -1,4 +1,3 @@
-export type TabSize = 2 | 4 | "tab";
 
 export type THittableEnv = {
   [key: string]: string;

@@ -1,285 +1,189 @@
 import { THittableCollection, THittableItem } from "@/types";
-import { ensureEnvVarsForText } from "./variableSyntax";
+import { base64Utf8, jsonToCurl } from "@/utils/curlConverter";
+import { addMissingVars, fromPostman } from "./variableSyntax";
 
-interface PostmanCollection {
-  info?: { name?: string; schema?: string };
-  item?: (PostmanItem | PostmanFolder)[];
-  variable?: PostmanVariable[];
-  auth?: PostmanAuth;
+// Mirrors the terminal app's importer (shellapp/internal/collection): one
+// Postman collection becomes one Hittable collection, item groups become
+// folders, and bearer / basic / apikey auth becomes a header.
+
+type KV = { key?: string; value?: unknown; disabled?: boolean; type?: string; src?: unknown; enabled?: boolean };
+
+interface PostmanAuth {
+  type?: string;
+  bearer?: KV[];
+  basic?: KV[];
+  apikey?: KV[];
 }
 
-interface PostmanItem {
-  name?: string;
-  request?: PostmanRequest | string;
-  response?: unknown[];
-}
-
-interface PostmanFolder {
-  name?: string;
-  item?: (PostmanItem | PostmanFolder)[];
-  auth?: PostmanAuth;
+interface PostmanUrl {
+  raw?: string;
+  protocol?: string;
+  host?: string | (string | { value?: string })[];
+  port?: string;
+  path?: string | (string | { value?: string })[];
+  query?: KV[];
 }
 
 interface PostmanRequest {
   method?: string;
-  url?: string | { raw?: string; host?: string | string[]; path?: (string | { value: string })[]; query?: { key?: string; value?: string; disabled?: boolean }[] };
-  header?: { key?: string; value?: string; disabled?: boolean }[];
-  body?: {
-    mode?: "raw" | "urlencoded" | "formdata" | "file" | "graphql";
-    raw?: string;
-    urlencoded?: { key?: string; value?: string; disabled?: boolean }[];
-    formdata?: { key?: string; value?: string; type?: "text" | "file"; src?: string | string[] | null; disabled?: boolean }[];
-  };
-  auth?: PostmanAuth;
+  url?: string | PostmanUrl;
+  header?: KV[];
+  body?: { mode?: string; raw?: string; urlencoded?: KV[]; formdata?: KV[] };
+  auth?: PostmanAuth | null;
 }
 
-interface PostmanVariable {
-  key?: string;
-  value?: string;
-  enabled?: boolean;
+interface PostmanItem {
+  name?: string;
+  disabled?: boolean;
+  item?: unknown;
+  request?: PostmanRequest | string;
+  variable?: unknown;
+  auth?: PostmanAuth | null;
 }
 
-type PostmanAuth = {
-  type?: string;
-  basic?: { key: string; value: string }[];
-  bearer?: { key: string; value: string }[];
-  apikey?: { key: string; value: string }[];
-} | null;
+interface PostmanCollection {
+  info?: { name?: string; schema?: string };
+  item?: unknown;
+  variable?: unknown;
+  auth?: PostmanAuth | null;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const list = <T,>(v: unknown): T[] => (Array.isArray(v) ? v.filter(isObject) as T[] : []);
+const str = (v: unknown) => (v === undefined || v === null ? "" : String(v));
+
+// The auth headers an auth block produces; null means "nothing to add".
+function authHeaders(auth: PostmanAuth | null | undefined): Record<string, string> | null {
+  if (!isObject(auth)) return null;
+  const get = (kvs: unknown, key: string) => fromPostman(str(list<KV>(kvs).find((kv) => kv.key === key)?.value));
+  switch (auth.type) {
+    case "bearer":
+      return { Authorization: `Bearer ${get(auth.bearer, "token")}` };
+    case "basic": {
+      const user = get(auth.basic, "username");
+      const pass = get(auth.basic, "password");
+      // Templated credentials cannot be encoded now; leave a variable to fill in.
+      if (/<<\w+>>/.test(user + pass)) return { Authorization: `Basic <<BASIC_${user.replace(/\W/g, "_")}>>` };
+      return { Authorization: `Basic ${base64Utf8(`${user}:${pass}`)}` };
+    }
+    case "apikey":
+      if (get(auth.apikey, "in") === "query") return null; // like the terminal app: header keys only
+      return { [get(auth.apikey, "key") || "X-API-Key"]: get(auth.apikey, "value") };
+    default:
+      return null; // noauth, inherit, and unsupported types (reported by the import dialog)
+  }
+}
+
+const joinParts = (v: unknown, sep: string) =>
+  typeof v === "string" ? v : (Array.isArray(v) ? v.map((p) => (typeof p === "string" ? p : str(isObject(p) ? p.value : ""))).join(sep) : "");
 
 function resolveUrl(url: PostmanRequest["url"]): string {
-  if (!url) return "";
-  if (typeof url === "string") return resolveVariableSyntax(url);
-  if (url.raw) return resolveVariableSyntax(url.raw);
-  const host = Array.isArray(url.host) ? url.host.map((h) => resolveVariableSyntax(h)).join(".") : resolveVariableSyntax(url.host ?? "");
-  const path = (url.path ?? []).map((p) => resolveVariableSyntax(typeof p === "string" ? p : p.value)).join("/");
-  return `${host}/${path}`;
+  if (typeof url === "string") return fromPostman(url);
+  if (!isObject(url)) return "";
+  let raw = str(url.raw);
+  if (!raw) {
+    raw = joinParts(url.host, ".") + (url.port ? `:${url.port}` : "");
+    const path = joinParts(url.path, "/").replace(/^\//, "");
+    if (path) raw += `/${path}`;
+    if (url.protocol && raw) raw = `${url.protocol}://${raw}`;
+  }
+  // The query array is authoritative; raw repeats it unencoded.
+  const query = list<KV>(url.query).filter((q) => q.key && !q.disabled);
+  if (Array.isArray(url.query)) {
+    raw = raw.split("?")[0];
+    const enc = (v: unknown) => encodeURIComponent(fromPostman(str(v))).replace(/%3C%3C(\w+)%3E%3E/g, "<<$1>>");
+    if (query.length) raw += "?" + query.map((q) => `${enc(q.key)}=${enc(q.value)}`).join("&");
+  }
+  return fromPostman(raw);
 }
 
-function resolveVariableSyntax(text: string): string {
-  return text.replace(/\{\{(\w+)\}\}/g, "<<$1>>");
-}
-
-function headersToJSON(headers: PostmanRequest["header"]): string {
-  if (!headers?.length) return "{}";
+function kvBody(kvs: KV[]): Record<string, string> {
   const obj: Record<string, string> = {};
-  for (const h of headers) {
-    if (h.key && !h.disabled) {
-      obj[h.key] = resolveVariableSyntax(h.value ?? "");
-    }
+  for (const p of kvs) {
+    if (!p.key || p.disabled) continue;
+    if (p.type === "file") {
+      const src = Array.isArray(p.src) ? p.src[0] : p.src;
+      obj[p.key] = src ? `@${src}` : "@filename";
+    } else obj[p.key] = fromPostman(str(p.value));
   }
-  return JSON.stringify(obj, null, "\t");
+  return obj;
 }
 
-function bodyToJSON(body: PostmanRequest["body"]): string {
-  if (!body) return "{}";
-  switch (body.mode) {
-    case "raw": {
-      if (!body.raw) return "{}";
-      const resolved = resolveVariableSyntax(body.raw);
-      try {
-        const parsed = JSON.parse(resolved);
-        return JSON.stringify(parsed, null, "\t");
-      } catch {
-        return resolved;
-      }
-    }
-    case "urlencoded": {
-      if (!body.urlencoded?.length) return "{}";
-      const obj: Record<string, string> = {};
-      for (const p of body.urlencoded) {
-        if (p.key && !p.disabled) obj[p.key] = resolveVariableSyntax(p.value ?? "");
-      }
-      return JSON.stringify(obj, null, "\t");
-    }
-    case "formdata": {
-      if (!body.formdata?.length) return "{}";
-      const obj: Record<string, string> = {};
-      for (const p of body.formdata) {
-        if (p.key && !p.disabled) {
-          if (p.type === "file") {
-            const src = Array.isArray(p.src) ? p.src[0] : p.src;
-            obj[p.key] = src ? `@${src}` : "@filename";
-          } else {
-            obj[p.key] = resolveVariableSyntax(p.value ?? "");
-          }
-        }
-      }
-      return JSON.stringify(obj, null, "\t");
-    }
-    default:
-      return body.raw ? body.raw : "{}";
-  }
-}
-
-function buildCurlFromRequest(req: PostmanRequest): string {
-  const method = req.method ?? "GET";
+function buildCurl(req: PostmanRequest, inheritedAuth: Record<string, string> | null): string {
+  const method = str(req.method || "GET").toUpperCase();
   const url = resolveUrl(req.url);
-  const headers = headersToJSON(req.header);
-  const body = bodyToJSON(req.body);
+  const headers: Record<string, string> = {};
 
-  let curl = `curl -X ${method} ${url}`;
-  try {
-    const parsed = JSON.parse(headers);
-    for (const [k, v] of Object.entries(parsed)) {
-      curl += ` -H "${k}: ${v}"`;
-    }
-  } catch { /* skip */ }
-  const noBody = ["GET", "HEAD", "DELETE"].includes(method.toUpperCase());
-  if (body && body !== "{}" && !noBody) {
-    curl += ` -d '${body.replace(/'/g, "'\\''")}'`;
+  // The request's own auth wins; "noauth" opts out of the inherited one.
+  const own = req.auth;
+  const auth = !isObject(own) || !own.type || own.type === "inherit" ? inheritedAuth : authHeaders(own);
+  Object.assign(headers, auth);
+
+  for (const h of list<KV>(req.header)) {
+    if (h.key && !h.disabled) headers[h.key] = fromPostman(str(h.value));
   }
-  return curl;
+
+  let body = "";
+  const b = isObject(req.body) ? req.body : undefined;
+  if (b?.mode === "raw") body = fromPostman(str(b.raw));
+  else if (b?.mode === "urlencoded" || b?.mode === "formdata") {
+    const obj = kvBody(list<KV>(b.mode === "urlencoded" ? b.urlencoded : b.formdata));
+    if (Object.keys(obj).length) body = JSON.stringify(obj, null, "\t");
+    if (b.mode === "urlencoded") headers["Content-Type"] ??= "application/x-www-form-urlencoded";
+  }
+  try {
+    body = JSON.stringify(JSON.parse(body), null, "\t");
+  } catch {
+    // not JSON: keep the raw text
+  }
+
+  return jsonToCurl({ method, url, headers: JSON.stringify(headers), body, params: "{}" });
 }
 
-function convertPostmanItems(
-  items: (PostmanItem | PostmanFolder)[],
-): THittableItem[] {
+function addVariables(vars: unknown, env: Record<string, string>): void {
+  for (const v of list<KV>(vars)) {
+    if (v.key && v.enabled !== false) env[v.key] = str(v.value);
+  }
+}
+
+function convertItems(items: unknown, auth: Record<string, string> | null, env: Record<string, string>): THittableItem[] {
   const result: THittableItem[] = [];
-  for (const item of items) {
-    if ("item" in item && Array.isArray(item.item)) {
-      // This is a folder — create real nested folder
-      result.push({
-        type: "folder",
-        name: item.name ?? "Unnamed Folder",
-        items: convertPostmanItems(item.item),
-      });
-    } else if ("request" in item) {
-      const req = item.request;
-      if (typeof req === "string") {
-        result.push({
-          type: "route",
-          name: item.name ?? "Unnamed",
-          curl: `curl ${req}`,
-          response: "",
-        });
-      } else if (req) {
-        result.push({
-          type: "route",
-          name: item.name ?? "Unnamed",
-          curl: buildCurlFromRequest(req),
-          response: "",
-        });
-      }
+  for (const item of list<PostmanItem>(items)) {
+    if (item.disabled === true) continue;
+    addVariables(item.variable, env);
+    if (Array.isArray(item.item)) {
+      const folderAuth = isObject(item.auth) && item.auth.type && item.auth.type !== "inherit" ? authHeaders(item.auth) : auth;
+      result.push({ type: "folder", name: item.name || "Unnamed Folder", items: convertItems(item.item, folderAuth, env) });
+    } else if (typeof item.request === "string") {
+      result.push({ type: "route", name: item.name || "Unnamed", curl: jsonToCurl({ method: "GET", url: fromPostman(item.request), headers: "{}", body: "", params: "{}" }), response: "" });
+    } else if (isObject(item.request)) {
+      result.push({ type: "route", name: item.name || "Unnamed", curl: buildCurl(item.request, auth), response: "" });
     }
   }
   return result;
 }
 
-function collectVariables(
-  items: (PostmanItem | PostmanFolder)[],
-): Record<string, string> {
-  const vars: Record<string, string> = {};
-  for (const item of items) {
-    if ("variable" in item && Array.isArray(item.variable)) {
-      for (const v of item.variable) {
-        if (v.key && v.value && v.enabled !== false) {
-          vars[v.key] = v.value;
-        }
-      }
-    }
-    if ("item" in item && Array.isArray(item.item)) {
-      Object.assign(vars, collectVariables(item.item));
-    }
-  }
-  return vars;
+function scanItem(item: THittableItem, env: Record<string, string>): void {
+  if (item.type === "route") addMissingVars(item.curl, env);
+  else item.items.forEach((child) => scanItem(child, env));
 }
 
-function scanItemForVariables(item: THittableItem, env: Record<string, string>): void {
-  if (item.type === "route") {
-    // Scan the curl string for <<var>> patterns (which were already converted from {{var}})
-    for (const m of item.curl.matchAll(/<<(\w+)>>/g)) {
-      if (!(m[1] in env)) {
-        env[m[1]] = "";
-      }
-    }
-  } else if (item.type === "folder") {
-    for (const child of item.items) {
-      scanItemForVariables(child, env);
-    }
-  }
+function processCollection(col: PostmanCollection): THittableCollection {
+  const env: Record<string, string> = {};
+  addVariables(col.variable, env);
+  const items = convertItems(col.item, authHeaders(col.auth), env);
+  items.forEach((item) => scanItem(item, env));
+  return { collectionName: str(col.info?.name) || "Imported Collection", items, env, secrets: {} };
 }
 
 export function parsePostmanCollection(json: unknown): THittableCollection[] {
-  const collections: THittableCollection[] = [];
-
-  function processCollection(col: PostmanCollection): THittableCollection {
-    const collectionName = col.info?.name ?? "Imported Collection";
-    const items = col.item ?? [];
-    const envVars: Record<string, string> = {};
-
-    // Collection-level variables
-    if (col.variable?.length) {
-      for (const v of col.variable) {
-        if (v.key && v.value && v.enabled !== false) {
-          envVars[v.key] = v.value;
-        }
-      }
-    }
-
-    // Folder-level variables
-    const itemVars = collectVariables(items);
-    Object.assign(envVars, itemVars);
-
-    const convertedItems = convertPostmanItems(items);
-
-    // Ensure env var entries exist for all variable references in imported data
-    for (const item of convertedItems) {
-      scanItemForVariables(item, envVars);
-    }
-
-    return {
-      collectionName,
-      items: convertedItems,
-      env: envVars,
-      secrets: {},
-    };
-  }
-
-  function processTopLevel(data: PostmanCollection): void {
-    const item = data.item ?? [];
-    // Check if top level has actual items (requests) or just folders
-    const hasTopLevelRequests = item.some((i) => "request" in i);
-    const hasFolders = item.some((i) => "item" in i);
-
-    if (hasTopLevelRequests || !hasFolders) {
-      collections.push(processCollection(data));
-    } else if (hasFolders) {
-      // Each top-level folder becomes a collection
-      for (const folder of item) {
-        if ("item" in folder && Array.isArray(folder.item)) {
-          const folderItems = folder.item;
-          const subCollection: PostmanCollection = {
-            info: { name: folder.name ?? "Imported", schema: data.info?.schema },
-            item: folderItems,
-            variable: ("variable" in folder && Array.isArray(folder.variable)) ? folder.variable : undefined,
-            auth: folder.auth ?? data.auth ?? undefined,
-          };
-          collections.push(processCollection(subCollection));
-        }
-      }
-    }
-  }
-
-  if (Array.isArray(json)) {
-    for (const item of json) {
-      if (item && typeof item === "object" && "info" in item) {
-        processCollection(item as PostmanCollection);
-      }
-    }
-  } else if (json && typeof json === "object" && "info" in json) {
-    processTopLevel(json as PostmanCollection);
-  }
-
-  return collections;
+  const cols = Array.isArray(json) ? json : [json];
+  return cols.filter((c): c is PostmanCollection => isObject(c) && isObject(c.info)).map(processCollection);
 }
 
 export function isPostmanCollection(json: unknown): boolean {
-  if (!json || typeof json !== "object") return false;
-  const obj = json as Record<string, unknown>;
-  if (obj.info && typeof obj.info === "object") {
-    const info = obj.info as Record<string, unknown>;
-    if (typeof info.schema === "string" && info.schema.includes("schema.getpostman.com")) return true;
-    if (typeof info.name === "string" && "item" in obj && Array.isArray(obj.item)) return true;
-  }
-  return false;
+  if (!isObject(json) || !isObject(json.info)) return false;
+  const info = json.info;
+  if (typeof info.schema === "string" && info.schema.includes("schema.getpostman.com")) return true;
+  return typeof info.name === "string" && Array.isArray(json.item);
 }

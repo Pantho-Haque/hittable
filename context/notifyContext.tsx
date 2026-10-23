@@ -6,7 +6,7 @@ import {
   TNotificationType,
   TNotify,
 } from "@/types";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import { createContext, useState } from "react";
 
 export const NotificationContext = createContext<
@@ -67,6 +67,8 @@ export const NotificationProvider = ({
               gap: "0.5rem",
             }}
           >
+            {/* Follows the OS "reduce motion" setting. */}
+            <MotionConfig reducedMotion="user">
             <AnimatePresence>
               {msgs.map((msg) => (
                 <motion.div
@@ -110,6 +112,7 @@ export const NotificationProvider = ({
                 </motion.div>
               ))}
             </AnimatePresence>
+            </MotionConfig>
           </div>
         ))}
       {children}

@@ -4,7 +4,7 @@ import { Download } from "lucide-react";
 import { useCallback, useState } from "react";
 import { ModalShell, ModalActions } from "@/components";
 import { compressString } from "@/utils/compressString";
-import { THittableCollection } from "@/types";
+import { THittableCollection, THittableItem } from "@/types";
 import { exportToPostmanCollection } from "@/utils/importers/postmanExporter";
 import { exportToInsomniaCollection } from "@/utils/importers/insomniaExporter";
 
@@ -30,12 +30,13 @@ export default function ExportModal({
   const generateExport = useCallback(() => {
     try {
       const parsed = JSON.parse(exportString) as THittableCollection;
-      const stripped: THittableCollection = {
-        ...parsed,
-        items: parsed.items?.map((item) =>
-          item.type === "route" ? { ...item, response: "" } : item
-        ) ?? [],
-      };
+      const strip = (items: THittableItem[]): THittableItem[] =>
+        items.map((item) =>
+          item.type === "route" ? { ...item, response: "" } : { ...item, items: strip(item.items) },
+        );
+      // Secrets keep their names but never their values.
+      const secrets = Object.fromEntries(Object.keys(parsed.secrets ?? {}).map((k) => [k, ""]));
+      const stripped: THittableCollection = { ...parsed, items: strip(parsed.items ?? []), secrets };
 
       switch (format) {
         case "hittable":

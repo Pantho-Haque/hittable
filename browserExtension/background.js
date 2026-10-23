@@ -2,8 +2,20 @@
 chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
   if (message.type !== "HITTABLE_REQUEST") return;
 
-  const { url, method, headers, body } = message.payload;
-  const upperMethod = method.toUpperCase();
+  const { url, method, headers, body } = message.payload ?? {};
+  // The extension exists for localhost only; refuse anything else.
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    sendResponse({ success: false, error: `Invalid URL: ${url}` });
+    return;
+  }
+  if (!["localhost", "127.0.0.1", "0.0.0.0"].includes(host)) {
+    sendResponse({ success: false, error: "The extension only makes localhost requests" });
+    return;
+  }
+  const upperMethod = String(method || "GET").toUpperCase();
 
   fetch(url, {
     method: upperMethod,

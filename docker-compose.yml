@@ -1,13 +1,10 @@
 services:
   frontend:
     container_name: frontend
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Dev server with live reload; the Dockerfile builds the production image.
+    image: node:24-bookworm
     working_dir: /frontend
-    command: sh dockerEntryPoint.sh
-    environment:
-      - NEXT_API_BASE_URL=https://jsonplaceholder.typicode.com
+    command: sh -c "corepack enable && sh dockerEntryPoint.sh"
     volumes:
       - source: .
         target: /frontend

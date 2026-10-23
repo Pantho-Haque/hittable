@@ -95,7 +95,10 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
             onClick={() => setOpen(false)}
           >
             <div
-              className="relative bg-[#0a1628] border border-white/10 rounded-xl shadow-2xl p-6 w-[520px] max-h-[80vh] flex flex-col gap-5 font-mono overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Environment: ${effectiveCollectionName}`}
+              className="relative bg-[#0a1628] border border-white/10 rounded-xl shadow-2xl p-6 w-[520px] max-w-[90vw] max-h-[80vh] flex flex-col gap-5 font-mono overflow-hidden"
               onClick={(e) => e.stopPropagation()}
               style={{ boxShadow: "0 0 0 1px rgba(0,229,204,0.08), 0 24px 80px rgba(0,0,0,0.8)" }}
             >
@@ -177,6 +180,7 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
                     />
                     <button
                       onClick={() => setCurrentEntries((prev) => prev.filter((_, idx) => idx !== i))}
+                      aria-label={`Remove ${key || "row"}`}
                       className="p-1 text-white/20 hover:text-red-400 transition-colors cursor-pointer"
                     >
                       <Trash2 size={13} />

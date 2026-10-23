@@ -19,10 +19,10 @@ import (
 	"github.com/alecthomas/chroma/styles"
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/hittable/shellapp/ui/components/texteditor/textarea"
 	"github.com/hittable/shellapp/ui/theme"
 )
 
@@ -975,9 +975,14 @@ func (t *TextEditor) longestLine() int {
 
 // ---------- View ----------
 
+// maxHighlightLine: longer lines are shown plain. A minified response is one
+// huge line that changes on every keystroke, and re-lexing it each time made
+// typing lag; VS Code stops tokenizing at the same 20000 (maxTokenizationLineLength).
+const maxHighlightLine = 20000
+
 func (t *TextEditor) highlight(line string) string {
 	b := t.cur
-	if b.lexer == nil || strings.TrimSpace(line) == "" {
+	if b.lexer == nil || strings.TrimSpace(line) == "" || len(line) > maxHighlightLine {
 		return line
 	}
 	if hl, ok := b.hlCache[line]; ok {

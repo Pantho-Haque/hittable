@@ -1,132 +1,52 @@
-import { THittableCollection, THittableItem, THittableCurlJson, THittableEnv } from "@/types";
+import { THittableCollection, THittableItem } from "@/types";
+import { curlConverter } from "@/utils/curlConverter";
+import { toPostman } from "./variableSyntax";
 
-function resolveEnvValues(text: string, env: THittableEnv): string {
-  return text.replace(/<<(\w+)>>/g, (_, key: string) => {
-    return key in env ? env[key] : `<<${key}>>`;
-  });
-}
+// <<KEY>> becomes {{KEY}} everywhere and values travel as collection
+// variables, so an export imports back unchanged. Secret values are never
+// exported: secrets appear as variables with an empty value.
 
-function resolveSecretSyntax(text: string): string {
-  return text.replace(/<<(\w+)>>/g, "{{$1}}");
-}
-
-function resolveAllSyntax(text: string, env: THittableEnv): string {
-  return text.replace(/<<(\w+)>>/g, (_, key: string) => {
-    if (key in env) return `{{${key}}}`;
-    return `<<${key}>>`;
-  });
-}
-
-function jsonToPostmanBody(body: string): { mode: "raw"; raw: string } | undefined {
-  if (!body || body === "{}") return undefined;
-  return { mode: "raw", raw: body };
-}
-
-function headersToPostmanArray(headers: string): { key: string; value: string }[] {
+function headersToPostman(headers: string): { key: string; value: string }[] {
   try {
     const parsed = JSON.parse(headers);
-    if (typeof parsed !== "object" || parsed === null) return [];
-    return Object.entries(parsed).map(([key, value]) => ({
-      key,
-      value: String(value),
-    }));
+    if (!parsed || typeof parsed !== "object") return [];
+    return Object.entries(parsed).map(([key, value]) => ({ key, value: toPostman(String(value)) }));
   } catch {
     return [];
   }
 }
 
-function parseCurlString(curlStr: string): THittableCurlJson {
-  const methodMatch = curlStr.match(/-X\s+(\w+)/);
-  const method = methodMatch?.[1] ?? "GET";
-
-  const urlMatch = curlStr.match(/(?:curl\s+(?:-X\s+\w+\s+)?)(https?:\/\/[^\s]+)/);
-  const url = urlMatch?.[1] ?? "";
-
-  const headers: Record<string, string> = {};
-  const headerRegex = /-H\s+"([^"]+):([^"]+)"/g;
-  let match;
-  while ((match = headerRegex.exec(curlStr)) !== null) {
-    headers[match[1].trim()] = match[2].trim();
-  }
-
-  const bodyMatch = curlStr.match(/-d\s+'([\s\S]*?)'/);
-  const body = bodyMatch?.[1] ?? "{}";
-
-  return {
-    method,
-    url,
-    headers: JSON.stringify(headers, null, "\t"),
-    body,
-    params: "{}",
-  };
+function itemsToPostmanItems(items: THittableItem[]): Record<string, unknown>[] {
+  return items.map((item) => {
+    if (item.type === "folder") return { name: item.name, item: itemsToPostmanItems(item.items) };
+    const parsed = curlConverter(item.curl);
+    const request: Record<string, unknown> = {
+      method: parsed.method,
+      header: headersToPostman(parsed.headers),
+      url: toPostman(parsed.url),
+    };
+    const noBody = ["GET", "HEAD", "DELETE"].includes(parsed.method);
+    if (!noBody && parsed.body && parsed.body !== "{}") request.body = { mode: "raw", raw: toPostman(parsed.body) };
+    return { name: item.name, request };
+  });
 }
 
-function itemsToPostmanItems(items: THittableItem[], env: THittableEnv): Record<string, unknown>[] {
-  const result: Record<string, unknown>[] = [];
-  for (const item of items) {
-    if (item.type === "folder") {
-      result.push({
-        name: item.name,
-        item: itemsToPostmanItems(item.items, env),
-      });
-    } else {
-      let parsed: THittableCurlJson;
-      try {
-        parsed = parseCurlString(item.curl);
-      } catch {
-        parsed = { method: "GET", url: "", headers: "{}", body: "{}", params: "{}" };
-      }
-      const url = resolveEnvValues(parsed.url, env);
-      const headers = headersToPostmanArray(parsed.headers);
-      const body = jsonToPostmanBody(resolveEnvValues(parsed.body, env));
-
-      const postmanItem: Record<string, unknown> = {
-        name: item.name,
-        request: {
-          method: parsed.method,
-          header: headers.map((h) => ({
-            key: h.key,
-            value: resolveEnvValues(h.value, env),
-          })),
-          url,
-        },
-      };
-
-      if (body) {
-        (postmanItem.request as Record<string, unknown>).body = body;
-      }
-
-      result.push(postmanItem);
-    }
+export function exportToPostmanCollection(collection: THittableCollection): string {
+  const env = collection.env ?? {};
+  const variable = Object.entries(env).map(([key, value]) => ({ key, value, type: "string" }));
+  for (const key of Object.keys(collection.secrets ?? {})) {
+    if (!(key in env)) variable.push({ key, value: "", type: "string" });
   }
-  return result;
-}
-
-export function exportToPostmanCollection(
-  collection: THittableCollection,
-): string {
-  const postmanCollection: Record<string, unknown> = {
-    info: {
-      name: collection.collectionName,
-      schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+  return JSON.stringify(
+    {
+      info: {
+        name: collection.collectionName,
+        schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+      },
+      item: itemsToPostmanItems(collection.items ?? []),
+      variable,
     },
-    item: itemsToPostmanItems(collection.items, collection.env),
-    variable: Object.entries(collection.env).map(([key, value]) => ({
-      key,
-      value,
-      type: "string",
-    })),
-  };
-
-  // Secrets are exported as Postman variable references (not resolved)
-  const secretVars = Object.entries(collection.secrets).map(([key, value]) => ({
-    key,
-    value,
-    type: "string",
-  }));
-  if (secretVars.length > 0) {
-    (postmanCollection.variable as Array<unknown>).push(...secretVars);
-  }
-
-  return JSON.stringify(postmanCollection, null, 2);
+    null,
+    2,
+  );
 }

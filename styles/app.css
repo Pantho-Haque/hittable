@@ -1,7 +1,6 @@
 @import "tailwindcss";
 
 @import "./components/index.css";
-@import "./font.css";
 @import "./workspace.css";
 @import "./docs.css";
 
@@ -56,3 +55,15 @@ button:disabled { cursor: not-allowed; }
 .note-preview table { border-collapse: collapse; margin: 0.5em 0; width: 100%; }
 .note-preview th, .note-preview td { border: 1px solid rgba(255,255,255,0.1); padding: 0.4em 0.6em; text-align: left; }
 .note-preview th { background: rgba(255,255,255,0.05); font-weight: 600; }
+
+/* Users who ask the OS for less motion get instant transitions and animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -16,8 +16,6 @@ import {
   Search,
   Folder,
   ArrowLeft,
-  Plus,
-  Settings2,
 } from "lucide-react";
 import {
   CreateModal,
@@ -412,7 +410,8 @@ export default function Selector() {
       env: collection?.env,
       secrets: collection?.secrets,
       curlJson: curlConverter(curl?.curl || ""),
-      responseJson: parseStringToJson(curl?.response || ""),
+      // No saved response is no response, so the panel shows its empty state.
+      responseJson: curl?.response ? parseStringToJson(curl.response) : null,
     });
   }, [selection, collections, setSelectorResponse]);
 
@@ -462,6 +461,7 @@ export default function Selector() {
             )}
             <button
               onClick={() => toggle("toggleSidebar")}
+              aria-label="Collapse sidebar"
               className="text-white/30 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               <ChevronLeft size={14} />
@@ -471,6 +471,7 @@ export default function Selector() {
           <div className="w-full h-full flex flex-col justify-start items-center gap-3">
             <button
               onClick={() => toggle("toggleSidebar")}
+              aria-label="Expand sidebar"
               className="text-white/30 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               <ChevronRight size={14} />
@@ -648,10 +649,11 @@ export default function Selector() {
   );
 
   return (
-    <div
+    <aside
+      aria-label="Collections"
       className={`h-full flex shrink-0 border-r border-white/5 ${!toggleSidebar ? "max-md:absolute max-md:z-40 max-md:inset-y-0 max-md:left-0 max-md:shadow-2xl max-md:shadow-black/50" : ""}`}
     >
       {collectionsPanel}
-    </div>
+    </aside>
   );
 }

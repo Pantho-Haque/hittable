@@ -45,3 +45,14 @@ next-env.d.ts
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Promo videos, screenshots and other content work: local only.
+/marketing/
+
+# test output
+/test-results/
+/playwright-report/
+/blob-report/
+
+# shell app binaries built inside project folders
+hittable/hittable

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSelectedLayoutSegment } from "next/navigation";
 import WorkspaceSwitcher from "@/components/workspace/WorkspaceSwitcher";
 
 type NavLink = { label: string; href: string; external?: boolean };
@@ -23,8 +23,12 @@ const DOCS_NAV_LINKS: NavLink[] = [
 
 export default function Topbar() {
   const pathname = usePathname();
-  const isApp = pathname === "/hittable";
-  const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
+  // The segment, not the pathname: a 404 page is one prerendered file served
+  // for every unknown URL, so its pathname differs between server and client
+  // and would break hydration. Its segment is "_not-found" on both.
+  const segment = useSelectedLayoutSegment();
+  const isApp = segment === "hittable";
+  const isDocs = segment === "docs";
 
   return (
     <header className="relative z-50 flex items-center justify-between px-6 h-11 border-b border-white/5 bg-(--ink-950)/90 backdrop-blur-md shrink-0">

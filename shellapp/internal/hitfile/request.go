@@ -2,6 +2,7 @@ package hitfile
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -109,8 +110,19 @@ func ExecuteAndCapture(h *HitFile, env map[string]string) (*Response, error) {
 	}
 	defer resp.Body.Close()
 
+	// A user-set Accept-Encoding turns off Go's transparent gzip, so decode
+	// here or the response would be shown as compressed bytes.
+	var body io.Reader = resp.Body
+	if !resp.Uncompressed && strings.EqualFold(resp.Header.Get("Content-Encoding"), "gzip") {
+		zr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, err
+		}
+		defer zr.Close()
+		body = zr
+	}
 	var buf bytes.Buffer
-	_, err = buf.ReadFrom(resp.Body)
+	_, err = buf.ReadFrom(body)
 	if err != nil {
 		return nil, err
 	}
@@ -147,29 +159,27 @@ func ExecuteAndCapture(h *HitFile, env map[string]string) (*Response, error) {
 }
 
 func interpolateString(s string, env map[string]string) string {
-	result := ""
-	i := 0
-	for i < len(s) {
-		if i+1 < len(s) && s[i] == '<' && s[i+1] == '<' {
-			end := i + 2
-			for end < len(s) && !(s[end] == '>' && end+1 < len(s) && s[end+1] == '>') {
-				end++
-			}
-			if end < len(s) {
-				key := s[i+2 : end]
-				if val, ok := env[key]; ok {
-					result += val
-				} else {
-					result += s[i : end+2]
-				}
-				i = end + 2
-				continue
-			}
+	var b strings.Builder
+	for {
+		i := strings.Index(s, "<<")
+		if i < 0 {
+			break
 		}
-		result += string(s[i])
-		i++
+		end := strings.Index(s[i+2:], ">>")
+		if end < 0 {
+			break // no closing ">>" anywhere after: the rest is literal
+		}
+		key := s[i+2 : i+2+end]
+		b.WriteString(s[:i])
+		if val, ok := env[key]; ok {
+			b.WriteString(val)
+		} else {
+			b.WriteString(s[i : i+4+end])
+		}
+		s = s[i+4+end:]
 	}
-	return result
+	b.WriteString(s)
+	return b.String()
 }
 
 func DumpRequest(req *http.Request) string {

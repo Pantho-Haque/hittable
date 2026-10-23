@@ -10,6 +10,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/Accordion";
 import { KEYBINDINGS } from "@/constants";
+import { EXTENSION_URL } from "@/config";
 
 const acordionItems = [
     {
@@ -55,6 +56,7 @@ export default function InfoModal() {
           e.stopPropagation();
           setOpen(true);
         }}
+        title="Info"
         className="modal-button-mini mt-auto mb-2"
       >
         <Info size={14} />
@@ -145,7 +147,7 @@ function LocalExtension() {
         ))}
       </ol>
       <a
-        href="https://github.com/pantho-haque/hittable-extension/releases/latest/download/hittable-extension.zip"
+        href={EXTENSION_URL}
         target="_blank"
         rel="noreferrer"
         className="flex items-center justify-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-3 py-1.5 text-[10px] font-semibold text-cyan-400 transition-colors hover:bg-cyan-500/10"

@@ -47,13 +47,15 @@ export default function NotePills({
   }
 
   function addNote() {
+    if (isUnsaved && !confirm("You have unsaved changes. Discard?")) return;
     const { id, updated } = createNote(noteStore);
     setNoteStore(updated);
-    selectNote(id);
-    setTimeout(() => {
-      setRenamingId(id);
-      setRenameValue("untitled");
-    }, 50);
+    // The new note is not in `noteStore` yet (stale closure), so select it directly.
+    setSelectedId(id);
+    setEditContent("");
+    setOriginalContent("");
+    setRenamingId(id);
+    setRenameValue("untitled");
   }
 
   function handleDelete(id: NoteId) {

@@ -65,7 +65,8 @@ function render(md: string): { html: string; headings: DocHeading[] } {
       },
       code({ text, lang }: Tokens.Code) {
         const language = (lang || "").split(/\s+/)[0];
-        return `<figure class="docs-code" data-lang="${escapeHtml(language)}"><pre><code class="language-${escapeHtml(language)}">${escapeHtml(text)}</code></pre></figure>\n`;
+        // tabindex: long lines scroll sideways, and keyboard users must be able to scroll them too.
+        return `<figure class="docs-code" data-lang="${escapeHtml(language)}"><pre tabindex="0"><code class="language-${escapeHtml(language)}">${escapeHtml(text)}</code></pre></figure>\n`;
       },
       table({ header, rows }: Tokens.Table) {
         // Wrapped so wide reference tables scroll instead of breaking the layout.
@@ -73,7 +74,7 @@ function render(md: string): { html: string; headings: DocHeading[] } {
           `<${tag}${c.align ? ` style="text-align:${c.align}"` : ""}>${this.parser.parseInline(c.tokens)}</${tag}>`;
         const head = `<tr>${header.map((c) => cell(c, "th")).join("")}</tr>`;
         const body = rows.map((r) => `<tr>${r.map((c) => cell(c, "td")).join("")}</tr>`).join("");
-        return `<div class="docs-table"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>\n`;
+        return `<div class="docs-table" tabindex="0" role="region" aria-label="Table"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>\n`;
       },
     },
   });

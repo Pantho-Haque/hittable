@@ -1,133 +1,58 @@
 import { NextResponse, NextRequest } from "next/server";
+import { ProxyError, forward, proxyConfig, rateLimit, type ProxyRequest } from "@/utils/server/proxy";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// Every reply, error or not, has the same shape, so the client can always render it.
+function fail(err: ProxyError, extraHeaders?: Record<string, string>) {
+  return NextResponse.json(
+    { data: null, status: 0, statusText: err.statusText, ok: false, headers: {}, cookies: {}, error: err.message },
+    { status: err.httpStatus, headers: extraHeaders },
+  );
+}
+
+function clientKey(req: NextRequest): string {
+  // Vercel and most reverse proxies set these; the first hop is the client.
+  return (
+    req.headers.get("x-real-ip") ||
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+    "unknown"
+  );
+}
 
 export async function POST(req: NextRequest) {
-  let url: string;
-  let method: string;
-  let clientHeaders: string | Record<string, string> | undefined;
-  let body: unknown;
+  const cfg = proxyConfig();
 
-  try {
-    const parsed = await req.json();
-    url = parsed.url;
-    method = parsed.method;
-    clientHeaders = parsed.headers;
-    body = parsed.body;
-  } catch {
-    return NextResponse.json(
-      { error: "Invalid request body" },
-      { status: 400 }
-    );
-  }
-
-  if (!url || !method) {
-    return NextResponse.json(
-      { error: "Missing required fields: url, method" },
-      { status: 400 }
-    );
-  }
-
-  let parsedHeaders: Record<string, string> = {};
-  try {
-    parsedHeaders =
-      typeof clientHeaders === "string"
-        ? JSON.parse(clientHeaders || "{}")
-        : (clientHeaders ?? {});
-  } catch {
-    parsedHeaders = {};
-  }
-
-  const blocked = ["host", "content-length", "transfer-encoding", "connection"];
-  blocked.forEach((h) => {
-    delete parsedHeaders[h];
-    delete parsedHeaders[h.toLowerCase()];
-  });
-
-  const upperMethod = method.toUpperCase();
-  const noBody = ["GET", "HEAD"].includes(upperMethod);
-
-  let bodyToSend: string | undefined;
-
-  if (noBody) {
-    bodyToSend = undefined;
-  } else if (typeof body === "string") {
-    bodyToSend = body;
-  } else if (typeof body === "object" && body !== null) {
-    bodyToSend = JSON.stringify(body);
-  } else {
-    bodyToSend = String(body ?? "");
-  }
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(url, {
-      method: upperMethod,
-      headers: parsedHeaders,
-      body: bodyToSend,
+  const limited = rateLimit(clientKey(req), cfg.rateLimitPerMinute);
+  if (!limited.ok) {
+    return fail(new ProxyError(`Too many requests: the limit is ${cfg.rateLimitPerMinute} a minute`, 429, "Too Many Requests"), {
+      "Retry-After": String(limited.retryAfter),
     });
-  } catch (err) {
-    return NextResponse.json(
-      {
-        data: null,
-        status: 0,
-        statusText: "Network Error",
-        ok: false,
-        headers: {},
-        cookies: {},
-        error: err instanceof Error ? err.message : "Failed to connect to target URL",
-      },
-      { status: 200 }
-    );
   }
 
-  const isHead = upperMethod === "HEAD";
-  const isNoBody =
-    isHead ||
-    [100, 101, 102, 103, 204, 205, 304].includes(upstream.status);
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > cfg.maxRequestBytes) {
+    return fail(new ProxyError(`Request is larger than the proxy limit of ${cfg.maxRequestBytes} bytes`, 413, "Payload Too Large"));
+  }
 
-  let data = null;
-
-  if (!isNoBody) {
-    const contentType = upstream.headers.get("content-type") ?? "";
-    const raw = await upstream.text();
-
-    if (!raw) {
-      data = null;
-    } else if (contentType.includes("application/json")) {
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        data = raw;
-      }
-    } else {
-      data = raw;
+  let parsed: ProxyRequest;
+  try {
+    const text = await req.text();
+    if (Buffer.byteLength(text) > cfg.maxRequestBytes) {
+      return fail(new ProxyError(`Request is larger than the proxy limit of ${cfg.maxRequestBytes} bytes`, 413, "Payload Too Large"));
     }
+    parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+  } catch {
+    return fail(new ProxyError("Invalid request body: expected JSON { url, method, headers, body }", 400, "Bad Request"));
   }
 
-  const responseHeaders: Record<string, string> = {};
-  upstream.headers.forEach((value, key) => {
-    responseHeaders[key] = value;
-  });
-
-  const cookies: Record<string, string> = {};
-  const setCookie = upstream.headers.get("set-cookie");
-  if (setCookie) {
-    setCookie.split(",").forEach((part) => {
-      const [pair] = part.trim().split(";");
-      const eqIdx = pair.indexOf("=");
-      if (eqIdx !== -1) {
-        const k = pair.slice(0, eqIdx).trim();
-        const v = pair.slice(eqIdx + 1).trim();
-        cookies[k] = v;
-      }
-    });
+  try {
+    return NextResponse.json(await forward(parsed), { headers: { "Cache-Control": "no-store" } });
+  } catch (err) {
+    if (err instanceof ProxyError) return fail(err);
+    console.error("proxy: unexpected failure", err);
+    return fail(new ProxyError("Proxy failed unexpectedly", 500, "Proxy Error"));
   }
-
-  return NextResponse.json({
-    data: isHead ? responseHeaders : data,
-    status: upstream.status,
-    statusText: upstream.statusText,
-    ok: upstream.ok,
-    headers: responseHeaders,
-    cookies,
-  });
 }

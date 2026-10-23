@@ -30,7 +30,7 @@ func (m *MainScreen) footerText() string {
 		return "git · 1-5 sections · tab list⇄diff · jk move · ⏎ action · y sync/push · esc close · ctrl+b explorer"
 	}
 	if m.TermFocused {
-		return "terminal · keys go to the shell · drag selects & copies · ctrl+j hide · ctrl+b explorer"
+		return "terminal · keys go to the shell · drag selects, ctrl+c copies · ctrl+j hide · ctrl+b explorer"
 	}
 	var hints []string
 

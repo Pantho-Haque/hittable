@@ -2,20 +2,33 @@ package screens
 
 import (
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hittable/shellapp/internal/hitfile"
 )
 
-var teaProgram *tea.Program
+// prog is the running program. Goroutines (request, git, debounce timers,
+// the terminal reader) read it while SetTeaProgram may write it, so it is
+// atomic.
+var prog atomic.Pointer[tea.Program]
+
+// send delivers msg to the running program; a no-op before one exists.
+func send(msg tea.Msg) bool {
+	if p := prog.Load(); p != nil {
+		p.Send(msg)
+		return true
+	}
+	return false
+}
 
 // InitialStatus is shown in the footer on the first frame (e.g. an import
 // summary from the CLI).
 var InitialStatus string
 
 func SetTeaProgram(p *tea.Program) {
-	teaProgram = p
+	prog.Store(p)
 }
 
 type responseMsg struct {
@@ -33,9 +46,7 @@ func (m *MainScreen) saveAndEnqueueDebounced() {
 		saveDebounceTimer.Stop()
 	}
 	saveDebounceTimer = time.AfterFunc(300*time.Millisecond, func() {
-		if teaProgram != nil {
-			teaProgram.Send(debounceSaveMsg{})
-		}
+		send(debounceSaveMsg{})
 	})
 }
 

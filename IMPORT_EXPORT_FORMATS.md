@@ -141,31 +141,30 @@
 
 ---
 
-## Flattening Strategy
+## Structure Mapping
+
+The web importers mirror the terminal app's (`shellapp/internal/collection`).
 
 ### Postman → Hittable
-- **Postman collections** map 1:1 to Hittable collections
-- **Item groups (folders)** within a collection become Hittable collections if the collection only contains folders (no direct requests)
-- If a collection has both direct requests and folders, the collection itself becomes a Hittable collection with the direct requests, and each folder becomes a separate collection
-- **Nested folders** are flattened: folder path becomes prefix (e.g., "Users / Create" → route name "Users / Create")
-- **Deep nesting** (3+ levels) is supported — all paths are joined with " / "
+- One Postman collection becomes one Hittable collection, named after `info.name`
+- Item groups become folders, nested to any depth; top-level requests stay beside them
+- Collection and folder `variable` entries become env vars
+- Bearer, basic and apikey (header) auth become headers, inherited from collection → folder → request; `noauth` opts out
 
 ### Insomnia → Hittable
-- **Top-level `request_group`** resources become Hittable collections
-- If no request groups exist, all requests go into a single collection named after the workspace
-- **Nested request groups** — only top-level groups are used as collection boundaries
-- Requests inherit their `parentId` to determine collection membership
+- Each `workspace` becomes a collection; `request_group`s become folders nested by `parentId`
+- Requests directly under the workspace stay at the collection's top level
+- Resources whose parent is not in the export (a bare resource array) are collected into one more collection
+- Headers may be a v4 array of `{name, value, disabled}` or a plain object; `parameters` are appended to the URL
 
 ### Hittable → Postman
-- Each Hittable collection becomes a Postman collection
-- Each route (curl) becomes a Postman item
-- Curl strings are parsed to extract method, URL, headers, and body
-- Environment variables become collection-level variables
+- Each Hittable collection becomes a Postman collection; folders become item groups
+- Curl strings are parsed to method, URL, headers and body; `<<KEY>>` becomes `{{KEY}}`
+- Env vars become collection variables; secrets are listed by name with an empty value, never their value
 
 ### Hittable → Insomnia
-- Each Hittable collection becomes an Insomnia workspace + request_group
-- Each route becomes an Insomnia request
-- Environment variables become a base environment resource
+- A v4 export (`_type: "export"`, `__export_format: 4`): one workspace, folders as request groups
+- `<<KEY>>` becomes `{{ _.KEY }}`; env vars (and secret names, without values) go in the base environment
 
 ---
 
@@ -190,6 +189,6 @@
 
 4. **Empty bodies** — GET/HEAD/DELETE requests with no body are handled correctly (no `-d` flag in curl generation).
 
-5. **Collection-level vs request-level auth** — Postman supports both. On import, collection-level auth is noted but not directly mapped to Hittable (which has no auth persistence per collection). The auth headers are included in the request headers.
+5. **Collection-level vs request-level auth** — Postman supports both. On import, bearer, basic and apikey (header) auth become request headers: the request's own auth wins, otherwise the nearest folder's, otherwise the collection's; `noauth` opts out. Other auth types are dropped.
 
 6. **Insomnia `kvPairData`** — Insomnia v5+ uses `_kvPairData` array instead of `data` object for environment variables. Both are supported on import.

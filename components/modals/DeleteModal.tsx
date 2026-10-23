@@ -40,7 +40,8 @@ export default function DeleteModal({
     if (type !== "folder" || !collectionName) return null;
     const col = collections.find((c) => c.collectionName === collectionName);
     if (!col) return null;
-    const folder = findFolder(col.items, folderPath ?? []);
+    // folderPath is the parent; the folder itself is one level deeper.
+    const folder = findFolder(col.items, [...(folderPath ?? []), currentName]);
     return folder ? countItemsInFolder(folder.items) : null;
   })();
 
@@ -53,10 +54,10 @@ export default function DeleteModal({
         deleteItem(prev, collectionName ?? "", currentName, folderPath),
       );
       if (type === "folder") {
-        // When deleting a folder, clear selection back to parent
+        // Stay in the parent the folder was deleted from.
         setSelection((prev) => ({
           ...prev,
-          folderPath: prev.folderPath.slice(0, -1),
+          folderPath: folderPath ?? prev.folderPath.slice(0, -1),
           curlName: "",
         }));
       } else {

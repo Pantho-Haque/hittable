@@ -266,25 +266,19 @@ internal/
 ├── scaffold/
 │   ├── scaffold.go             # idempotent hittable/ + default file creation
 │   └── scaffold_test.go        # idempotency + existing-dir tests
-├── explorer/
-│   └── tree.go                 # FileNode tree, VisibleNodes, Icon (go-devicons),
-│                                # FindNode, RemoveNode, AddChild, Indent
 ├── hitfile/
 │   ├── schema.go                # Go struct for .hit, json tags matching §3 exactly
 │   ├── schema_test.go           # round-trip marshal/unmarshal test
 │   ├── interpolate.go           # <<KEY>> resolution against env.json
 │   └── request.go               # .hit -> net/http request, ExecuteAndCapture, AsCurl
-├── envfile/
-│   ├── envfile.go               # env.json load/save, flat map[string]string,
-│   │                            # Interpolate, LoadContent, SaveContent
-│   └── envfile_test.go          # interpolation, load/save, missing-file tests
 ├── document/
 │   ├── model.go                  # DocumentModel + generation counter + ViewMode
 │   ├── store.go                  # in-memory Map[path]*DocumentModel + Delete
 │   ├── writequeue.go             # per-path debounced, generation-guarded disk writer
 │   └── document_test.go          # write-queue race, concurrency, thread-safety tests
-└── httpclient/
-    └── client.go                  # executes a request, captures timing + response shape
+└── (env.json is read and saved by ui/screens; requests run in hitfile.ExecuteAndCapture;
+     the tree lives in ui/components/explorer. The old envfile, httpclient and
+     internal/explorer packages were never wired in and were removed.)
 
 ui/
 ├── theme/
@@ -426,7 +420,7 @@ send binding.
 | Send (mouse)          | click `▶ Send`  | URL bar              |
 | Terminal toggle/focus | `ctrl+j`, `ctrl+\``, click strip | Global (`ctrl+j` is the reliable one; ctrl+` only in terminals that emit NUL for it) |
 | Terminal leave        | `ctrl+b`        | Terminal focused (all other keys go to the shell) |
-| Terminal select/copy  | drag (copies on release), `ctrl+c` | Terminal focused (ctrl+c interrupts the shell only with no selection) |
+| Terminal select/copy  | drag, then `ctrl+c` | Terminal focused (ctrl+c interrupts the shell only with no selection) |
 | Terminal resize       | drag the `▸ TERMINAL` strip | Terminal open (a still click still toggles / focuses) |
 | Git panel             | `ctrl+g` (outside editors), `alt+g`, `F5`, `g` in explorer, click `⎇ Git` | Global |
 | Git: sections         | `1-5`, `h`/`l`, `←/→`, click | Git panel: Status · Commits · Branches · Stashes · Blame |
@@ -448,7 +442,7 @@ send binding.
 | Git: blame            | `⏎` `b`         | go to line · toggle inline blame in editor |
 | Click                 | mouse left      | Everything: files, folders, tabs, toggle, method, URL cursor, editor cursor, response, body/headers label |
 | Scroll                | wheel           | Explorer, editor, response |
-| Select any text       | drag over it (copied on release) · `ctrl+c` re-copies | Anywhere: explorer, response, preview, help, git lists; editors, the terminal panel and the git diff keep their own selections |
+| Select any text       | drag over it, then `ctrl+c` | Anywhere: explorer, response, preview, help, git lists; editors, the terminal panel and the git diff keep their own selections |
 | Resize explorer       | drag `│`        | Separator (`ctrl+b` is the only keyboard toggle; arrows never leave the sidebar) |
 | Resize runner split   | drag the border between the editor and response boxes | Runner view |
 | Resize markdown split | drag the seam between editor and preview | Markdown split view |
@@ -465,14 +459,14 @@ send binding.
 - Any text on screen selects. A drag that starts outside a pane with its own
   selection (editors, terminal panel, git diff, palette) selects a block of the
   rendered frame — `OverlaySelection` highlights it after bubblezone's Scan, so
-  the cells are exactly the ones drawn — and copies it on release. Block, not
+  the cells are exactly the ones drawn — and keeps it highlighted on release. Block, not
   reading order: the frame is panes side by side, and a linear sweep would drag
-  the sidebar into every copy. Any key drops it; `ctrl+c` re-copies instead of
+  the sidebar into every copy. Any key drops it; `ctrl+c` copies it instead of
   quitting while it shows.
-- Terminal copy on select. The host terminal never sees the panel's cells
-  while mouse tracking is on, and `cmd+c` cannot reach a terminal program, so
-  a drag over the terminal is copied the moment the button is released (the
-  footer says so); `ctrl+c` with a selection still copies too.
+- Terminal copy is explicit. Releasing a drag keeps the selection and the
+  footer says `ctrl+c copies the selection`; `ctrl+c` copies it (and only
+  interrupts the shell with nothing selected). Copy-on-release overwrote the
+  clipboard on every accidental drag.
 - The sidebar is left only with `ctrl+b` (or `tab`): `→` in the explorer no
   longer jumps to the main pane.
 - Git panel is two columns, like the VS Code SCM view: the section list on

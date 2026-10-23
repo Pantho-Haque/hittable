@@ -8,6 +8,7 @@ import DirectoryTree from "@/components/workspace/DirectoryTree";
 import DirectoryPicker from "@/components/workspace/DirectoryPicker";
 import HitFileEditor from "@/components/workspace/HitFileEditor";
 import PlainTextEditor from "@/components/workspace/PlainTextEditor";
+import FileViewer from "@/components/workspace/FileViewer";
 import MarkdownEditor from "@/components/workspace/MarkdownEditor";
 import WorkspaceConnecting from "@/components/workspace/WorkspaceConnecting";
 
@@ -16,7 +17,7 @@ export default function Hittable() {
     shortcuts: { toggleSidebar },
     toggle,
   } = useShortcuts();
-  const { mode, activeFile, connectingStage } = useWorkspace();
+  const { mode, activeFile, connectingStage, isFileLoaded, fileView } = useWorkspace();
 
   if (mode === "directory") {
     return (
@@ -37,7 +38,9 @@ export default function Hittable() {
           <main className="flex-1 min-w-0 h-full overflow-hidden" aria-label="File editor">
             <div className="h-full w-full flex flex-col">
               {activeFile ? (
-                activeFile.kind === "hit" ? (
+                !isFileLoaded ? null : fileView.kind !== "text" ? (
+                  <FileViewer />
+                ) : activeFile.kind === "hit" ? (
                   <HitFileEditor />
                 ) : activeFile.kind === "markdown" ? (
                   <MarkdownEditor />
@@ -63,32 +66,35 @@ export default function Hittable() {
         <div className="absolute bottom-[-20%] right-[-10%] w-[400px] h-[400px] rounded-full bg-cyan-400/4 blur-[100px]" />
       </div>
 
-      {/* Mobile backdrop when sidebar is expanded */}
-      {!toggleSidebar && (
-        <div
-          className="md:hidden fixed inset-0 z-30 bg-black/40"
-          onClick={() => toggle("toggleSidebar")}
-        />
-      )}
-
-      <div className="flex h-full w-full relative z-10">
-        <Suspense fallback={null}>
+      {/* Client-only: Selector reads the URL (useSearchParams) and everything
+          here renders from localStorage, which the server cannot see. Rendered
+          on the server it would not match the first client render. */}
+      <Suspense fallback={null}>
+        <div className="flex h-full w-full relative z-10">
+          {/* Mobile backdrop when the sidebar is expanded. Inside this stacking
+              context, so it sits under the sidebar (z-40) and over the runner. */}
+          {!toggleSidebar && (
+            <div
+              className="md:hidden fixed inset-0 z-30 bg-black/40"
+              onClick={() => toggle("toggleSidebar")}
+            />
+          )}
           <Selector />
-        </Suspense>
-        <div className="flex-1 min-w-0 h-full overflow-auto">
-          <div className="h-full w-full flex flex-col p-2 md:p-6">
-            <RequestForm/>
+          <div className="flex-1 min-w-0 h-full overflow-auto">
+            <div className="h-full w-full flex flex-col p-2 md:p-6">
+              <RequestForm/>
+            </div>
           </div>
-        </div>
 
-        {!toggleSidebar && (<div className="hidden md:flex w-12 h-full flex-col border-l border-white/5 bg-[#0a1628]/80 items-center justify-start">
-          <ImportModal />
-          <AuthModal />
-          <HistoryPanel />
-          <NoteModal />
-          <InfoModal />
-        </div>)}
-      </div>
+          {!toggleSidebar && (<div className="hidden md:flex w-12 h-full flex-col border-l border-white/5 bg-[#0a1628]/80 items-center justify-start">
+            <ImportModal />
+            <AuthModal />
+            <HistoryPanel />
+            <NoteModal />
+            <InfoModal />
+          </div>)}
+        </div>
+      </Suspense>
     </div>
   );
 }

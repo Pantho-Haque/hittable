@@ -40,7 +40,7 @@ type URLBar struct {
 func NewURLBar() *URLBar {
 	url := textinput.New()
 	url.Placeholder = "https://api.example.com/endpoint  (<<KEY>> resolves from env.json)"
-	url.CharLimit = 2000
+	url.CharLimit = 0 // unlimited: a cap truncated long URLs in the file on save
 	url.Prompt = ""
 	return &URLBar{URLInput: url, Method: "GET"}
 }

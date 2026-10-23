@@ -73,17 +73,16 @@ export function getParamsfromUrl(url: string): string {
 export function modifyUrlForNewParams(url: string, newParams: string): string {
   try {
     const parsedParams = JSON.parse(newParams) as Record<string, string>;
-    const host = url.split("?")[0];
+    const hashAt = url.indexOf("#");
+    const fragment = hashAt < 0 ? "" : url.slice(hashAt);
+    const host = (hashAt < 0 ? url : url.slice(0, hashAt)).split("?")[0];
 
     const entries = Object.entries(parsedParams);
-    if (entries.length === 0) return host;
+    if (entries.length === 0) return host + fragment;
 
-    let modifiedUrl = host + "?";
-    entries.forEach(([key, value]) => {
-      modifiedUrl += `${encodeURIComponent(key)}=${encodeURIComponent(value)}&`;
-    });
-    modifiedUrl = modifiedUrl.slice(0, -1);
-    return modifiedUrl;
+    // <<KEY>> templates stay literal so they still resolve at send time.
+    const encode = (s: unknown) => encodeURIComponent(String(s)).replace(/%3C%3C(\w+)%3E%3E/g, "<<$1>>");
+    return `${host}?${entries.map(([key, value]) => `${encode(key)}=${encode(value)}`).join("&")}${fragment}`;
   } catch {
     return url;
   }

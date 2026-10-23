@@ -1,6 +1,7 @@
 package screens
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/hittable/shellapp/internal/document"
@@ -88,7 +89,7 @@ func (m *MainScreen) saveAndEnqueue() {
 	}
 
 	doc.Lock()
-	if content == doc.Content {
+	if content == doc.Content || (doc.Kind == document.KindHit && sameRequest(content, doc.Content)) {
 		doc.Unlock()
 		return
 	}
@@ -98,4 +99,32 @@ func (m *MainScreen) saveAndEnqueue() {
 	doc.Unlock()
 	m.WriteQueue.Update(doc.Path, content, gen)
 	m.refreshGit(false)
+}
+
+// sameRequest reports whether generated is the app's own rendering of the
+// request already in current. Opening a .hit or flipping Runner/Text then
+// writes nothing, so a hand-formatted file is not reformatted (no git noise);
+// the web app follows the same rule. Text the user typed differs from the
+// canonical form and is always saved.
+// ponytail: a hand edit that happens to equal the canonical form is not
+// written; it means the same request, so nothing is lost.
+func sameRequest(generated, current string) bool {
+	var a, b hitfile.HitFile
+	if json.Unmarshal([]byte(generated), &a) != nil || json.Unmarshal([]byte(current), &b) != nil {
+		return false
+	}
+	canon := hitfile.Marshal(&a)
+	if !bytes.Equal(canon, []byte(generated)) {
+		return false
+	}
+	// "headers": null and {} are the same request; the Runner always has {}.
+	for _, h := range []*hitfile.HitFile{&a, &b} {
+		if h.Headers == nil {
+			h.Headers = map[string]string{}
+		}
+		if h.Params == nil {
+			h.Params = map[string]string{}
+		}
+	}
+	return bytes.Equal(hitfile.Marshal(&a), hitfile.Marshal(&b))
 }

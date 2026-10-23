@@ -262,17 +262,6 @@ func withBody(m, fallback Message) Message {
 	return m
 }
 
-// firstLine is the model's whole answer, since it was asked for one line —
-// after the fence and the chat preamble come off, or "```" would be read as
-// the subject.
-func firstLine(text string) string {
-	lines := unwrap(text)
-	if len(lines) == 0 {
-		return ""
-	}
-	return lines[0]
-}
-
 // parseMessage splits a rendered message back into its parts, so Source and
 // the individual fields survive the round trip through text.
 func parseMessage(text string, rules Rules, src Source) Message {

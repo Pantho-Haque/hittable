@@ -308,13 +308,19 @@ func (p *Palette) listRows() int {
 	return n
 }
 
+// clampCursor keeps c on a result, or at 0 when there are none: with an
+// empty list, len-1 is -1, and Enter then indexed Results[-1].
+func (p *Palette) clampCursor(c int) int {
+	return max(0, min(c, len(p.Results)-1))
+}
+
 // HandleKey returns true if consumed; Esc closes.
 func (p *Palette) HandleKey(msg tea.KeyMsg) bool {
 	switch msg.String() {
 	case "esc":
 		p.Close()
 	case "enter":
-		if p.Cursor < len(p.Results) && p.OnOpen != nil {
+		if p.Cursor >= 0 && p.Cursor < len(p.Results) && p.OnOpen != nil {
 			r := p.Results[p.Cursor]
 			p.Close()
 			p.OnOpen(r)
@@ -333,10 +339,7 @@ func (p *Palette) HandleKey(msg tea.KeyMsg) bool {
 			p.Cursor = 0
 		}
 	case "pgdown":
-		p.Cursor += p.listRows()
-		if p.Cursor >= len(p.Results) {
-			p.Cursor = len(p.Results) - 1
-		}
+		p.Cursor = p.clampCursor(p.Cursor + p.listRows())
 	case "tab":
 		p.Mode = (p.Mode + 1) % 2
 		p.Show(p.Mode)
@@ -389,10 +392,7 @@ func (p *Palette) HandleMouse(msg tea.MouseMsg) {
 			p.Cursor = 0
 		}
 	case tea.MouseWheelDown:
-		p.Cursor++
-		if p.Cursor >= len(p.Results) {
-			p.Cursor = len(p.Results) - 1
-		}
+		p.Cursor = p.clampCursor(p.Cursor + 1)
 	}
 }
 

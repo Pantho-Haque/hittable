@@ -14,7 +14,7 @@ import (
 func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.StatusBar = ""
 	key := msg.String()
-	// A frame selection is already on the clipboard; ctrl+c re-copies it
+	// A frame selection is showing; ctrl+c copies it
 	// rather than quitting, and any other key lets it go.
 	if m.frameSel.active {
 		m.frameSel.active = false
@@ -90,10 +90,16 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Term.Scroll(-m.Term.Rows / 2)
 			return m, nil
 		case "ctrl+c":
-			// Copies a mouse selection, otherwise interrupts the shell.
-			if n := m.Term.CopySelection(); n > 0 {
+			// Copies a mouse selection, otherwise interrupts the shell. With
+			// no clipboard the selection still wins: an interrupt the user
+			// did not ask for can kill a running command.
+			if m.Term.HasSelection() {
+				if n := m.Term.CopySelection(); n > 0 {
+					m.StatusBar = fmt.Sprintf("copied %d line(s)", n)
+				} else {
+					m.StatusBar = "clipboard unavailable"
+				}
 				m.Term.ClearSelection()
-				m.StatusBar = fmt.Sprintf("copied %d line(s)", n)
 				return m, nil
 			}
 			m.Term.SendKey(msg)

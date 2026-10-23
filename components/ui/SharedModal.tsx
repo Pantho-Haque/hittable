@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useId } from "react";
+import { useEffect, useRef, useId, useState } from "react";
 import { createPortal } from "react-dom";
 
 const sizes = {
@@ -26,40 +26,46 @@ export function ModalShell({
 }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
+  // Read while rendering, before an autoFocus input inside takes focus.
+  const [previousFocus] = useState(() => document.activeElement as HTMLElement | null);
 
   useEffect(() => {
-    previousFocusRef.current = document.activeElement as HTMLElement;
-    dialogRef.current?.focus();
+    // An autoFocus input inside has already taken focus; keep it there.
+    if (!dialogRef.current?.contains(document.activeElement)) dialogRef.current?.focus();
 
     return () => {
-      previousFocusRef.current?.focus();
+      previousFocus?.focus();
     };
-  }, []);
+  }, [previousFocus]);
+
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Tab" || !dialogRef.current) return;
+      // Every dialog closes on Escape, not only those with a Cancel button.
+      if (e.key === "Escape") return onCloseRef.current();
+      // An editor inside that uses Tab to indent has already handled it.
+      if (e.key !== "Tab" || e.defaultPrevented || !dialogRef.current) return;
 
-      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
+      // Move focus ourselves on every Tab: left to the browser, Safari's
+      // default Tab skips buttons and jumps to the next text field on the
+      // page, outside the dialog.
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.hasAttribute("disabled") && (el.checkVisibility?.() ?? true));
       if (focusable.length === 0) return;
 
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
+      e.preventDefault();
+      const i = focusable.indexOf(document.activeElement as HTMLElement);
+      const next = e.shiftKey
+        ? (i <= 0 ? focusable.length : i) - 1
+        : (i + 1) % focusable.length;
+      focusable[next].focus();
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -134,7 +140,13 @@ export function ModalInput({
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
-      onKeyDown={onKeyDown}
+      onKeyDown={(e) => {
+        // Enter usually confirms and closes the modal, which returns focus to
+        // the button that opened it; without this the same keystroke's
+        // keypress would then "click" that button and reopen the modal.
+        if (e.key === "Enter") e.preventDefault();
+        onKeyDown?.(e);
+      }}
     />
   );
 }

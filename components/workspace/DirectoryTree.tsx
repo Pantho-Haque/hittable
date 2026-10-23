@@ -6,6 +6,7 @@ import { useWorkspace } from "@/context/workspaceContext";
 import { TDirectoryNode } from "@/types";
 import { getParentHandleForPath, findNodeByPath } from "@/utils/workspace/directoryTreeHelpers";
 import DirectoryTreeNode from "./DirectoryTreeNode";
+import { useNotification } from "@/hooks/useNotify";
 
 function isReservedInHittable(parentPath: string[], name: string): boolean {
   if (parentPath.length === 0) {
@@ -23,6 +24,7 @@ function isReservedNode(path: string[], name: string): boolean {
 
 export default function DirectoryTree() {
   const { tree, activeFile, setActiveFile, refreshTree, deleteEntry, renameEntry, createEntry, directoryHandle, openFolder } = useWorkspace();
+  const { error: notifyError } = useNotification();
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string[] | null>(null);
   const [contextMenu, setContextMenu] = useState<{
@@ -30,6 +32,7 @@ export default function DirectoryTree() {
     y: number;
     node: { name: string; handle: FileSystemFileHandle | FileSystemDirectoryHandle; kind: "file" | "directory"; path: string[] };
     parentHandle: FileSystemDirectoryHandle;
+    renaming?: boolean;
   } | null>(null);
   const [isCreating, setIsCreating] = useState<{ type: "file" | "directory"; parentPath: string[] } | null>(null);
   const [newName, setNewName] = useState("");
@@ -102,11 +105,16 @@ export default function DirectoryTree() {
     const name = newName.trim();
     setIsCreating(null);
     setNewName("");
-    await createEntry(parentHandle, name, creatingType);
+    try {
+      await createEntry(parentHandle, name, creatingType);
+    } catch (err) {
+      notifyError({ title: "Could not create", desc: (err as Error).message });
+      return;
+    }
     if (creatingParentPath.length > 0) {
       setExpandedDirs((prev) => new Set([...prev, creatingParentPath.join("/")]));
     }
-  }, [isCreating, newName, getCreateTargetHandle, createEntry]);
+  }, [isCreating, newName, getCreateTargetHandle, createEntry, notifyError]);
 
   const handleCreateCancel = useCallback(() => {
     setIsCreating(null);
@@ -127,12 +135,23 @@ export default function DirectoryTree() {
       closeContextMenu();
       return;
     }
-    await renameEntry(contextMenu.parentHandle, contextMenu.node.name, newName.trim(), contextMenu.node.kind);
+    if (isReservedInHittable(contextMenu.node.path.slice(0, -1), newName.trim())) {
+      notifyError({ title: "Could not rename", desc: `"${newName.trim()}" is a reserved name` });
+      closeContextMenu();
+      return;
+    }
+    try {
+      await renameEntry(contextMenu.parentHandle, contextMenu.node.name, newName.trim(), contextMenu.node.kind);
+    } catch (err) {
+      notifyError({ title: "Could not rename", desc: (err as Error).message });
+      closeContextMenu();
+      return;
+    }
     if (activeFile?.path.join("/") === contextMenu.node.path.join("/")) {
       setActiveFile(null);
     }
     closeContextMenu();
-  }, [contextMenu, activeFile, renameEntry, setActiveFile, closeContextMenu]);
+  }, [contextMenu, activeFile, renameEntry, setActiveFile, closeContextMenu, notifyError]);
 
   useEffect(() => {
     if (tree.length > 0 && expandedDirs.size === 0) {
@@ -221,6 +240,7 @@ export default function DirectoryTree() {
                 y: 0,
                 node: { name: node.name, handle: node.handle, kind: node.kind, path: currentItem.path },
                 parentHandle,
+                renaming: true,
               });
             }
           }
@@ -352,6 +372,7 @@ export default function DirectoryTree() {
           x={contextMenu.x}
           y={contextMenu.y}
           node={contextMenu.node}
+          startRenaming={contextMenu.renaming}
           onClose={closeContextMenu}
           onDelete={handleDelete}
           onRename={handleRename}
@@ -370,6 +391,7 @@ function ContextMenu({
   onDelete,
   onRename,
   onCreate,
+  startRenaming = false,
 }: {
   x: number;
   y: number;
@@ -378,8 +400,9 @@ function ContextMenu({
   onDelete: () => void;
   onRename: (newName: string) => void;
   onCreate: (type: "file" | "directory", parentPath: string[]) => void;
+  startRenaming?: boolean;
 }) {
-  const [isRenaming, setIsRenaming] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(startRenaming);
   const [newName, setNewName] = useState(node.name);
 
   const handleRenameConfirm = () => {
@@ -397,6 +420,7 @@ function ContextMenu({
         >
           <input
             autoFocus
+            aria-label={`Rename ${node.name}`}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => {

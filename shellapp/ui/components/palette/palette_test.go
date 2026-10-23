@@ -62,3 +62,19 @@ func TestFindFileAndGrep(t *testing.T) {
 		t.Error("empty view")
 	}
 }
+
+// With no results, paging or scrolling down then pressing Enter used to read
+// Results[-1] and crash the app (found by a keyboard-mash test).
+func TestEmptyResultsNeverCrash(t *testing.T) {
+	p := New(t.TempDir(), func(tea.Msg) {})
+	opened := false
+	p.OnOpen = func(Result) { opened = true }
+	for _, k := range []tea.KeyType{tea.KeyPgDown, tea.KeyDown, tea.KeyPgUp, tea.KeyUp, tea.KeyEnter} {
+		p.HandleKey(tea.KeyMsg{Type: k})
+	}
+	p.HandleMouse(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress, Type: tea.MouseWheelDown})
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if p.Cursor != 0 || opened {
+		t.Fatalf("cursor = %d, opened = %v; want 0, false", p.Cursor, opened)
+	}
+}

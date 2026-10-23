@@ -85,14 +85,14 @@ func (m *MainScreen) wireGit() {
 		}
 	}
 	g.Async = func(label string, fn func() (string, error)) {
-		if teaProgram == nil {
+		if prog.Load() == nil {
 			out, err := fn()
 			g.Done(gitpanel.DoneMsg{Label: label, Out: out, Err: err})
 			return
 		}
 		go func() {
 			out, err := fn()
-			teaProgram.Send(gitpanel.DoneMsg{Label: label, Out: out, Err: err})
+			send(gitpanel.DoneMsg{Label: label, Out: out, Err: err})
 		}()
 	}
 	// teaProgram is set after the screen is built (main.go calls NewApp then
@@ -101,11 +101,7 @@ func (m *MainScreen) wireGit() {
 	// leave Send permanently nil in the real app, which makes the panel
 	// generate inline on the UI goroutine: no spinner, no streaming, no
 	// cancel, and the whole app frozen for the length of a generation.
-	g.Send = func(msg tea.Msg) {
-		if teaProgram != nil {
-			teaProgram.Send(msg)
-		}
-	}
+	g.Send = func(msg tea.Msg) { send(msg) }
 	m.TextEd.LineHint = func(row int) string {
 		if !m.BlameOn || row >= len(m.blame) {
 			return ""
@@ -290,13 +286,11 @@ func (m *MainScreen) pollGit() tea.Cmd {
 	repo := m.Repo
 	go func() {
 		st, err := repo.Status()
-		if err != nil || teaProgram == nil {
-			if teaProgram != nil {
-				teaProgram.Send(gitStatusMsg{})
-			}
+		if err != nil {
+			send(gitStatusMsg{})
 			return
 		}
-		teaProgram.Send(gitStatusMsg{st: st, key: statusKey(st)})
+		send(gitStatusMsg{st: st, key: statusKey(st)})
 	}()
 	return gitTick()
 }

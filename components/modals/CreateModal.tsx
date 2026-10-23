@@ -41,11 +41,11 @@ export default function CreateModal({
       const col = collections.find(
         (c) => c.collectionName === selection.collectionName,
       );
-      if (isAlreadyExistsInPath(col, folderPath ?? [], newName)) {
+      while (isAlreadyExistsInPath(col, folderPath ?? [], newName)) {
         newName += " - New";
       }
     } else {
-      if (collectionCurlList[newName]) {
+      while (collectionCurlList[newName] || collections.some((c) => c.collectionName === newName)) {
         newName += " - New";
       }
     }

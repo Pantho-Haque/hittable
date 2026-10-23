@@ -7,6 +7,7 @@ package collection
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -69,7 +70,13 @@ func Import(path, hittableDir string) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch Detect(data) {
+	format := Detect(data)
+	if format != "" {
+		if _, err := loadEnv(hittableDir); err != nil {
+			return nil, err
+		}
+	}
+	switch format {
 	case "postman":
 		return importPostman(data, hittableDir)
 	case "insomnia":
@@ -134,15 +141,37 @@ func writeHit(dir, name string, h *hitfile.HitFile) error {
 	return os.WriteFile(uniquePath(filepath.Join(dir, safeName(name)), ".hit"), hitfile.Marshal(h), 0o644)
 }
 
+// loadEnv reads env.json. A missing file is an empty env; one that does not
+// parse as a flat string map is an error, so an import never rewrites (and
+// loses) a file the user is halfway through editing.
+func loadEnv(hittableDir string) (map[string]string, error) {
+	p := filepath.Join(hittableDir, "env.json")
+	b, err := os.ReadFile(p)
+	if os.IsNotExist(err) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var env map[string]string
+	if err := json.Unmarshal(b, &env); err != nil {
+		return nil, fmt.Errorf("%s is not a flat JSON object of strings (%v) — fix it, then import again", p, err)
+	}
+	if env == nil {
+		env = map[string]string{}
+	}
+	return env, nil
+}
+
 // mergeEnv adds keys to env.json without overwriting existing values.
 func mergeEnv(hittableDir string, vars map[string]string) (int, error) {
 	if len(vars) == 0 {
 		return 0, nil
 	}
 	p := filepath.Join(hittableDir, "env.json")
-	env := map[string]string{}
-	if b, err := os.ReadFile(p); err == nil {
-		_ = json.Unmarshal(b, &env)
+	env, err := loadEnv(hittableDir)
+	if err != nil {
+		return 0, err
 	}
 	added := 0
 	for k, v := range vars {
@@ -171,7 +200,9 @@ func uniq(in []string) []string {
 	return out
 }
 
-// splitQuery separates "?a=b" from a URL into params.
+// splitQuery separates "?a=b" from a URL into params. Keys and values are
+// percent-decoded: params hold plain values and FullURL encodes them at send
+// time, so keeping "%20" would send "%2520".
 func splitQuery(u string, params map[string]string) string {
 	i := strings.IndexByte(u, '?')
 	if i < 0 {
@@ -182,6 +213,12 @@ func splitQuery(u string, params map[string]string) string {
 			continue
 		}
 		k, v, _ := strings.Cut(kv, "=")
+		if d, err := url.QueryUnescape(k); err == nil {
+			k = d
+		}
+		if d, err := url.QueryUnescape(v); err == nil {
+			v = d
+		}
 		if _, exists := params[k]; !exists {
 			params[k] = v
 		}
@@ -305,15 +342,33 @@ func importPostman(data []byte, hittableDir string) (*Report, error) {
 			if h.Method == "" {
 				h.Method = "GET"
 			}
-			// URL: string or {raw, query}
+			// URL: string or {raw, query} (or {protocol, host, path, query}
+			// with no raw, which some generators write).
 			var raw string
 			if err := json.Unmarshal(r.URL, &raw); err != nil {
 				var obj struct {
-					Raw   string `json:"raw"`
-					Query []pmKV `json:"query"`
+					Raw      string          `json:"raw"`
+					Protocol string          `json:"protocol"`
+					Host     json.RawMessage `json:"host"`
+					Path     json.RawMessage `json:"path"`
+					Query    []pmKV          `json:"query"`
 				}
 				_ = json.Unmarshal(r.URL, &obj)
 				raw = obj.Raw
+				if raw == "" {
+					raw = joinParts(obj.Host, ".")
+					if p := strings.TrimPrefix(joinParts(obj.Path, "/"), "/"); p != "" {
+						raw += "/" + p
+					}
+					if obj.Protocol != "" && raw != "" {
+						raw = obj.Protocol + "://" + raw
+					}
+				}
+				// The query array is authoritative: raw repeats it unencoded,
+				// so a value holding "&" or "=" would split into bogus params.
+				if len(obj.Query) > 0 {
+					raw, _, _ = strings.Cut(raw, "?")
+				}
 				for _, q := range obj.Query {
 					if !q.Disabled {
 						h.Params[q.Key] = fromPostman(q.Value)
@@ -388,6 +443,29 @@ func importPostman(data []byte, hittableDir string) (*Report, error) {
 	return rep, nil
 }
 
+// joinParts reads a Postman host / path: a string, or an array of strings
+// and {"value": ...} objects.
+func joinParts(raw json.RawMessage, sep string) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var parts []json.RawMessage
+	_ = json.Unmarshal(raw, &parts)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		var v struct {
+			Value string `json:"value"`
+		}
+		if json.Unmarshal(p, &s) == nil {
+			out = append(out, s)
+		} else if json.Unmarshal(p, &v) == nil {
+			out = append(out, v.Value)
+		}
+	}
+	return strings.Join(out, sep)
+}
+
 // ---------- Insomnia ----------
 
 type inResource struct {
@@ -446,14 +524,16 @@ func importInsomnia(data []byte, hittableDir string) (*Report, error) {
 	rep := &Report{Format: "Insomnia", Name: name}
 	rep.Dir = uniquePath(filepath.Join(hittableDir, safeName(name)), "")
 
-	// Folder path for a resource: chain of request_group parents.
-	var dirOf func(id string) string
-	dirOf = func(id string) string {
+	// Folder path for a resource: chain of request_group parents. seen stops
+	// a corrupt export whose parents loop from recursing forever.
+	var dirOf func(id string, seen map[string]bool) string
+	dirOf = func(id string, seen map[string]bool) string {
 		r, ok := byID[id]
-		if !ok || r.Type != "request_group" {
+		if !ok || r.Type != "request_group" || seen[id] {
 			return rep.Dir
 		}
-		return filepath.Join(dirOf(r.ParentID), safeName(r.Name))
+		seen[id] = true
+		return filepath.Join(dirOf(r.ParentID, seen), safeName(r.Name))
 	}
 
 	vars := map[string]string{}
@@ -545,7 +625,7 @@ func importInsomnia(data []byte, hittableDir string) (*Report, error) {
 				h.Body = string(bb)
 			}
 		}
-		if err := writeHit(dirOf(r.ParentID), r.Name, h); err != nil {
+		if err := writeHit(dirOf(r.ParentID, map[string]bool{}), r.Name, h); err != nil {
 			return nil, err
 		}
 		rep.Requests++

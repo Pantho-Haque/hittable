@@ -4,6 +4,39 @@ All notable changes to Hittable will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **Unused JSON highlighter removed** — `SyntaxHighlighter` wrote response bodies into the page unescaped; it was never rendered anywhere, so it was deleted rather than kept around as a trap.
+- **Notes XSS** — markdown notes, which can arrive from a shared folder or an import, are sanitized with DOMPurify before rendering.
+- **Proxy hardening** — `/api/proxy` refuses loopback, private, link-local (cloud metadata) and other reserved addresses, checked at connect time so DNS rebinding and redirects are covered; adds a per-client rate limit, a 30 s upstream timeout, request and response size caps, and rejects `CONNECT`/`TRACE` and malformed headers. Errors carry real HTTP statuses (400/403/413/429/502/504). Tunable via `PROXY_*` env vars (see `.env.example`).
+- **Asset proxy removed** — `GET /api/proxy/asset` was unused and served any URL's content, HTML included, from the app's origin with `Access-Control-Allow-Origin: *`.
+- **Extension messaging** — requests carry an id so concurrent replies cannot swap; messages are posted to the page's origin instead of `*`; the service worker refuses non-localhost URLs. Extension 1.0.1.
+- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, CSP `frame-ancestors`, `Referrer-Policy`, `Permissions-Policy`, HSTS; `X-Powered-By` dropped.
+
+### Fixed (opening files — web and terminal now behave the same)
+- **Images and binaries were opened as text in the web app** — a PNG showed as garbage in the code editor, and the next keystroke autosaved the garbage over it. Images now show as a picture with type, size and dimensions; other binaries and text over 1 MiB show a notice; none of them is ever written back. The terminal app shows the same labels ("PNG image · 3 × 2 · 73 B").
+- **SVG** opens as code in both apps; the web app adds a picture Preview (drawn through `<img>`, so an SVG's scripts never run).
+- **.hit files open in the Runner** in the web app too, as in the terminal; invalid files still open in Text.
+- **Half-typed Params/Headers JSON in the web Runner was saved as `{}`**, wiping them on disk and in Text view. The last valid value is kept, and the tab is no longer reformatted under the cursor after each save.
+- **Opening a .hit rewrote it** (reformatted JSON, noise in git) in both apps; a file is now only written when the request changes.
+- **Web saves coalesce** — a burst of typing writes the latest text once instead of the whole file per keystroke (a 5,000-line file was rewritten ~200 KB per key).
+
+### Fixed (edge-case users)
+- **Blocked storage** — with cookies/storage disabled, reading localStorage threw on startup and the whole app failed to render. It now runs without persistence.
+- **Safari: HTML preview Inspect** never worked — WebKit runs no event listeners inside a script-less sandboxed iframe. Inspect now works from a layer over the preview using `elementFromPoint`; the highlight also tracks the preview's own scroll and survives a new response.
+- **Safari: dialogs leaked keyboard focus** — Safari's default Tab skips buttons and jumped out of the dialog. Dialogs now move focus themselves (editors that indent with Tab are left alone).
+- **Reduced motion** — the OS "reduce motion" setting now turns off transitions and toast animations.
+- **Docs for keyboard users** — wide code blocks and tables are focusable so they can be scrolled without a mouse.
+
+### Removed
+- Dead code and files nothing loads: `AppHeader`, `EnvFileEditor`, unused `DirectoryService` helpers and types, an icon font and Roboto/Titillium fonts from an old template, an unused Bootstrap-style CSS kit, unused images, a stale `browserExtension.crx`, a 21.8 MB macOS binary committed in `hittable/`, and the dependencies `axios`, `class-variance-authority`, `js-beautify`, `tw-animate-css` and `@bany/curl-to-json`.
+- Shell app: the `internal/envfile`, `internal/explorer` and `internal/httpclient` packages, which nothing imported.
+- Out-of-date planning notes: `PROJECT_SUMMARY.md`, `NEW_FEATURE_IDEAS.md`, `UX_PLAN.md`, `shellapp/docs/`.
+- The home page photo is now served from the app (`public/assets/images/avatar.png`, resized to 162 KB) instead of hotlinked; the résumé fetch times out after 3s and is cached, so a slow portfolio API no longer hangs the home page.
+
+### Added
+- Vitest unit/component suite and Playwright end-to-end suite (`pnpm test`, `pnpm test:e2e`); CI workflow running lint, typecheck, tests, build and E2E for the web app and vet/race tests for the shell app on every push and PR.
+- Production `Dockerfile` (standalone server, non-root, health check).
+
 ### Fixed
 - **HTML preview asset loading** — Assets (images, CSS) now load correctly in HTML preview. Added `<base href>` injection using the original request URL's origin and directory path, so relative URLs resolve against the source server. Same-origin assets are rewritten to route through `/api/proxy/asset` endpoint to bypass CORS restrictions. Cross-origin assets still subject to browser CORS rules.
 - **HTML preview inspect mode** — Inspect Element mode now works correctly. Removed the injected-script approach (which couldn't run without `allow-scripts`) and replaced with direct DOM access via `iframe.contentDocument`. Hover highlights elements with a cyan overlay; click captures tag name, attributes, and outer HTML.
@@ -44,6 +77,7 @@ All notable changes to Hittable will be documented in this file.
 - **Sidebar state not persisting** — Sidebar collapsed/expanded state now persists to localStorage and restores on page load; toggling via Ctrl/Cmd+B saves the state immediately
 - **Removed debug `console.log` statements** from `app/page.tsx`, `ResponsePanel.tsx`, and `NoteModal.tsx`
 - **Crash on corrupted localStorage** — `GetHittableCollections` now catches `JSON.parse` errors and falls back to defaults
+- **Set-Cookie parsing** — cookies whose `Expires` date contains a comma were split apart; every `Set-Cookie` header is now read separately.
 - **Crash on network errors in proxy route** — `app/api/proxy/route.ts` now wraps upstream `fetch` in try/catch and returns structured error responses
 - **Crash on malformed request body** — `req.json()` in proxy route now has try/catch
 - **Crash on non-JSON proxy errors** — `fetchViaProxy` in `hittableProxy.ts` now handles non-JSON responses gracefully

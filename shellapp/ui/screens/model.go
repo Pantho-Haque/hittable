@@ -139,21 +139,13 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 	body := requesteditor.NewBodyTab()
 	response := responseviewer.New()
 	textEd := texteditor.New()
-	term := terminal.New(rootDir, func(msg tea.Msg) {
-		if teaProgram != nil {
-			teaProgram.Send(msg)
-		}
-	})
+	term := terminal.New(rootDir, func(msg tea.Msg) { send(msg) })
 
 	repo := gitx.Open(rootDir)
 	git := gitpanel.New(repo)
 	aiState := newAI(rootDir)
 	git.Drafter = aiState.drafter()
-	pal := palette.New(rootDir, func(msg tea.Msg) {
-		if teaProgram != nil {
-			teaProgram.Send(msg)
-		}
-	})
+	pal := palette.New(rootDir, func(msg tea.Msg) { send(msg) })
 
 	m := &MainScreen{
 		RootDir:         rootDir,
