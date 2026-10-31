@@ -38,7 +38,7 @@ export default function PlainTextEditor() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-1 px-3 py-2 border-b border-white/10 bg-[#101c2d]">
+      <div className="flex shrink-0 items-center gap-1 px-3 py-2 border-b border-white/10 bg-(--surface-3)">
         <button aria-pressed={!preview} onClick={() => setPreview(false)} className="workspace-button">
           Code
         </button>

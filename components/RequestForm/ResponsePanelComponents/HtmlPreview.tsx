@@ -158,8 +158,8 @@ export default function HtmlPreview({
         />
       )}
       {!ready && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#0a1628]">
-          <span className="text-white/30 text-[10px]">Loading preview…</span>
+        <div className="absolute inset-0 flex items-center justify-center bg-(--surface-1)">
+          <span className="text-white/50 text-[11px]">Loading preview…</span>
         </div>
       )}
     </div>

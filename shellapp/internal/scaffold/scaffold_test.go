@@ -72,3 +72,15 @@ func TestEnsureExistingDir(t *testing.T) {
 		t.Error("existing file was overwritten")
 	}
 }
+
+// hittable init keeps env.local.json (machine-only values) out of git.
+func TestEnsureIgnoresEnvLocal(t *testing.T) {
+	dir := t.TempDir()
+	if err := Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "hittable", ".gitignore"))
+	if err != nil || string(b) != "env.local.json\n" {
+		t.Fatalf(".gitignore = %q, %v", b, err)
+	}
+}

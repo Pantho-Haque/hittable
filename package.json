@@ -39,7 +39,6 @@
     "@codemirror/view": "^6.43.12",
     "@lezer/highlight": "^1.2.3",
     "@radix-ui/react-accordion": "^1.2.12",
-    "@tanstack/react-query": "^5.81.5",
     "clsx": "^2.1.1",
     "dompurify": "^3.4.17",
     "framer-motion": "^12.23.0",

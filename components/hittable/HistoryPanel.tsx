@@ -1,6 +1,7 @@
 "use client";
 
 import { Clock, Trash2, ArrowRight } from "lucide-react";
+import { useToolListener } from "@/utils/uiEvents";
 import { useState } from "react";
 import { THistoryEntry } from "@/types";
 import { clearHistory, removeHistoryEntry, formatTimestamp } from "@/utils/historyModifier";
@@ -11,6 +12,7 @@ import { ModalShell, ModalActions } from "@/components";
 export default function HistoryPanel() {
   const { setFormInput, setProxyResponse, setSelectorResponse, history, setHistory } = useDataContext();
   const [isOpen, setIsOpen] = useState(false);
+  useToolListener("history", () => setIsOpen(true));
 
   const handleClear = () => {
     setHistory(clearHistory());
@@ -65,7 +67,7 @@ export default function HistoryPanel() {
               <div className="flex justify-end shrink-0">
                 <button
                   onClick={handleClear}
-                  className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-white/30 hover:text-red-400 transition-colors cursor-pointer rounded border border-transparent hover:border-red-500/20"
+                  className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-white/50 hover:text-red-400 transition-colors cursor-pointer rounded border border-transparent hover:border-red-500/20"
                 >
                   <Trash2 size={10} />
                   Clear all
@@ -75,10 +77,10 @@ export default function HistoryPanel() {
 
             <div className="flex flex-col gap-1 overflow-y-auto flex-1 min-h-0">
               {history.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-white/20">
+                <div className="flex flex-col items-center justify-center py-12 text-white/50">
                   <Clock size={24} className="mb-3 opacity-40" />
                   <p className="text-xs">No request history yet</p>
-                  <p className="text-[10px] text-white/10 mt-1">Send a request to see it here</p>
+                  <p className="text-[11px] text-white/10 mt-1">Send a request to see it here</p>
                 </div>
               ) : (
                 history.map((entry) => {
@@ -94,7 +96,7 @@ export default function HistoryPanel() {
                     >
                       <div className="flex items-center gap-2">
                         <span
-                          className="text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded"
+                          className="text-[11px] font-bold shrink-0 px-1.5 py-0.5 rounded"
                           style={{ color: mc, background: `${mc}15` }}
                         >
                           {entry.method}
@@ -108,16 +110,16 @@ export default function HistoryPanel() {
                             handleDelete(entry.id);
                           }}
                           title="Delete entry"
-                          className="p-1 rounded text-white/0 group-hover:text-white/30 hover:!text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
+                          className="p-1 rounded text-white/0 group-hover:text-white/50 hover:!text-red-400 hover:bg-red-500/10 transition-colors shrink-0"
                         >
                           <Trash2 size={10} />
                         </button>
                         <ArrowRight
                           size={10}
-                          className="text-white/0 group-hover:text-white/30 transition-colors shrink-0"
+                          className="text-white/0 group-hover:text-white/50 transition-colors shrink-0"
                         />
                       </div>
-                      <div className="flex items-center gap-3 text-[9px] text-white/25 pl-1">
+                      <div className="flex items-center gap-3 text-[11px] text-white/50 pl-1">
                         {entry.status != null && (
                           <span
                             className="font-mono"
@@ -129,7 +131,7 @@ export default function HistoryPanel() {
                           </span>
                         )}
                         {entry.statusText && (
-                          <span className="text-white/15">{entry.statusText}</span>
+                          <span className="text-white/50">{entry.statusText}</span>
                         )}
                         {entry.durationMs != null && (
                           <span className="font-mono">{entry.durationMs}ms</span>

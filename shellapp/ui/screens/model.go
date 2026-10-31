@@ -2,7 +2,7 @@
 package screens
 
 import (
-	"encoding/json"
+	"context"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/hittable/shellapp/internal/document"
 	"github.com/hittable/shellapp/internal/gitx"
+	"github.com/hittable/shellapp/internal/hitfile"
 	"github.com/hittable/shellapp/ui/components/explorer"
 	"github.com/hittable/shellapp/ui/components/gitpanel"
 	"github.com/hittable/shellapp/ui/components/mdpreview"
@@ -101,7 +102,10 @@ type MainScreen struct {
 	gitPolling       bool
 	gitKey           string
 	Sending          bool
-	spinning         bool // a spinner tick loop is already running
+	cancelSend       context.CancelFunc // aborts the request in flight (esc)
+	prodArmed        time.Time          // a production send waits for a second ctrl+r until then
+	unknownVars      []string           // <<KEY>>s the request in flight could not resolve
+	spinning         bool               // a spinner tick loop is already running
 	StatusBar        string
 	ExplorerFocused  bool
 	dragKind         string // splitter being dragged: explorer · term · editor · md
@@ -125,10 +129,7 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 	hittableDir := filepath.Join(rootDir, "hittable")
 	envPath := filepath.Join(hittableDir, "env.json")
 
-	envData := make(map[string]string)
-	if data, err := os.ReadFile(envPath); err == nil {
-		json.Unmarshal(data, &envData)
-	}
+	envData := hitfile.LoadEnv(envPath) // env.json + env.local.json
 
 	store := document.NewStore()
 	wq := document.NewWriteQueue()
@@ -315,10 +316,7 @@ func (m *MainScreen) EnterSingleFile(path string) {
 	if env := findEnv(filepath.Dir(path)); env != "" {
 		m.EnvPath, m.HittableDir = env, filepath.Dir(env)
 		envPathGlobal = env
-		m.EnvData = map[string]string{}
-		if data, err := os.ReadFile(env); err == nil {
-			_ = json.Unmarshal(data, &m.EnvData)
-		}
+		m.EnvData = hitfile.LoadEnv(env)
 	}
 	m.openFileRaw(path)
 	m.SetSize(m.Width, m.Height)

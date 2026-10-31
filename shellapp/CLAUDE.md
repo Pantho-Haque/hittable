@@ -54,8 +54,12 @@ The `init` template:
     │   └── test.hit
     ├── notes/
     │   └── sample.md
-    └── env.json
+    ├── env.json
+    └── .gitignore        # lists env.local.json (v3.3)
 ```
+
+`env.local.json` (optional, never committed) has the same flat shape as `env.json`
+and overrides it key by key.
 
 **`test.hit`** — a real, immediately-runnable request (not an empty stub):
 
@@ -452,6 +456,23 @@ send binding.
 | Resize markdown split | drag the seam between editor and preview | Markdown split view |
 
 ## 10. Changelog
+
+### v3.3 — Parity with the web app's request upgrade
+- **Esc cancels a request in flight** (`hitfile.ExecuteAndCaptureContext`); the
+  footer says so while sending, and esc closes nothing else while a request runs.
+- **Unknown variables are named**: a `<<KEY>>` that env does not define goes out
+  as written, and the status line now says `unknown <<KEY>> sent as written`.
+- **Copy as curl is shell-safe**: values are single-quoted with `'` escaped as
+  `'\''` (a body with `O'Brien` used to produce a command that did not run), and
+  headers come out sorted so the same request always copies the same text.
+- **`env.local.json`** next to `env.json` is layered on top of it
+  (`hitfile.LoadEnv`) for values that must stay out of git; `hittable init` writes
+  `hittable/.gitignore` listing it. The web app reads the same layering and adds
+  the same line when it opens a folder.
+- **Production guard**: an env with `HITTABLE_PRODUCTION=true` (the web app's
+  variable) makes ctrl+r arm a state-changing send — "PRODUCTION — press ctrl+r
+  again to send POST to host" — and a second ctrl+r within 4 s sends. GET, HEAD and
+  OPTIONS go straight out.
 
 ### v3.2 — Single-file mode, find & replace
 - `hittable <file>` opens one file on its own. `MainScreen.SingleFile` gates the

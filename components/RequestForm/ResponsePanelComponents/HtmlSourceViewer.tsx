@@ -26,11 +26,11 @@ function highlightHtmlLine(line: string): React.ReactNode[] {
     if (remaining.startsWith("<!--", i)) {
       const end = remaining.indexOf("-->", i + 4);
       if (end !== -1) {
-        parts.push(<span key={keyIdx++} className="text-white/25 italic">{remaining.slice(i, end + 3)}</span>);
+        parts.push(<span key={keyIdx++} className="text-white/50 italic">{remaining.slice(i, end + 3)}</span>);
         i = end + 3;
         continue;
       }
-      parts.push(<span key={keyIdx++} className="text-white/25 italic">{remaining.slice(i)}</span>);
+      parts.push(<span key={keyIdx++} className="text-white/50 italic">{remaining.slice(i)}</span>);
       break;
     }
 
@@ -319,7 +319,7 @@ export default function HtmlSourceViewer({
   }, [searchHighlights, searchQuery]);
 
   return (
-    <div ref={containerRef} className="font-mono text-[10px] md:text-[12px] leading-relaxed">
+    <div ref={containerRef} className="font-mono text-[11px] md:text-[12px] leading-relaxed">
       {lines.map((line, idx) => {
         // Skip lines that are folded
         if (isFolded(idx)) return null;
@@ -346,13 +346,13 @@ export default function HtmlSourceViewer({
               }}
             >
               {isFoldable ? (
-                <span className={`text-white/30 cursor-pointer hover:text-cyan-400 transition-colors mr-0.5 ${isCollapsed ? "-rotate-90" : ""}`}>
+                <span className={`text-white/50 cursor-pointer hover:text-cyan-400 transition-colors mr-0.5 ${isCollapsed ? "-rotate-90" : ""}`}>
                   ▸
                 </span>
               ) : (
                 <span className="mr-2.5" />
               )}
-              <span className="text-white/20 text-[10px]">
+              <span className="text-white/50 text-[11px]">
                 {idx + 1}
               </span>
             </div>
@@ -361,7 +361,7 @@ export default function HtmlSourceViewer({
             <div className="flex-1 pl-2 whitespace-pre overflow-x-auto">
               {renderLine(line, idx)}
               {isCollapsed && foldRange && (
-                <span className="text-white/20 italic ml-2">
+                <span className="text-white/50 italic ml-2">
                   ... {foldRange.end - foldRange.start} lines hidden
                 </span>
               )}

@@ -11,6 +11,9 @@ import PlainTextEditor from "@/components/workspace/PlainTextEditor";
 import FileViewer from "@/components/workspace/FileViewer";
 import MarkdownEditor from "@/components/workspace/MarkdownEditor";
 import WorkspaceConnecting from "@/components/workspace/WorkspaceConnecting";
+import CommandPalette from "@/components/palette/CommandPalette";
+import ShortcutsModal from "@/components/modals/ShortcutsModal";
+import SharePreview from "@/components/hittable/SharePreview";
 
 export default function Hittable() {
   const {
@@ -21,8 +24,11 @@ export default function Hittable() {
 
   if (mode === "directory") {
     return (
-      <div className="workspace relative h-[calc(100dvh-44px)] w-full flex flex-col bg-[#0c1422] overflow-hidden">
+      <div className="workspace relative h-[calc(100dvh-44px)] w-full flex flex-col bg-(--ink-700) overflow-hidden">
         {connectingStage && <WorkspaceConnecting stage={connectingStage} />}
+        <CommandPalette />
+        <ShortcutsModal />
+        <SharePreview />
         <div className="flex min-h-11 shrink-0 items-center gap-3 border-b border-white/10 px-3">
           <button className="workspace-button" onClick={() => toggle("toggleSidebar")}
             aria-expanded={!toggleSidebar} aria-controls="directory-explorer" title="Toggle explorer (Ctrl/Cmd+B)">
@@ -58,8 +64,11 @@ export default function Hittable() {
   }
 
   return (
-    <div className="workspace relative h-[calc(100dvh-44px)] w-full flex bg-[#080f1a] overflow-hidden font-sans">
+    <div className="workspace relative h-[calc(100dvh-44px)] w-full flex bg-(--surface-0) overflow-hidden font-sans">
       {connectingStage && <WorkspaceConnecting stage={connectingStage} />}
+      <CommandPalette />
+      <ShortcutsModal />
+      <SharePreview />
       {/* Ambient background glow */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-cyan-500/5 blur-[120px]" />
@@ -86,7 +95,7 @@ export default function Hittable() {
             </div>
           </div>
 
-          {!toggleSidebar && (<div className="hidden md:flex w-12 h-full flex-col border-l border-white/5 bg-[#0a1628]/80 items-center justify-start">
+          {!toggleSidebar && (<div className="hidden md:flex w-12 h-full flex-col border-l border-white/5 bg-(--surface-1)/80 items-center justify-start">
             <ImportModal />
             <AuthModal />
             <HistoryPanel />

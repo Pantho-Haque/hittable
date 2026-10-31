@@ -8,6 +8,10 @@ import (
 )
 
 func (m *MainScreen) handleEsc() (tea.Model, tea.Cmd) {
+	// A request in flight is the innermost thing esc can mean.
+	if m.cancelRequest() {
+		return m, nil
+	}
 	if m.ShowHelp {
 		m.ShowHelp = false
 		return m, nil

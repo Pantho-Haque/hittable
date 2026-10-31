@@ -18,6 +18,11 @@ export function TerminalDemo() {
   const [visible, setVisible] = useState<number[]>([]);
 
   useEffect(() => {
+    // With "reduce motion" on, the whole exchange is shown at once.
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setVisible(DEMO_LINES.map((_, i) => i)); // eslint-disable-line react-hooks/set-state-in-effect -- one-off, reads a media query
+      return;
+    }
     const timers = DEMO_LINES.map((line, i) =>
       setTimeout(() => setVisible((p) => [...p, i]), line.delay + 600),
     );
@@ -33,7 +38,7 @@ export function TerminalDemo() {
           <span className="w-2.5 h-2.5 rounded-full bg-(--ink-400)" />
           <span className="w-2.5 h-2.5 rounded-full bg-(--ink-400)" />
         </div>
-        <span className="ml-3 text-xs text-slate-500 font-sans">hittable — new request</span>
+        <span className="ml-3 text-xs text-slate-400 font-sans">hittable — new request</span>
       </div>
       <div className="p-5 flex flex-col gap-1.5 min-h-[260px]">
         {DEMO_LINES.map((line, i) => (
@@ -56,7 +61,7 @@ export function TerminalDemo() {
             {line.type === "status" && (
               <div className="flex items-center gap-2 mt-2">
                 <span className="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">{line.text}</span>
-                <span className="text-slate-500 text-xs">{line.value}</span>
+                <span className="text-slate-400 text-xs">{line.value}</span>
               </div>
             )}
           </div>

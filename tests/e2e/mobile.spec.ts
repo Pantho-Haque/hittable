@@ -59,7 +59,7 @@ test.describe("on a phone @mobile", () => {
     await page.mouse.click(page.viewportSize()!.width - 10, page.viewportSize()!.height - 10);
     await expect(expand).toBeVisible();
 
-    await page.getByRole("button", { name: "Send (Ctrl/Cmd+Enter)" }).tap();
+    await page.getByRole("button", { name: "Send", exact: true }).tap();
     await expect(statusBadge(page)).toHaveText("200 OK");
     await expect(response(page).getByText('"Ada Lovelace"')).toBeVisible();
     await noHorizontalScroll(page);

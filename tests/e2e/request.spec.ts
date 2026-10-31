@@ -40,7 +40,7 @@ test.describe("building and sending requests", () => {
   test("editing the query string fills the Params tab", async ({ page, seed }) => {
     await blankRequest(page, seed);
     await urlInput(page).fill(`${API}/users?limit=1&sort=name%20asc`);
-    await page.getByRole("button", { name: "Params", exact: true }).click();
+    await page.getByRole("tab", { name: "Params", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "params").inputValue())).toEqual({ limit: "1", sort: "name asc" });
     await send(page);
     await expect(statusBadge(page)).toHaveText("200 OK");
@@ -51,16 +51,16 @@ test.describe("building and sending requests", () => {
   test("table mode edits the same params and headers", async ({ page, seed }) => {
     await blankRequest(page, seed);
     await urlInput(page).fill(`${API}/echo`);
-    await page.getByRole("button", { name: "Headers", exact: true }).click();
+    await page.getByRole("tab", { name: "Headers", exact: true }).click();
     await page.getByRole("button", { name: "Table mode" }).click();
     await page.getByPlaceholder("Header name").fill("X-From-Table");
     await page.getByPlaceholder("Header value").fill("yes");
-    await page.getByRole("button", { name: "Params", exact: true }).click();
+    await page.getByRole("tab", { name: "Params", exact: true }).click();
     await page.getByPlaceholder("Param name").fill("color");
     await page.getByPlaceholder("Value").fill("blue");
     await expect(urlInput(page)).toHaveValue(`${API}/echo?color=blue`);
     await page.getByRole("button", { name: "JSON mode" }).click();
-    await page.getByRole("button", { name: "Headers", exact: true }).click();
+    await page.getByRole("tab", { name: "Headers", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "headers").inputValue())).toEqual({ "X-From-Table": "yes" });
     await send(page);
     await expect(response(page).getByText('"x-from-table"')).toBeVisible();
@@ -102,7 +102,7 @@ test.describe("building and sending requests", () => {
     await urlInput(page).fill(`${API}/users/1`);
     await send(page);
     await expect(statusBadge(page)).toHaveText("204 No Content");
-    await expect(response(page).getByRole("button", { name: /^headers/ })).toBeVisible();
+    await expect(response(page).getByRole("tab", { name: /^headers/ })).toBeVisible();
   });
 
   test("HEAD shows the response headers as the body", async ({ page, seed }) => {
@@ -181,11 +181,12 @@ test.describe("failures are explained", () => {
     void request;
   });
 
+  // While in flight, Send turns into Cancel (FR-6), so it cannot send twice.
   test("a slow request shows a loading state and cannot be sent twice", async ({ page, seed }) => {
     await blankRequest(page, seed);
     await urlInput(page).fill(`${API}/slow?ms=1500`);
     await send(page);
-    await expect(page.getByRole("button", { name: "Sending…" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Cancel" })).toBeEnabled();
     await expect(statusBadge(page)).toHaveText("200 OK", { timeout: 10_000 });
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
     await expect(response(page).getByText(/^1\.\d\ds$/)).toBeVisible();
@@ -201,12 +202,13 @@ test.describe("keyboard and saving", () => {
     await expect(response(page).getByText('"Alan Turing"')).toBeVisible();
   });
 
-  test("Ctrl/Cmd+J beautifies the JSON in the active tab", async ({ page, seed }) => {
+  // Ctrl/Cmd+J is the browser's Downloads shortcut; Beautify is Shift+Alt+F (FR-2).
+  test("Shift+Alt+F beautifies the JSON in the active tab", async ({ page, seed }) => {
     await blankRequest(page, seed);
     await fillTab(page, "body", '{"a":1,"b":[1,2]}');
-    await editor(page, "body").press("ControlOrMeta+j");
+    await editor(page, "body").press("Shift+Alt+KeyF");
     await expect(editor(page, "body")).toHaveValue('{\n\t"a": 1,\n\t"b": [\n\t\t1,\n\t\t2\n\t]\n}');
-    await page.getByRole("button", { name: "Beautify JSON (Ctrl/Cmd+J)" }).click();
+    await page.getByRole("button", { name: "Beautify JSON (Shift+Alt+F)" }).click();
     await expect(editor(page, "body")).toHaveValue('{\n\t"a": 1,\n\t"b": [\n\t\t1,\n\t\t2\n\t]\n}');
   });
 
@@ -234,7 +236,7 @@ test.describe("keyboard and saving", () => {
   test("a saved JSON body keeps its numbers, booleans and objects", async ({ page, seed }) => {
     await seed({ collections: [collection("Types", [route("r", `curl -X POST ${API}/echo -H "Content-Type: application/json" -d '{"n":1,"b":true,"z":null,"o":{"k":[2]}}'`)])] });
     await openRoute(page, "Types", "r");
-    await page.getByRole("button", { name: "Body", exact: true }).click();
+    await page.getByRole("tab", { name: "Body", exact: true }).click();
     const expected = { n: 1, b: true, z: null, o: { k: [2] } };
     await expect.poll(async () => JSON.parse(await editor(page, "body").inputValue())).toEqual(expected);
     await send(page);
@@ -242,7 +244,7 @@ test.describe("keyboard and saving", () => {
     await expect(page.getByText("Unsaved · Ctrl/Cmd+S")).toBeHidden();
     await urlInput(page).press("ControlOrMeta+s");
     await page.reload();
-    await page.getByRole("button", { name: "Body", exact: true }).click();
+    await page.getByRole("tab", { name: "Body", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "body").inputValue())).toEqual(expected);
   });
 
@@ -298,11 +300,11 @@ test.describe("keyboard and saving", () => {
     await openRoute(page, "Two", "first");
     await sidebarItem(page, "second").click();
     await expect(methodSelect(page)).toHaveValue("POST");
-    await page.getByRole("button", { name: "Body", exact: true }).click();
+    await page.getByRole("tab", { name: "Body", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "body").inputValue())).toEqual({ name: "Two" });
     await sidebarItem(page, "first").click();
     await expect(methodSelect(page)).toHaveValue("GET");
-    await page.getByRole("button", { name: "Headers", exact: true }).click();
+    await page.getByRole("tab", { name: "Headers", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "headers").inputValue())).toEqual({ "X-One": "1" });
   });
 });

@@ -55,7 +55,7 @@ export default function NoteEditor({
         </span>
         <div className="flex items-center gap-1.5">
           {isUnsaved && (
-            <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">
+            <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">
               unsaved
             </span>
           )}
@@ -69,7 +69,7 @@ export default function NoteEditor({
                 className={`workspace-button ${
                   !isSplit
                     ? "text-cyan-400 bg-cyan-400/10"
-                    : "text-white/30 hover:text-white/50"
+                    : "text-white/50 hover:text-white/50"
                 }`}
               >
                 {isPreview ? <Pencil size={14} /> : <Eye size={14} />}
@@ -80,10 +80,10 @@ export default function NoteEditor({
                 onClick={toggleSplit}
                 title={isSplit ? "Exit split view" : "Split view"}
                 aria-pressed={isSplit}
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors cursor-pointer ${
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors cursor-pointer ${
                   isSplit
                     ? "text-cyan-400 bg-cyan-400/10"
-                    : "text-white/30 hover:text-white/50"
+                    : "text-white/50 hover:text-white/50"
                 }`}
               >
                 <Columns2 size={14} /><span>Split</span>

@@ -236,3 +236,15 @@ describe("Copy as cURL is valid shell", () => {
     expect(argv).toEqual(["-X", "POST", "https://x.dev/?a=1&b=$HOME", "-H", "X: it's `whoami` $(id)", "-d", '{"q":"a&b;c|d"}']);
   });
 });
+
+describe("form bodies with an explicit Content-Type", () => {
+  it("stay URL-encoded so a saved Form request does not change", () => {
+    const j = curlConverter(`curl -X POST https://x.io -H 'Content-Type: application/x-www-form-urlencoded' -d 'a=1&b=x+y'`);
+    expect(j.body).toBe("a=1&b=x+y");
+    expect(curlConverter(jsonToCurl(j)).body).toBe("a=1&b=x+y");
+  });
+
+  it("without the header, key=value data still opens as a JSON object as before", () => {
+    expect(JSON.parse(curlConverter(`curl https://x.io -d 'a=1'`).body)).toEqual({ a: "1" });
+  });
+});

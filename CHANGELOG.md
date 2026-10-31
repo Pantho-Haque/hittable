@@ -4,6 +4,30 @@ All notable changes to Hittable will be documented in this file.
 
 ## [Unreleased]
 
+### UX upgrade — Round 2: beyond the alternatives
+- **JSONPath filter** on JSON responses (`$.items[*].id`, `$..id`, slices, negative indexes), with invalid / no-result feedback; search and copy use the filtered result.
+- **Compare** with the previous response for the same request (the saved one, the last send, or history): added / removed / changed paths with before → after, changed headers, and an ignore list for paths and header names. Rare elsewhere, paid in Kreya.
+- **Share links with no server** — Copy as → Share link puts the request in the URL fragment (never sent to any server). Credentials in headers, URL userinfo and query parameters like `api_key` become `<<VARIABLES>>`; opening a link previews it, never sends it, and Import adds it to a Shared collection (or `hittable/shared/`). Fragments are size-capped and schema-checked as untrusted input.
+- **Production guard** — `HITTABLE_PRODUCTION=true` (an Environment toggle, or the variable in env.json) shows a red PRODUCTION badge and confirms any state-changing send, naming the host. The terminal app honours the same variable with a second ctrl+r.
+- **Git-safe secrets** — `hittable/env.local.json` is layered over `env.json` in both apps and listed in `hittable/.gitignore` (the web app appends it when it opens a folder; `hittable init` writes it).
+- Terminal app parity: Esc cancels an in-flight request, unknown `<<KEY>>`s are named after sending, and copy-as-curl is shell-safe (single quotes escaped, headers in a stable order).
+
+### UX upgrade — Round 1 (see docs/web-ux-requirements.md)
+- **Command palette (Ctrl/Cmd+K)** — fuzzy search over every request, folder-mode file and action (Environment, Import, Export, History, Notes, Auth, Copy as cURL, switch Local/Folder…), recent items first, shortcut hints on each row. A "Search… ⌘K" button sits in the top bar.
+- **One shortcut registry** drives the palette, a new `?` / Ctrl/Cmd+/ cheatsheet, the Info dialog and the landing page. Beautify moved from Ctrl/Cmd+J (the browser's Downloads) to **Shift+Alt+F**.
+- **Body types** — None, JSON, Text and Form (URL-encoded rows). The type is inferred from the body and Content-Type, never stored, so files and collections are unchanged; invalid JSON blocks Send only for a JSON body.
+- **OPTIONS** can be sent.
+- **Cancel** — Send turns into Cancel while a request is in flight (Esc in the URL bar too); a 65 s client backstop behind the proxy's own timeout.
+- **Variables** — `<<KEY>>` in the URL is teal when defined and red when not, with a note naming unknown variables and an Open Environment link. Values are never shown.
+- **Curl paste** fills the form at once (no 1 s raw flash) with an Undo toast.
+- **Copy as** cURL, JavaScript fetch, Python requests or HTTPie, variables filled in.
+- **Response status** coloured by class (2xx success, 1xx/3xx info, 4xx warning, 5xx danger) with the reason phrase filled in for HTTP/2; size is the bytes received, reported by the proxy.
+- **Extension** — the "No Extension Found" dialog no longer opens on every visit. A status button explains on demand, and a localhost send without it shows an inline message with an Install button.
+- **Folder mode** asks before deleting from disk, naming the item (and saying a folder goes with everything in it).
+- **Toasts** use the app's dark surface (the class-concatenation bug that dropped their colours is fixed), are announced (`status` / `alert`) and can carry an action.
+- **Readability and access** — no text below 11px, dim text raised to WCAG AA contrast, colours from design tokens (`--surface-*`, `--success/--info/--warning/--danger`), real tabs (`role="tab"`, arrow keys), focusable sidebar rows, labelled icon buttons, a focus trap in the Environment dialog. The axe suite now checks colour contrast.
+- Removed the unused `@tanstack/react-query`.
+
 ### Security
 - **Unused JSON highlighter removed** — `SyntaxHighlighter` wrote response bodies into the page unescaped; it was never rendered anywhere, so it was deleted rather than kept around as a trap.
 - **Notes XSS** — markdown notes, which can arrive from a shared folder or an import, are sanitized with DOMPurify before rendering.

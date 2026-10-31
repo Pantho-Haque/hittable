@@ -17,7 +17,11 @@ export type TNotificationType = {
   position?: TNotificationPosition;
   mode?: TNotificationMode;
   timeout?: number;
+  action?: TNotifyAction;
 };
+
+/** An optional button on a toast, e.g. "Undo". Clicking it also dismisses. */
+export type TNotifyAction = { label: string; onClick: () => void };
 
 export type TNotify = {
   title: string;
@@ -25,4 +29,5 @@ export type TNotify = {
   position?: TNotificationPosition;
   mode?: TNotificationMode;
   timeout?: number;
+  action?: TNotifyAction;
 };

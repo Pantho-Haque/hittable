@@ -72,5 +72,11 @@ func Ensure(root string) error {
 		return err
 	}
 
+	// env.local.json holds values that must stay out of git; the web app adds
+	// the same line when it opens a folder.
+	if err := os.WriteFile(filepath.Join(hittableDir, ".gitignore"), []byte("env.local.json\n"), 0o644); err != nil {
+		return err
+	}
+
 	return nil
 }

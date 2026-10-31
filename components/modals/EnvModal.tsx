@@ -1,17 +1,21 @@
 "use client";
 
 import { Plus, Variable, Trash2, Lock } from "lucide-react";
+import { useToolListener } from "@/utils/uiEvents";
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
   THittableEnv,
 } from "@/types";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { updateEnv, updateSecrets } from "@/utils/hittableCollectionModifier";
 import { useDataContext } from "@/context/dataContext";
+import { PRODUCTION_VAR } from "@/utils/productionGuard";
 
 type TabKey = "env" | "secrets";
 
@@ -32,6 +36,8 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
     setActiveTab("env");
     setOpen(true);
   };
+  // Only a copy that knows its collection answers the palette / "add it in Environment".
+  useToolListener("env", openModal, effectiveCollectionName);
 
   const handleEnvChange = (index: number, field: "key" | "value", val: string) => {
     setLocalEnv((prev) =>
@@ -74,6 +80,10 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
     return () => window.removeEventListener("keydown", handler);
   }, [open, handleSave]);
 
+  // This dialog draws its own shell, so it brings ModalShell's focus handling.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open);
+
   const currentEntries = activeTab === "env" ? localEnv : localSecrets;
   const setCurrentEntries = activeTab === "env" ? setLocalEnv : setLocalSecrets;
   const handleChange = activeTab === "env" ? handleEnvChange : handleSecretChange;
@@ -83,6 +93,7 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
       <button
         onClick={openModal}
         title="Environment Variables"
+        aria-label="Environment Variables"
         className="modal-button-mini"
       >
         <Variable size={14} />
@@ -95,10 +106,11 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
             onClick={() => setOpen(false)}
           >
             <div
+              ref={dialogRef}
               role="dialog"
               aria-modal="true"
               aria-label={`Environment: ${effectiveCollectionName}`}
-              className="relative bg-[#0a1628] border border-white/10 rounded-xl shadow-2xl p-6 w-[520px] max-w-[90vw] max-h-[80vh] flex flex-col gap-5 font-mono overflow-hidden"
+              className="relative bg-(--surface-1) border border-white/10 rounded-xl shadow-2xl p-6 w-[520px] max-w-[90vw] max-h-[80vh] flex flex-col gap-5 font-mono overflow-hidden"
               onClick={(e) => e.stopPropagation()}
               style={{ boxShadow: "0 0 0 1px rgba(0,229,204,0.08), 0 24px 80px rgba(0,0,0,0.8)" }}
             >
@@ -110,15 +122,15 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
 
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-[9px] tracking-[0.3em] uppercase text-cyan-500/60 mb-1">Environment</p>
+                  <p className="text-[11px] tracking-[0.3em] uppercase text-cyan-300 mb-1">Environment</p>
                   <h2 className="text-sm font-bold text-white/90 capitalize">{effectiveCollectionName}</h2>
-                  <p className="text-[10px] text-white/25 mt-1">
-                    Reference with <span className="text-cyan-400/60 font-mono">&lt;&lt;KEY&gt;&gt;</span> in your requests
+                  <p className="text-[11px] text-white/50 mt-1">
+                    Reference with <span className="text-cyan-300 font-mono">&lt;&lt;KEY&gt;&gt;</span> in your requests
                   </p>
                 </div>
                 <button
                   onClick={() => setCurrentEntries((prev) => [...prev, ["", ""]])}
-                  className="flex items-center gap-1 text-[10px] text-cyan-400 border border-cyan-500/25 px-2.5 py-1.5 rounded-md hover:bg-cyan-500/10 cursor-pointer transition-colors"
+                  className="flex items-center gap-1 text-[11px] text-cyan-400 border border-cyan-500/25 px-2.5 py-1.5 rounded-md hover:bg-cyan-500/10 cursor-pointer transition-colors"
                 >
                   <Plus size={11} /> Add
                 </button>
@@ -128,10 +140,10 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
               <div className="flex gap-1 border-b border-white/10">
                 <button
                   onClick={() => setActiveTab("env")}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold transition-colors cursor-pointer border-b-2 -mb-px ${
+                  className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold transition-colors cursor-pointer border-b-2 -mb-px ${
                     activeTab === "env"
                       ? "text-cyan-400 border-cyan-400"
-                      : "text-white/30 border-transparent hover:text-white/50"
+                      : "text-white/50 border-transparent hover:text-white/50"
                   }`}
                 >
                   <Variable size={11} />
@@ -139,10 +151,10 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
                 </button>
                 <button
                   onClick={() => setActiveTab("secrets")}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-semibold transition-colors cursor-pointer border-b-2 -mb-px ${
+                  className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold transition-colors cursor-pointer border-b-2 -mb-px ${
                     activeTab === "secrets"
                       ? "text-amber-400 border-amber-400"
-                      : "text-white/30 border-transparent hover:text-white/50"
+                      : "text-white/50 border-transparent hover:text-white/50"
                   }`}
                 >
                   <Lock size={11} />
@@ -150,15 +162,36 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
                 </button>
               </div>
 
+              {/* FR-16: a normal variable, so it travels with the collection. */}
+              <label className="flex items-start gap-2 rounded-md border border-(--danger)/30 bg-(--danger)/5 px-3 py-2 text-xs text-white/80 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-(--danger)"
+                  checked={localEnv.some(([k, v]) => k === PRODUCTION_VAR && /^(true|1|yes)$/i.test(v.trim()))}
+                  onChange={(e) =>
+                    setLocalEnv((prev) => {
+                      const rest = prev.filter(([k]) => k !== PRODUCTION_VAR);
+                      return e.target.checked ? [...rest, [PRODUCTION_VAR, "true"]] : rest;
+                    })
+                  }
+                />
+                <span>
+                  <span className="font-semibold text-(--danger)">Production environment</span>
+                  <span className="block text-white/60">
+                    Shows a PRODUCTION badge and asks before sending anything but GET, HEAD or OPTIONS.
+                  </span>
+                </span>
+              </label>
+
               {/* Tab content */}
               <div className="flex-1 overflow-y-auto flex flex-col gap-2">
                 {activeTab === "secrets" && (
-                  <p className="text-[9px] text-amber-400/50 px-1">
+                  <p className="text-[11px] text-amber-400/50 px-1">
                     Secrets are not resolved during export — they stay as variable references in the target format.
                   </p>
                 )}
                 {currentEntries.length > 0 && (
-                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-[9px] text-white/20 font-semibold uppercase tracking-widest px-1 mb-1">
+                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-[11px] text-white/50 font-semibold uppercase tracking-widest px-1 mb-1">
                     <span>Key</span>
                     <span>Value</span>
                     <span />
@@ -181,14 +214,14 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
                     <button
                       onClick={() => setCurrentEntries((prev) => prev.filter((_, idx) => idx !== i))}
                       aria-label={`Remove ${key || "row"}`}
-                      className="p-1 text-white/20 hover:text-red-400 transition-colors cursor-pointer"
+                      className="p-1 text-white/50 hover:text-red-400 transition-colors cursor-pointer"
                     >
                       <Trash2 size={13} />
                     </button>
                   </div>
                 ))}
                 {currentEntries.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-8 gap-2 text-white/20">
+                  <div className="flex flex-col items-center justify-center py-8 gap-2 text-white/50">
                     {activeTab === "env" ? <Variable size={20} /> : <Lock size={20} />}
                     <p className="text-xs">
                       {activeTab === "env" ? "No environment variables yet" : "No secrets yet"}
@@ -200,14 +233,14 @@ export default function EnvModal({ collectionName: propCollectionName }: { colle
               <div className="flex justify-end gap-2 pt-2 border-t border-white/5">
                 <button
                   onClick={() => setOpen(false)}
-                  className="px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/40 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer"
+                  className="px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/60 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSave}
                   className="px-4 py-1.5 text-xs rounded-md font-bold cursor-pointer active:scale-95 transition-all"
-                  style={{ background: "rgba(0,229,204,0.15)", border: "1px solid rgba(0,229,204,0.3)", color: "#00e5cc" }}
+                  style={{ background: "rgba(0,229,204,0.15)", border: "1px solid rgba(0,229,204,0.3)", color: "var(--brand)" }}
                 >
                   Save · Ctrl/Cmd+S
                 </button>

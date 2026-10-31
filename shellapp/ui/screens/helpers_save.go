@@ -82,7 +82,7 @@ func (m *MainScreen) saveAndEnqueue() {
 		content = m.TextEd.GetContent()
 		var env map[string]string
 		if json.Unmarshal([]byte(content), &env) == nil && env != nil {
-			m.EnvData = env
+			m.EnvData = hitfile.LayerLocalEnv(env, m.EnvPath)
 		}
 	default:
 		content = m.TextEd.GetContent()

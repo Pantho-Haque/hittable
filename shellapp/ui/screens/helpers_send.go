@@ -1,30 +1,30 @@
 package screens
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hittable/shellapp/internal/document"
 	"github.com/hittable/shellapp/internal/hitfile"
 )
 
-// reloadEnv picks up external edits to env.json unless it is open in-app
-// (then EnvData is already the freshest copy).
+// reloadEnv picks up external edits to env.json and env.local.json unless
+// env.json is open in-app (then EnvData is already the freshest copy).
 func (m *MainScreen) reloadEnv() {
 	if m.Store.Get(m.EnvPath) != nil {
 		return
 	}
-	data, err := os.ReadFile(m.EnvPath)
-	if err != nil {
+	if _, err := os.Stat(m.EnvPath); err != nil {
 		return
 	}
-	var env map[string]string
-	if json.Unmarshal(data, &env) == nil && env != nil {
-		m.EnvData = env
-	}
+	m.EnvData = hitfile.LoadEnv(m.EnvPath)
 }
 
 func (m *MainScreen) sendRequestAsync() tea.Cmd {
@@ -40,6 +40,19 @@ func (m *MainScreen) sendRequestAsync() tea.Cmd {
 		return nil
 	}
 	m.reloadEnv()
+	// An environment marked production (HITTABLE_PRODUCTION, shared with the
+	// web app) asks before anything that changes state: the first ctrl+r arms,
+	// a second one within a few seconds sends.
+	if hitfile.NeedsConfirmation(h.Method, m.EnvData) && time.Now().After(m.prodArmed) {
+		m.prodArmed = time.Now().Add(prodConfirmWindow)
+		host := hitfile.Resolve(h, m.EnvData).URL
+		if u, err := url.Parse(host); err == nil && u.Host != "" {
+			host = u.Host
+		}
+		m.StatusBar = fmt.Sprintf("PRODUCTION — press ctrl+r again to send %s to %s", h.Method, host)
+		return nil
+	}
+	m.prodArmed = time.Time{}
 	m.Sending = true
 	path := m.ActiveFile
 	envSnap := make(map[string]string, len(m.EnvData))
@@ -48,12 +61,38 @@ func (m *MainScreen) sendRequestAsync() tea.Cmd {
 	}
 	req := *h
 	req.Response = nil
+	m.unknownVars = hitfile.UnknownVars(&req, envSnap)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelSend = cancel
+	m.StatusBar = "Sending… · esc cancels"
 
 	go func() {
-		result, err := hitfile.ExecuteAndCapture(&req, envSnap)
+		result, err := hitfile.ExecuteAndCaptureContext(ctx, &req, envSnap)
 		send(responseMsg{path: path, result: result, err: err})
 	}()
 	return m.Spinner.Tick
+}
+
+// prodConfirmWindow is how long a production send waits for its second ctrl+r.
+const prodConfirmWindow = 4 * time.Second
+
+// cancelRequest aborts the request in flight; its responseMsg then arrives
+// with context.Canceled. Reports whether there was one to cancel.
+func (m *MainScreen) cancelRequest() bool {
+	if !m.Sending || m.cancelSend == nil {
+		return false
+	}
+	m.cancelSend()
+	return true
+}
+
+// unknownNote names the variables env.json does not define, which went out
+// as literal <<KEY>> text.
+func unknownNote(keys []string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	return " · unknown <<" + strings.Join(keys, ">>, <<") + ">> sent as written"
 }
 
 // bodyText renders a response payload for display: JSON is indented,
@@ -71,8 +110,18 @@ func bodyText(data interface{}) string {
 
 func (m *MainScreen) handleResponseMsg(msg responseMsg) {
 	m.Sending = false
+	if m.cancelSend != nil {
+		m.cancelSend() // releases the context either way
+		m.cancelSend = nil
+	}
+	note := unknownNote(m.unknownVars)
+	m.unknownVars = nil
+	if errors.Is(msg.err, context.Canceled) {
+		m.StatusBar = "Request cancelled"
+		return
+	}
 	if msg.err != nil {
-		m.StatusBar = "Request failed: " + msg.err.Error()
+		m.StatusBar = "Request failed: " + msg.err.Error() + note
 		return
 	}
 	if msg.result == nil || msg.path != m.ActiveFile {
@@ -84,7 +133,7 @@ func (m *MainScreen) handleResponseMsg(msg responseMsg) {
 		msg.result.Ok, bodyText(msg.result.Data),
 	)
 	m.Response.SetHeaders(msg.result.Headers)
-	m.StatusBar = fmt.Sprintf("%d %s in %dms", msg.result.Status, msg.result.StatusText, msg.result.DurationMs)
+	m.StatusBar = fmt.Sprintf("%d %s in %dms", msg.result.Status, msg.result.StatusText, msg.result.DurationMs) + note
 	doc := m.Store.Get(m.ActiveFile)
 	if doc == nil || doc.Kind != document.KindHit {
 		return

@@ -51,11 +51,11 @@ function FolderPicker({
 
   return (
     <div className="flex flex-col gap-1 mt-1">
-      <div className="flex items-center gap-1 text-[10px] text-white/30 uppercase tracking-wider">
+      <div className="flex items-center gap-1 text-[11px] text-white/50 uppercase tracking-wider">
         {folderPath.length > 0 && (
           <button
             onClick={() => onSelect(folderPath.slice(0, -1))}
-            className="text-white/30 hover:text-white/50 transition-colors cursor-pointer"
+            className="text-white/50 hover:text-white/50 transition-colors cursor-pointer"
             title="Go up one level"
           >
             <ChevronLeft size={10} />
@@ -71,7 +71,7 @@ function FolderPicker({
           onClick={() => onSelect(folderPath)}
           className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-cyan-400 bg-cyan-500/10 transition-colors cursor-pointer text-left"
         >
-          <FolderOpen size={10} className="text-cyan-500/50 shrink-0" />
+          <FolderOpen size={10} className="text-cyan-300 shrink-0" />
           Save here
         </button>
       )}
@@ -80,20 +80,20 @@ function FolderPicker({
         <button
           key={folder.name}
           onClick={() => onSelect([...folderPath, folder.name])}
-          className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-white/40 hover:text-white/60 hover:bg-white/5 transition-colors cursor-pointer text-left"
+          className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-white/60 hover:text-white/60 hover:bg-white/5 transition-colors cursor-pointer text-left"
         >
-          <FolderOpen size={10} className="text-cyan-500/40 shrink-0" />
+          <FolderOpen size={10} className="text-cyan-300 shrink-0" />
           {folder.name}
-          <ChevronRight size={8} className="ml-auto text-white/20" />
+          <ChevronRight size={8} className="ml-auto text-white/50" />
         </button>
       ))}
 
       {folderPath.length === 0 && (
         <button
           onClick={() => onSelect([])}
-          className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-white/40 hover:text-white/60 hover:bg-white/5 transition-colors cursor-pointer text-left"
+          className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-white/60 hover:text-white/60 hover:bg-white/5 transition-colors cursor-pointer text-left"
         >
-          <span className="text-white/20">/</span>
+          <span className="text-white/50">/</span>
           Top level
         </button>
       )}
@@ -116,13 +116,13 @@ function FolderPicker({
           />
           <button
             onClick={handleCreate}
-            className="text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer px-1"
+            className="text-[11px] text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer px-1"
           >
             ✓
           </button>
           <button
             onClick={() => { setIsCreating(false); setNewFolderName(""); }}
-            className="text-[10px] text-white/30 hover:text-white/50 transition-colors cursor-pointer px-1"
+            className="text-[11px] text-white/50 hover:text-white/50 transition-colors cursor-pointer px-1"
           >
             ✕
           </button>
@@ -130,7 +130,7 @@ function FolderPicker({
       ) : (
         <button
           onClick={() => setIsCreating(true)}
-          className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-cyan-400/60 hover:text-cyan-400 transition-colors cursor-pointer text-left"
+          className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px] text-cyan-300 hover:text-cyan-400 transition-colors cursor-pointer text-left"
         >
           + New folder
         </button>
@@ -252,7 +252,7 @@ export default function SaveFromHistoryModal() {
           handleOpen();
         }}
         title="Save to collection"
-        className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-2 md:py-1.5 text-[8px] md:text-xs font-semibold text-white/40 transition-all cursor-pointer hover:border-cyan-500/30 hover:text-cyan-400 min-h-[44px] md:min-h-0"
+        className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-2 md:py-1.5 text-[11px] md:text-xs font-semibold text-white/60 transition-all cursor-pointer hover:border-cyan-500/30 hover:text-cyan-400 min-h-[44px] md:min-h-0"
       >
         <Save className="h-3 w-3 md:h-3 md:w-3" />
         <span className="hidden sm:inline">Save to…</span>
@@ -264,11 +264,11 @@ export default function SaveFromHistoryModal() {
           subtitle="Add this request to a collection"
           onClose={() => setOpen(false)}
         >
-          {error && <p className="text-[10px] text-red-400 -mt-2">{error}</p>}
+          {error && <p className="text-[11px] text-red-400 -mt-2">{error}</p>}
 
           {/* Collection selection */}
           <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] text-white/30 uppercase tracking-wider">Collection</span>
+            <span className="text-[11px] text-white/50 uppercase tracking-wider">Collection</span>
             {isCreatingCollection ? (
               <div className="flex flex-col gap-1.5">
                 <ModalInput
@@ -286,7 +286,7 @@ export default function SaveFromHistoryModal() {
                 />
                 <button
                   onClick={() => setIsCreatingCollection(false)}
-                  className="text-[10px] text-white/30 hover:text-white/50 transition-colors cursor-pointer text-left"
+                  className="text-[11px] text-white/50 hover:text-white/50 transition-colors cursor-pointer text-left"
                 >
                   ← Choose existing collection
                 </button>
@@ -314,7 +314,7 @@ export default function SaveFromHistoryModal() {
                 </div>
                 <button
                   onClick={() => setIsCreatingCollection(true)}
-                  className="text-[10px] text-cyan-400/60 hover:text-cyan-400 transition-colors cursor-pointer text-left"
+                  className="text-[11px] text-cyan-300 hover:text-cyan-400 transition-colors cursor-pointer text-left"
                 >
                   + Create new collection
                 </button>
@@ -325,8 +325,8 @@ export default function SaveFromHistoryModal() {
           {/* Folder selection */}
           {!isCreatingCollection && selectedCol && (
             <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] text-white/30 uppercase tracking-wider">
-                Folder <span className="text-white/15">(optional)</span>
+              <span className="text-[11px] text-white/50 uppercase tracking-wider">
+                Folder <span className="text-white/50">(optional)</span>
               </span>
               <div className="rounded-md border border-white/5 bg-white/3 p-1.5 max-h-[100px] overflow-y-auto">
                 <FolderPicker
@@ -341,7 +341,7 @@ export default function SaveFromHistoryModal() {
 
           {/* Route name */}
           <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] text-white/30 uppercase tracking-wider">Route name</span>
+            <span className="text-[11px] text-white/50 uppercase tracking-wider">Route name</span>
             <ModalInput
               value={routeName}
               onChange={(v) => {

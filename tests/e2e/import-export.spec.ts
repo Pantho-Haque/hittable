@@ -235,7 +235,7 @@ test.describe("export", () => {
     await sidebarItem(page, "nested").click();
     await sidebarItem(page, "deep").click();
     await expect(urlInput(page)).toHaveValue("<<BASE>>/users");
-    await page.getByRole("button", { name: "Body", exact: true }).click();
+    await page.getByRole("tab", { name: "Body", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "body").inputValue())).toEqual({ n: 1 });
   });
 

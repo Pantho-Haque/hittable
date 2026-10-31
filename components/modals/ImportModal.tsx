@@ -1,6 +1,7 @@
 "use client";
 
 import { Import } from "lucide-react";
+import { useToolListener } from "@/utils/uiEvents";
 import { useState } from "react";
 import { ModalShell, ModalActions } from "@/components";
 import { decompressString } from "@/utils/compressString";
@@ -66,6 +67,7 @@ export default function ImportModal() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
+  useToolListener("import", () => { setError(""); setOpen(true); });
 
   const importCollection = () => {
     setError("");
@@ -155,6 +157,7 @@ export default function ImportModal() {
           setOpen(true);
         }}
         title="Import"
+        aria-label="Import"
         className="modal-button-mini mt-2"
       >
         <Import size={14} />
@@ -167,7 +170,7 @@ export default function ImportModal() {
           onClose={() => setOpen(false)}
         >
           <div className="w-full h-full flex flex-col gap-2">
-            {error && <p className="text-[10px] text-red-400">{error}</p>}
+            {error && <p className="text-[11px] text-red-400">{error}</p>}
             <textarea
               value={input}
               onChange={(e) => { setInput(e.target.value); setError(""); }}

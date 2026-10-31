@@ -32,7 +32,7 @@ export default function MarkdownEditor() {
   const selectedTitle = activeFile?.path[activeFile.path.length - 1] ?? "Note";
 
   return (
-    <div className="flex flex-col h-full bg-[#0a1628] p-3">
+    <div className="flex flex-col h-full bg-(--surface-1) p-3">
       <NoteEditor
         selectedId={activeFile?.path.join("/") ?? null}
         selectedTitle={selectedTitle}

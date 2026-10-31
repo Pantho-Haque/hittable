@@ -1,7 +1,9 @@
 "use client";
 
-import { JsonValue } from "@/types";
-import { CheckCircle2, AlertCircle, Send, Search, Copy, Check, Braces, Code2, FileText, Globe, Crosshair } from "lucide-react";
+import type { JsonValue, TResponseJson } from "@/types";
+import { reasonPhrase, statusKind, formatSize, type StatusKind } from "@/utils/httpStatus";
+import { EXTENSION_URL } from "@/config";
+import { CheckCircle2, AlertCircle, Send, Search, Copy, Check, Braces, Code2, FileText, Globe, Crosshair, ListFilter, GitCompareArrows } from "lucide-react";
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import {
   MatchCtx,
@@ -19,6 +21,9 @@ import HtmlSourceViewer from "./ResponsePanelComponents/HtmlSourceViewer";
 import ElementInspector from "./ResponsePanelComponents/ElementInspector";
 import { findElementSourceLine } from "@/utils/htmlFormatter";
 import type { DataSource } from "@/types/workspace";
+import JsonPathFilter from "./ResponsePanelComponents/JsonPathFilter";
+import ResponseCompare from "./ResponsePanelComponents/ResponseCompare";
+import { queryJsonPath } from "@/utils/jsonPath";
 
 type ResponseViewMode = "json" | "text" | "html";
 
@@ -34,7 +39,7 @@ function HeadersTable({ headers, searchQuery }: { headers: Record<string, string
   const entries = Object.entries(headers);
   if (entries.length === 0) {
     return (
-      <div className="flex items-center justify-center py-8 text-white/20 text-[10px]">
+      <div className="flex items-center justify-center py-8 text-white/50 text-[11px]">
         No response headers
       </div>
     );
@@ -54,10 +59,10 @@ function HeadersTable({ headers, searchQuery }: { headers: Record<string, string
           key={key}
           className="flex items-start gap-3 px-3 py-1.5 border-b border-white/5 hover:bg-white/2 transition-colors group"
         >
-          <span className="text-[9px] md:text-[11px] text-cyan-400/70 font-mono shrink-0 min-w-[140px]">
+          <span className="text-[11px] md:text-[11px] text-cyan-400/70 font-mono shrink-0 min-w-[140px]">
             {key}
           </span>
-          <span className="text-[9px] md:text-[11px] text-white/60 font-mono break-all flex-1">
+          <span className="text-[11px] md:text-[11px] text-white/60 font-mono break-all flex-1">
             {value}
           </span>
           <button
@@ -68,13 +73,13 @@ function HeadersTable({ headers, searchQuery }: { headers: Record<string, string
             {copiedKey === key ? (
               <Check className="h-2.5 w-2.5 text-emerald-400" />
             ) : (
-              <Copy className="h-2.5 w-2.5 text-white/30 hover:text-white/60" />
+              <Copy className="h-2.5 w-2.5 text-white/50 hover:text-white/60" />
             )}
           </button>
         </div>
       ))}
       {searchQuery && filtered.length === 0 && (
-        <div className="flex items-center justify-center py-6 text-white/20 text-[10px]">
+        <div className="flex items-center justify-center py-6 text-white/50 text-[11px]">
           No headers matching &quot;{searchQuery}&quot;
         </div>
       )}
@@ -95,7 +100,7 @@ function detectViewMode(headers: Record<string, string>): ResponseViewMode {
 
 export default function ResponsePanel({ dataSource: propDataSource }: { dataSource?: DataSource } = {}) {
   const contextData = useDataContext();
-  const { proxyResponse, selectorResponse, formInput } = propDataSource ?? contextData;
+  const { proxyResponse, selectorResponse, formInput, history } = propDataSource ?? contextData;
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -107,6 +112,66 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
   const [inspectMode, setInspectMode] = useState(false);
   const [selectedElement, setSelectedElement] = useState<ElementInfo | null>(null);
   const [highlightedSourceLine, setHighlightedSourceLine] = useState<number | null>(null);
+
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterText, setFilterText] = useState("");
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [ignoreText, setIgnoreText] = useState("");
+  const compareButtonRef = useRef<HTMLButtonElement>(null);
+
+  // FR-14: the response this panel showed before the current one, for the
+  // same request. Opening a request shows its saved response (the route's in
+  // local mode, the .hit file's in folder mode) and a send replaces it, so
+  // the outgoing response is the "previous" one. The request's identity is
+  // its place in the collection (collection / folders / route name), not its
+  // URL, so editing the URL and sending again still compares. In folder mode
+  // that is only the file name, but opening a file unloads the editor and
+  // remounts this panel, so two same-named files never share state.
+  // The key is read when a response arrives: a route switch changes the key
+  // a render before its saved response lands, and that response must not
+  // become the "previous" of the new route.
+  const requestKey = selectorResponse
+    ? [selectorResponse.collectionName, ...selectorResponse.folderPath, selectorResponse.curlName].join("\u0000")
+    : "";
+  const [seen, setSeen] = useState({
+    response: proxyResponse,
+    key: requestKey,
+    method: formInput.method,
+    url: formInput.url,
+    previous: null as TResponseJson,
+  });
+  if (seen.response !== proxyResponse) {
+    // Errors and empty states are not worth comparing against: keep the last real response.
+    const usable = seen.response && !seen.response.error ? seen.response : seen.previous;
+    setSeen({
+      response: proxyResponse,
+      key: requestKey,
+      method: formInput.method,
+      url: formInput.url,
+      previous: seen.key === requestKey ? usable : null,
+    });
+    setFilterText("");
+    setCompareOpen(false);
+  }
+
+  // Local mode, nothing earlier this session: the newest history entry with
+  // the same method and URL template, skipping the one this response came
+  // from (a send adds it to history at the same time).
+  const historyPrevious = useMemo<TResponseJson>(() => {
+    if (seen.previous || !proxyResponse || proxyResponse.error) return null;
+    const same = history.filter(
+      (e) => e.method === seen.method && e.url === seen.url && e.responseJson && !e.responseJson.error,
+    );
+    const first = same[0]?.responseJson;
+    if (first && JSON.stringify(first) === JSON.stringify(proxyResponse)) return same[1]?.responseJson ?? null;
+    return first ?? null;
+  }, [seen, proxyResponse, history]);
+  const previous = seen.previous ?? historyPrevious;
+
+  const closeCompare = useCallback(() => {
+    setCompareOpen(false);
+    compareButtonRef.current?.focus();
+  }, []);
 
   const matchEls = useRef<HTMLElement[]>([]);
   const prevResponseRef = useRef(proxyResponse);
@@ -188,8 +253,7 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
 
   const showCopyButton = activeTab === "body" && effectiveViewMode !== "html";
 
-  const statusOk = proxyResponse?.status != null && proxyResponse.status >= 200 && proxyResponse.status < 300;
-  const statusWarn = proxyResponse?.status != null && proxyResponse.status >= 300 && proxyResponse.status < 500;
+  const kind = proxyResponse?.status != null ? statusKind(proxyResponse.status) : null;
 
   const parsedData = useMemo<JsonValue | null>(() => {
     if (!proxyResponse?.data) return null;
@@ -202,12 +266,29 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
     }
   }, [proxyResponse?.data]);
 
+  // FR-13: one match shows as itself, several as an array of the matches.
+  const filterResult = useMemo(
+    () => (filterText.trim() && parsedData !== null ? queryJsonPath(parsedData, filterText) : null),
+    [filterText, parsedData],
+  );
+  const filterActive = !!filterResult?.ok;
+  const shownData: JsonValue | null = filterResult?.ok
+    ? ((filterResult.matches.length === 1 ? filterResult.matches[0] : filterResult.matches) as JsonValue)
+    : parsedData;
+  const canFilter = parsedData !== null && !proxyResponse?.error;
+  const clearFilter = useCallback(() => {
+    setFilterText("");
+    setFilterOpen(false);
+  }, []);
+
   const rawText = useMemo(() => {
     if (!proxyResponse?.data) return "";
     return typeof proxyResponse.data === "string"
       ? proxyResponse.data
       : JSON.stringify(proxyResponse.data, null, 2);
   }, [proxyResponse?.data]);
+
+  const shownText = filterActive ? JSON.stringify(shownData, null, 2) : rawText;
 
   const headerCount = Object.keys(responseHeaders).length;
 
@@ -219,8 +300,8 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
         ([k, v]) => k.toLowerCase().includes(q) || v.toLowerCase().includes(q)
       ).length;
     }
-    return parsedData && searchQuery ? countMatches(parsedData, searchQuery) : 0;
-  }, [parsedData, searchQuery, activeTab, responseHeaders]);
+    return shownData && searchQuery ? countMatches(shownData, searchQuery) : 0;
+  }, [shownData, searchQuery, activeTab, responseHeaders]);
 
   const canSearch = (parsedData !== null && !proxyResponse?.error) || activeTab === "headers";
 
@@ -229,11 +310,6 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
     return `${(ms / 1000).toFixed(2)}s`;
   };
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
 
   const handleCopyHeaders = () => {
     navigator.clipboard.writeText(JSON.stringify(responseHeaders, null, 2));
@@ -250,57 +326,80 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
 
   return (
     <MatchCtx.Provider value={matchCtxValue}>
-      <section aria-label="Response" className="relative flex flex-col rounded-lg border border-white/8 bg-[#0a1628]/60 overflow-hidden h-full">
+      <section aria-label="Response" className="relative flex flex-col rounded-lg border border-white/8 bg-(--surface-1)/60 overflow-hidden h-full">
         {/* ── Header ── */}
-        <div className="flex items-center gap-3 border-b border-white/5 bg-[#0e1f35]/50 px-2 md:px-4 py-1 md:py-2 shrink-0">
-          <span className="text-[7px] md:text-[9px] tracking-[0.25em] uppercase text-white/25">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-white/5 bg-(--surface-2)/50 px-2 md:px-4 py-1 md:py-2 shrink-0">
+          <span className="text-[11px] md:text-[11px] tracking-[0.25em] uppercase text-white/50">
             Response
           </span>
 
-          {proxyResponse?.status != null && (
+          {proxyResponse?.status != null && kind && (
             <span
               aria-live="polite"
-              className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[8px] md:text-[10px] font-bold border"
-              style={{
-                background: statusOk
-                  ? "rgba(74,222,128,0.08)"
-                  : statusWarn
-                    ? "rgba(251,146,60,0.08)"
-                    : "rgba(248,113,113,0.08)",
-                borderColor: statusOk
-                  ? "rgba(74,222,128,0.2)"
-                  : statusWarn
-                    ? "rgba(251,146,60,0.2)"
-                    : "rgba(248,113,113,0.2)",
-                color: statusOk
-                  ? "#4ade80"
-                  : statusWarn
-                    ? "#fb923c"
-                    : "#f87171",
-              }}
+              data-status-kind={kind}
+              className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold border ${STATUS_CLASS[kind]}`}
             >
-              {statusOk ? (
-                <CheckCircle2 className="h-2.5 w-2.5 md:h-3 md:w-3" />
+              {kind === "success" ? (
+                <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
               ) : (
-                <AlertCircle className="h-2.5 w-2.5 md:h-3 md:w-3" />
+                <AlertCircle className="h-3 w-3" aria-hidden="true" />
               )}
-              {proxyResponse.status} {proxyResponse.statusText}
+              {proxyResponse.status} {reasonPhrase(proxyResponse.status, proxyResponse.statusText)}
             </span>
           )}
 
           {proxyResponse?.durationMs != null && (
-            <span className="text-[8px] md:text-[10px] text-white/30 font-mono">
+            <span className="text-xs text-white/60 font-mono" title="Round trip, including the proxy hop">
               {formatDuration(proxyResponse.durationMs)}
             </span>
           )}
 
           {proxyResponse?.sizeBytes != null && proxyResponse.sizeBytes > 0 && (
-            <span className="text-[8px] md:text-[10px] text-white/30 font-mono">
+            <span className="text-xs text-white/60 font-mono" title="Response body size as received">
               {formatSize(proxyResponse.sizeBytes)}
             </span>
           )}
 
           <div className="ml-auto flex items-center gap-1">
+            {proxyResponse && !proxyResponse.error && (
+              <button
+                ref={compareButtonRef}
+                type="button"
+                onClick={() => previous && setCompareOpen((o) => !o)}
+                aria-label="Compare with previous response"
+                aria-pressed={compareOpen}
+                aria-disabled={!previous}
+                title={previous ? "Compare with previous response" : "No earlier response for this request yet"}
+                className={`p-0.5 md:p-1 rounded transition-colors ${
+                  !previous
+                    ? "text-white/30 cursor-not-allowed"
+                    : compareOpen
+                      ? "text-(--brand) bg-white/5 ring-1 ring-white/15"
+                      : "text-white/60 hover:text-white/80 hover:bg-white/5"
+                }`}
+              >
+                <GitCompareArrows className="h-2.5 w-2.5 md:h-3 md:w-3" aria-hidden="true" />
+              </button>
+            )}
+            {canFilter && activeTab === "body" && !compareOpen && (
+              <button
+                type="button"
+                onClick={() => setFilterOpen((o) => !o)}
+                aria-label={filterActive ? "Filter with JSONPath (active)" : "Filter with JSONPath"}
+                aria-pressed={filterOpen}
+                title="Filter with JSONPath"
+                className={`relative p-0.5 md:p-1 rounded transition-colors ${
+                  filterOpen
+                    ? "text-(--brand) bg-white/5 ring-1 ring-white/15"
+                    : "text-white/60 hover:text-white/80 hover:bg-white/5"
+                }`}
+              >
+                <ListFilter className="h-2.5 w-2.5 md:h-3 md:w-3" aria-hidden="true" />
+                {filterActive && (
+                  <span data-testid="filter-dot" aria-hidden="true" className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-(--brand)" />
+                )}
+              </button>
+            )}
             {canSearch && (
               <button
                 onClick={() => setSearchOpen((o) => !o)}
@@ -308,18 +407,18 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
                 className={`p-0.5 md:p-1 rounded transition-colors ${
                   searchOpen
                     ? "text-yellow-300/90 bg-yellow-400/10 ring-1 ring-yellow-400/20"
-                    : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                    : "text-white/50 hover:text-white/60 hover:bg-white/5"
                 }`}
               >
                 <Search className="h-2.5 w-2.5 md:h-3 md:w-3" />
               </button>
             )}
-            {showCopyButton && parsedData && <CopyButton data={parsedData} />}
+            {showCopyButton && shownData && !compareOpen && <CopyButton data={shownData} />}
             {activeTab === "headers" && headerCount > 0 && (
               <button
                 onClick={handleCopyHeaders}
                 title="Copy all headers"
-                className="p-0.5 md:p-1 rounded transition-colors text-white/25 hover:text-white/60 hover:bg-white/5"
+                className="p-0.5 md:p-1 rounded transition-colors text-white/50 hover:text-white/60 hover:bg-white/5"
               >
                 {headersCopied ? (
                   <Check className="h-2.5 w-2.5 md:h-3 md:w-3 text-emerald-400" />
@@ -336,7 +435,7 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
                   className={`p-0.5 md:p-1 rounded transition-colors ${
                     effectiveViewMode === "json"
                       ? "text-cyan-300/90 bg-cyan-400/10 ring-1 ring-cyan-400/20"
-                      : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                      : "text-white/50 hover:text-white/60 hover:bg-white/5"
                   }`}
                 >
                   <Braces className="h-2.5 w-2.5 md:h-3 md:w-3" />
@@ -347,7 +446,7 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
                   className={`p-0.5 md:p-1 rounded transition-colors ${
                     effectiveViewMode === "text"
                       ? "text-cyan-300/90 bg-cyan-400/10 ring-1 ring-cyan-400/20"
-                      : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                      : "text-white/50 hover:text-white/60 hover:bg-white/5"
                   }`}
                 >
                   <FileText className="h-2.5 w-2.5 md:h-3 md:w-3" />
@@ -358,7 +457,7 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
                   className={`p-0.5 md:p-1 rounded transition-colors ${
                     effectiveViewMode === "html"
                       ? "text-cyan-300/90 bg-cyan-400/10 ring-1 ring-cyan-400/20"
-                      : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                      : "text-white/50 hover:text-white/60 hover:bg-white/5"
                   }`}
                 >
                   <Globe className="h-2.5 w-2.5 md:h-3 md:w-3" />
@@ -369,23 +468,35 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
         </div>
 
         {/* ── Tabs ── */}
-        {proxyResponse && !proxyResponse.error && (
-          <div className="flex items-center border-b border-white/5 bg-[#0e1f35]/30 shrink-0">
+        {proxyResponse && !proxyResponse.error && !compareOpen && (
+          <div role="tablist" aria-label="Response view" className="flex items-center border-b border-white/5 bg-(--surface-2)/30 shrink-0">
             {(["body", "headers"] as const).map((tab) => (
               <button
                 key={tab}
+                id={`res-tab-${tab}`}
+                role="tab"
+                type="button"
+                aria-selected={activeTab === tab}
+                tabIndex={activeTab === tab ? 0 : -1}
                 onClick={() => setActiveTab(tab)}
-                className="relative px-3 py-2 md:py-1.5 text-[9px] md:text-[10px] font-semibold tracking-[0.15em] uppercase transition-colors cursor-pointer min-h-[44px] md:min-h-0"
-                style={{
-                  color: activeTab === tab ? "#00e5cc" : "rgba(255,255,255,0.25)",
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                    e.preventDefault();
+                    const next = tab === "body" ? "headers" : "body";
+                    setActiveTab(next);
+                    document.getElementById(`res-tab-${next}`)?.focus();
+                  }
                 }}
+                className={`relative px-3 py-2 md:py-1.5 text-xs font-semibold capitalize transition-colors cursor-pointer min-h-[44px] md:min-h-0 ${
+                  activeTab === tab ? "text-(--brand)" : "text-white/60 hover:text-white/80"
+                }`}
               >
                 {tab}
                 {tab === "headers" && headerCount > 0 && (
-                  <span className="ml-1 text-[7px] text-white/20">({headerCount})</span>
+                  <span className="ml-1 text-xs text-white/60">({headerCount})</span>
                 )}
                 {activeTab === tab && (
-                  <span className="absolute bottom-0 left-2 right-2 h-px bg-cyan-400" />
+                  <span className="absolute bottom-0 left-2 right-2 h-px bg-cyan-400" aria-hidden="true" />
                 )}
               </button>
             ))}
@@ -393,7 +504,11 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
         )}
 
         {/* ── Floating Search ── */}
-        {searchOpen && canSearch && (
+        {filterOpen && canFilter && activeTab === "body" && !compareOpen && (
+          <JsonPathFilter value={filterText} onChange={setFilterText} onClear={clearFilter} result={filterResult} />
+        )}
+
+        {searchOpen && canSearch && !compareOpen && (
           <FloatingSearch
             value={searchQuery}
             onChange={setSearchQuery}
@@ -408,20 +523,25 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
         {/* ── Body ── */}
         {proxyResponse ? (
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            {activeTab === "headers" ? (
+            {compareOpen && previous && proxyResponse && !proxyResponse.error ? (
+              <ResponseCompare
+                previous={previous}
+                current={proxyResponse}
+                ignore={ignoreText}
+                onIgnoreChange={setIgnoreText}
+                onClose={closeCompare}
+              />
+            ) : activeTab === "headers" ? (
               <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
                 <HeadersTable headers={responseHeaders} searchQuery={searchQuery} />
               </div>
             ) : proxyResponse.error ? (
-              <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
-                <span className="font-mono text-[8px] md:text-[11px] text-red-400 whitespace-pre-wrap">
-                  {proxyResponse.error}
-                </span>
-              </div>
-            ) : effectiveViewMode === "json" && parsedData ? (
+              <ResponseError error={proxyResponse.error} />
+            ) : (effectiveViewMode === "json" || (filterActive && effectiveViewMode === "html")) && shownData !== null && parsedData ? (
               <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
                 <JsonNode
-                  value={parsedData}
+                  key={filterActive ? `filter:${filterText}` : "full"}
+                  value={shownData}
                   depth={0}
                   searchQuery={searchQuery}
                   defaultOpen={true}
@@ -430,16 +550,16 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
             ) : effectiveViewMode === "html" ? (
               <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                 {/* Preview header with inspect toggle */}
-                <div className="shrink-0 border-b border-white/5 bg-[#080f1a]/40 px-2 py-1 flex items-center gap-2">
-                  <Globe className="h-2.5 w-2.5 text-white/25" />
-                  <span className="text-[8px] md:text-[10px] text-white/25 tracking-wider uppercase">Preview</span>
+                <div className="shrink-0 border-b border-white/5 bg-(--surface-0)/40 px-2 py-1 flex items-center gap-2">
+                  <Globe className="h-2.5 w-2.5 text-white/50" />
+                  <span className="text-[11px] md:text-[11px] text-white/50 tracking-wider uppercase">Preview</span>
                   <button
                     onClick={() => setInspectMode(!inspectMode)}
                     title={inspectMode ? "Exit inspect mode" : "Inspect elements"}
                     className={`ml-auto p-1 rounded transition-colors ${
                       inspectMode
                         ? "text-cyan-300 bg-cyan-400/10 ring-1 ring-cyan-400/20"
-                        : "text-white/25 hover:text-white/60 hover:bg-white/5"
+                        : "text-white/50 hover:text-white/60 hover:bg-white/5"
                     }`}
                   >
                     <Crosshair className="h-3 w-3" />
@@ -478,11 +598,11 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
                 )}
 
                 {/* Source view header */}
-                <div className="shrink-0 border-t border-white/5 bg-[#080f1a]/40 px-2 py-1 flex items-center gap-2">
-                  <Code2 className="h-2.5 w-2.5 text-white/25" />
-                  <span className="text-[8px] md:text-[10px] text-white/25 tracking-wider uppercase">Source</span>
+                <div className="shrink-0 border-t border-white/5 bg-(--surface-0)/40 px-2 py-1 flex items-center gap-2">
+                  <Code2 className="h-2.5 w-2.5 text-white/50" />
+                  <span className="text-[11px] md:text-[11px] text-white/50 tracking-wider uppercase">Source</span>
                   {highlightedSourceLine !== null && (
-                    <span className="text-[8px] text-cyan-400/50 ml-auto">
+                    <span className="text-[11px] text-cyan-300 ml-auto">
                       Line {highlightedSourceLine + 1}
                     </span>
                   )}
@@ -500,25 +620,69 @@ export default function ResponsePanel({ dataSource: propDataSource }: { dataSour
               </div>
             ) : (
               <div className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
-                <pre className="font-mono text-[8px] md:text-[11px] text-white/60 leading-relaxed whitespace-pre-wrap break-all">
+                <pre className="font-mono text-[11px] md:text-[11px] text-white/60 leading-relaxed whitespace-pre-wrap break-all">
                   {searchQuery ? (
-                    <Highlight text={rawText} query={searchQuery} />
+                    <Highlight text={shownText} query={searchQuery} />
                   ) : (
-                    rawText
+                    shownText
                   )}
                 </pre>
               </div>
             )}
           </div>
         ) : (
-          <div className="flex flex-1 items-center justify-center py-8 gap-2 text-white/15">
+          <div className="flex flex-1 items-center justify-center py-8 gap-2 text-white/50">
             <Send size={14} />
-            <span className="text-[8px] md:text-[10px] tracking-[0.2em] uppercase">
+            <span className="text-[11px] md:text-[11px] tracking-[0.2em] uppercase">
               Send a request to see the response
             </span>
           </div>
         )}
       </section>
     </MatchCtx.Provider>
+  );
+}
+
+const STATUS_CLASS: Record<StatusKind, string> = {
+  success: "text-(--success) border-(--success)/30 bg-(--success)/10",
+  info: "text-(--info) border-(--info)/30 bg-(--info)/10",
+  warning: "text-(--warning) border-(--warning)/30 bg-(--warning)/10",
+  danger: "text-(--danger) border-(--danger)/30 bg-(--danger)/10",
+};
+
+/**
+ * A failed send, said in a way the user can act on: a cancelled request is
+ * not an error, and a localhost request without the extension says how to
+ * get it instead of only that it failed.
+ */
+function ResponseError({ error }: { error: string }) {
+  if (/Request cancelled/.test(error)) {
+    return (
+      <p role="status" className="flex-1 flex items-center justify-center p-6 text-sm text-white/70">
+        Request cancelled.
+      </p>
+    );
+  }
+  if (/Hittable Extension/i.test(error)) {
+    return (
+      <div role="alert" className="flex-1 flex flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-sm font-semibold text-white/90">localhost needs the Hittable browser extension</p>
+        <p className="max-w-md text-xs text-white/70">
+          Browsers stop a web page from calling your own machine. The extension sends localhost requests for this tab;
+          everything else goes through the proxy and works without it.
+        </p>
+        <a
+          href={EXTENSION_URL}
+          className="rounded-md bg-(--brand) px-3 py-1.5 text-xs font-bold text-black hover:opacity-90"
+        >
+          Install the extension
+        </a>
+      </div>
+    );
+  }
+  return (
+    <div role="alert" className="flex-1 min-h-0 overflow-auto p-2 md:p-3">
+      <span className="font-mono text-xs text-red-400 whitespace-pre-wrap">{error}</span>
+    </div>
   );
 }

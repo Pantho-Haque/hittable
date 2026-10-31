@@ -100,7 +100,7 @@ export default function RenameModal({
           subtitle={`Currently: ${currentName}`}
           onClose={() => setOpen(false)}
         >
-          {error && <p className="text-[10px] text-red-400 -mt-2">{error}</p>}
+          {error && <p className="text-[11px] text-red-400 -mt-2">{error}</p>}
           <ModalInput
             autoFocus
             value={value}

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import RequestForm from "@/components/hittable/RequestForm";
-import { mountData } from "../../helpers/dataHarness";
+import { mountData, sampleCollections } from "../../helpers/dataHarness";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -38,10 +38,10 @@ describe("URL bar", () => {
     expect(screen.getByLabelText("Request URL")).toHaveValue("https://<<HOST>>/users");
   });
 
-  it("offers GET POST PUT PATCH DELETE HEAD and switching marks the request unsaved", async () => {
+  it("offers GET POST PUT PATCH DELETE HEAD OPTIONS and switching marks the request unsaved", async () => {
     const { user, ctx } = await setup();
     const select = screen.getByLabelText("HTTP method");
-    expect([...(select as HTMLSelectElement).options].map((o) => o.value)).toEqual(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]);
+    expect([...(select as HTMLSelectElement).options].map((o) => o.value)).toEqual(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
     await user.selectOptions(select, "PATCH");
     expect(ctx().formInput.method).toBe("PATCH");
     expect(screen.getByText(/Unsaved · Ctrl\/Cmd\+S/)).toBeInTheDocument();
@@ -67,10 +67,10 @@ describe("URL bar", () => {
     const paste = (el: HTMLElement, text: string) =>
       fireEvent.paste(el, { clipboardData: { getData: () => text } });
 
-    it("parses method, URL, headers and body", async () => {
+    it("parses method, URL, headers and body at once (no raw flash)", async () => {
       const { url, ctx } = await setup();
       paste(url, `curl -X PUT https://api.example.com/items/1 -H "Content-Type: application/json" -d '{"title":"Done"}'`);
-      await waitFor(() => expect(ctx().formInput.method).toBe("PUT"), { timeout: 2000 });
+      await waitFor(() => expect(ctx().formInput.method).toBe("PUT"), { timeout: 100 });
       expect(ctx().formInput.url).toBe("https://api.example.com/items/1");
       expect(JSON.parse(ctx().formInput.headers)).toEqual({ "Content-Type": "application/json" });
       expect(JSON.parse(ctx().formInput.body)).toEqual({ title: "Done" });
@@ -85,6 +85,15 @@ describe("URL bar", () => {
       expect(JSON.parse(ctx().formInput.body)).toEqual({ user: "<<user>>" });
       const env = ctx().collections.find((c) => c.collectionName === "Users")!.env;
       expect(env).toEqual({ HOST: "api.example.com", TOKEN: "env-token", version: "", user: "" });
+    });
+
+    it("Undo on the toast restores the request from before the paste", async () => {
+      const { user, url, ctx } = await setup();
+      const before = { ...ctx().formInput };
+      paste(url, `curl -X DELETE https://api.example.com/items/9`);
+      await waitFor(() => expect(ctx().formInput.method).toBe("DELETE"));
+      await user.click(await screen.findByRole("button", { name: "Undo" }));
+      expect(ctx().formInput).toEqual(before);
     });
 
     it("pasting plain text is an ordinary paste", async () => {
@@ -153,24 +162,72 @@ describe("URL bar", () => {
       await user.clear(url);
       await user.type(url, "http://localhost:3000/health");
       await user.click(screen.getByRole("button", { name: "Send" }));
-      expect(await screen.findByText(/Install the Hittable Extension to make localhost requests/)).toBeInTheDocument();
+      expect(await screen.findByText("localhost needs the Hittable browser extension")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Install the extension" })).toBeInTheDocument();
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it("shows Sending… and blocks a double send while in flight", async () => {
+    // Send turns into Cancel while a request is in flight (FR-6): a second
+    // click cancels instead of sending twice.
+    it("Send becomes Cancel while in flight, and a request is never sent twice", async () => {
       let release!: (v: unknown) => void;
       fetchMock.mockReturnValue(new Promise((r) => (release = r)));
       const { user } = await setup();
       await user.click(screen.getByRole("button", { name: "Send" }));
-      const sending = screen.getByRole("button", { name: "Sending…" });
-      expect(sending).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+      await user.keyboard("{Control>}{Enter}{/Control}"); // ignored while in flight
+      expect(fetchMock).toHaveBeenCalledTimes(1);
       await act(async () => release({ status: 200, ok: true, json: async () => ({ status: 200 }) }));
       expect(await screen.findByRole("button", { name: "Send" })).toBeEnabled();
     });
 
+    it("Cancel aborts the request, says so, and the next Send works", async () => {
+      fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+        new Promise((_, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason))));
+      const { user, ctx } = await setup();
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await new Promise((r) => setTimeout(r, 450)); // past the double-click guard
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await waitFor(() => expect(ctx().proxyResponse).toEqual({ error: "Request cancelled" }));
+      expect(await screen.findByRole("button", { name: "Send" })).toBeEnabled();
+      expect(ctx().history).toHaveLength(0); // a cancelled request is not history
+      proxyReplies({ data: {}, status: 200, statusText: "OK", ok: true });
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(ctx().proxyResponse?.status).toBe(200));
+    });
+
+    // Send becomes Cancel under the pointer; the second click of a
+    // double-click must not cancel what the first one sent.
+    it("double-clicking Send does not cancel the request", async () => {
+      let release!: (v: unknown) => void;
+      fetchMock.mockReturnValue(new Promise((r) => (release = r)));
+      const { user, ctx } = await setup();
+      await user.dblClick(screen.getByRole("button", { name: "Send" }));
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+      await act(async () => release({ status: 200, ok: true, json: async () => ({ status: 200, statusText: "OK", ok: true }) }));
+      await waitFor(() => expect(ctx().proxyResponse?.status).toBe(200));
+    });
+
+    it("Esc in the URL bar cancels an in-flight request", async () => {
+      fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+        new Promise((_, reject) => init.signal!.addEventListener("abort", () => reject(init.signal!.reason))));
+      const { user, url, ctx } = await setup();
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await user.click(url);
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(ctx().proxyResponse).toEqual({ error: "Request cancelled" }));
+    });
+
+    it("size is the byte count the proxy reports, not the re-serialised body", async () => {
+      proxyReplies({ data: { a: 1 }, sizeBytes: 1000, status: 200, statusText: "OK", ok: true });
+      const { user, ctx } = await setup();
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(ctx().proxyResponse?.sizeBytes).toBe(1000));
+    });
+
     it("a JSON error disables Send, and Ctrl/Cmd+Enter explains why instead of sending", async () => {
       const { user } = await setup();
-      await user.click(screen.getByRole("button", { name: "Body" }));
+      await user.click(screen.getByRole("tab", { name: "Body" }));
       const body = screen.getByLabelText("body JSON");
       await user.clear(body);
       await user.type(body, "{{not json");
@@ -203,10 +260,75 @@ describe("URL bar", () => {
     });
   });
 
-  it("Copy as CURL copies a curl command for the current request", async () => {
+  // The cURL-only button became a "Copy as" menu (FR-8). Copied code has the
+  // variables filled in (secrets win), so it runs as it is.
+  it("Copy as → cURL copies the request with its variables filled in", async () => {
     const { user } = await setup();
-    await user.click(screen.getByRole("button", { name: "Copy as CURL" }));
-    // user-event provides the clipboard
-    expect(await navigator.clipboard.readText()).toBe(`curl -X GET 'https://<<HOST>>/users' -H 'Authorization: Bearer <<TOKEN>>'`);
+    await user.click(screen.getByRole("button", { name: /Copy as/ }));
+    await user.click(screen.getByRole("menuitem", { name: "cURL" }));
+    const copied = await navigator.clipboard.readText(); // user-event provides the clipboard
+    expect(copied).toMatch(/^curl /);
+    expect(copied).toContain("https://api.example.com/users");
+    expect(copied).toContain("Authorization: Bearer secret-token");
+    expect(await screen.findByText("Copied as cURL")).toBeInTheDocument();
+  });
+
+  describe("variables in the URL bar", () => {
+    it("defined variables are highlighted as resolved, unknown ones as unresolved with a note", async () => {
+      const { user, url } = await setup();
+      await user.clear(url);
+      await user.type(url, "https://<<HOST>>/x/<<MISSING>>");
+      const layer = url.parentElement!;
+      expect(layer.querySelector('[data-var="HOST"]')).toHaveAttribute("data-resolved", "true");
+      expect(layer.querySelector('[data-var="MISSING"]')).toHaveAttribute("data-resolved", "false");
+      expect(screen.getByRole("note")).toHaveTextContent("Unknown variable <<MISSING>>");
+      expect(screen.getByRole("note")).not.toHaveTextContent("HOST");
+    });
+
+    it("never shows a variable's value in the bar", async () => {
+      const { url } = await setup();
+      expect(url.parentElement!.textContent).not.toContain("secret-token");
+      expect(url.parentElement!.textContent).not.toContain("api.example.com");
+    });
+  });
+
+  // FR-16: a collection marked production confirms state-changing sends.
+  describe("production guard", () => {
+    const prodCollections = () => {
+      const c = sampleCollections();
+      c[0].env = { ...c[0].env, HITTABLE_PRODUCTION: "true" };
+      return c;
+    };
+
+    it("shows the PRODUCTION badge and sends a GET without asking", async () => {
+      proxyReplies({ data: {}, status: 200, statusText: "OK", ok: true });
+      const { user } = await setup({ collections: prodCollections() });
+      expect(screen.getByText("PRODUCTION")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("a POST waits for confirmation: Cancel sends nothing, Send sends once", async () => {
+      proxyReplies({ data: {}, status: 201, statusText: "Created", ok: true });
+      const { user } = await setup({ collections: prodCollections(), folderPath: ["Admin"], route: "Create user" });
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      const dialog = within(screen.getByRole("dialog", { name: "Send POST to production?" }));
+      expect(dialog.getByText(/api\.example\.com/)).toBeInTheDocument();
+      await user.click(dialog.getByRole("button", { name: "Cancel" }));
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      await user.keyboard("{Control>}{Enter}{/Control}"); // the shortcut is guarded too
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Send POST" }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    });
+
+    it("no badge and no question without the variable", async () => {
+      proxyReplies({ data: {}, status: 201, ok: true });
+      const { user } = await setup({ folderPath: ["Admin"], route: "Create user" });
+      expect(screen.queryByText("PRODUCTION")).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    });
   });
 });

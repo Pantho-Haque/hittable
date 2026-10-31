@@ -26,6 +26,7 @@ export const NotificationProvider = ({
     position = "top-right",
     mode = "info", // Default to info if not provided
     timeout = 2000,
+    action,
   }: TNotify) => {
     const id = Math.ceil(Math.random() * 10000000);
     const newMessage = {
@@ -35,6 +36,7 @@ export const NotificationProvider = ({
       position,
       mode,
       timeout,
+      action,
     };
 
     setMessages((prev) => [...prev, newMessage]);
@@ -83,28 +85,43 @@ export const NotificationProvider = ({
                   }}
                   transition={{ duration: 0.3, ease: "easeInOut" }}
                   key={msg.id}
-                  className="rounded-md shadow-lg overflow-hidden truncate transition-all duration-300 transform max-w-[320px]"
+                  className="rounded-md shadow-lg shadow-black/40 overflow-hidden max-w-[340px]"
                 >
+                  {/* Errors interrupt (alert); everything else waits its turn. */}
                   <div
-                    className={`flex items-start p-4 border-l-4 ${modeClass(
+                    role={msg.mode === "error" ? "alert" : "status"}
+                    aria-live={msg.mode === "error" ? "assertive" : "polite"}
+                    className={`flex items-start gap-3 py-3 pl-3 pr-2 border border-white/10 border-l-4 bg-(--surface-2) text-white/90 ${modeClass(
                       msg.mode as TNotificationMode
                     )}`}
                   >
-                    <div className="flex-1 ml-2">
-                      <p className="font-medium ">
-                        {msg.title}
-                      </p>
-                      <p className="text-sm truncate">
-                        {msg.description}
-                      </p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold">{msg.title}</p>
+                      {msg.description && (
+                        <p className="text-xs text-white/70 break-words">{msg.description}</p>
+                      )}
                     </div>
+                    {msg.action && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          msg.action!.onClick();
+                          setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+                        }}
+                        className="shrink-0 self-center rounded border border-white/15 px-2 py-1 text-xs font-semibold text-(--brand) hover:bg-white/5 cursor-pointer"
+                      >
+                        {msg.action.label}
+                      </button>
+                    )}
                     <button
+                      type="button"
+                      aria-label="Dismiss notification"
                       onClick={() =>
                         setMessages((prev) =>
                           prev.filter((m) => m.id !== msg.id)
                         )
                       }
-                      className="ml-4"
+                      className="shrink-0 rounded px-1.5 text-base leading-none text-white/60 hover:text-white cursor-pointer"
                     >
                       ×
                     </button>
@@ -133,16 +150,15 @@ const positionClass = (position: TNotificationPosition) => {
   }
 };
 
+// Toasts sit on the app's own dark surface whatever the OS theme is; the
+// mode shows as the left border colour (and the role says it in words).
 const modeClass = (mode: TNotificationMode) => {
-  const textColor= 'text-zinc-700 dark:text-zinc-200'
   switch (mode) {
-    case "info":
-      return textColor + "border-l-blue-500 bg-blue-100 dark:bg-blue-300 ";
     case "success":
-      return textColor + "border-l-green-500 bg-green-100 dark:bg-green-400";
+      return "border-l-(--success)";
     case "error":
-      return textColor + "border-l-red-500 bg-red-100 dark:bg-red-400";
+      return "border-l-(--danger)";
     default:
-      return textColor + "border-l-blue-500 bg-blue-100 dark:bg-blue-300";
+      return "border-l-(--info)";
   }
 };

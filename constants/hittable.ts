@@ -7,6 +7,7 @@ export const HITTABLE_METHODS = [
   "PATCH",
   "DELETE",
   "HEAD",
+  "OPTIONS",
 ];
 
 

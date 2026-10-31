@@ -13,7 +13,7 @@ export default function CopyButton({ data }: { data: unknown }) {
   return (
     <button
       onClick={copy}
-      className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-white/30 hover:text-white/70 hover:bg-white/5 transition-all"
+      className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-white/50 hover:text-white/70 hover:bg-white/5 transition-all"
       title="Copy JSON"
     >
       {copied ? (

@@ -13,6 +13,8 @@ Hittable has no account and no hidden store. A project is a folder in your repos
 <your repo>/
 └── hittable/
     ├── env.json                 variables shared by every request in the folder
+    ├── env.local.json           optional: machine-only values, layered over env.json
+    ├── .gitignore               lists env.local.json
     ├── testcollection/
     │   └── test.hit             a real, runnable request
     └── notes/
@@ -82,6 +84,12 @@ Any `.md` file in the folder is a note. The terminal app renders it with a live 
 ## Sharing between the two apps
 
 The terminal app and the web app open the same folder with no conversion step. Edit a request in the browser, run it from the terminal; stage and commit from the terminal's Git panel; your teammates `git pull` and open the folder in whichever tool they prefer. Autosave in both apps writes on a short debounce and both detect files changed underneath them, so switching tools mid-session is fine.
+
+### `env.local.json`: values that stay out of git
+
+`hittable/env.local.json` has the same flat shape as `env.json`, and its keys override `env.json`'s. Put the real tokens there and keep placeholders (or nothing) in `env.json`. Both apps read the two layered the same way; the web app adds `env.local.json` to `hittable/.gitignore` when it opens a folder (appending, never rewriting the file) and `hittable init` writes that line too.
+
+`HITTABLE_PRODUCTION` set to `true` in either file marks the environment as production: both apps then confirm before sending anything but `GET`, `HEAD` or `OPTIONS`.
 
 A live example lives in this repository at `hittable/` (`env.json`, `testcollection/test.hit`, `notes/sample.md`).
 

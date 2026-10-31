@@ -89,8 +89,12 @@ function paramsFromUrl(url: string): Record<string, string> {
 }
 
 // A JSON body keeps its types; key=value&… form data becomes a JSON object
-// (the body editor is JSON); anything else is kept as raw text.
-function bodyFromData(data: string): string {
+// (the body editor is JSON); anything else is kept as raw text. Data sent with
+// an explicit urlencoded Content-Type stays as it is: that is a Form body
+// (FR-4), and turning it into JSON would change the request on every save.
+function bodyFromData(data: string, headers: Record<string, string>): string {
+  const ct = Object.entries(headers).find(([k]) => k.toLowerCase() === "content-type")?.[1] ?? "";
+  if (/x-www-form-urlencoded/i.test(ct)) return data;
   if (formatJson(data).error === null) return formatJson(data).output;
   if (/^[^=&\s{}[\]]+=[^&]*(&[^=&\s]+=[^&]*)*$/.test(data)) return formatJson(paramsFromUrl("?" + data)).output;
   return data;
@@ -150,7 +154,7 @@ export function curlConverter(curlString: string): THittableCurlJson {
     url,
     params: formatJson(paramsFromUrl(url)).output,
     headers: formatJson(headers).output,
-    body: data.length ? bodyFromData(rawBody) : Object.keys(form).length ? formatJson(form).output : "{}",
+    body: data.length ? bodyFromData(rawBody, headers) : Object.keys(form).length ? formatJson(form).output : "{}",
   };
 }
 

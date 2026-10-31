@@ -3,6 +3,38 @@
 import Link from "next/link";
 import { usePathname, useSelectedLayoutSegment } from "next/navigation";
 import WorkspaceSwitcher from "@/components/workspace/WorkspaceSwitcher";
+import { useSyncExternalStore } from "react";
+import { Search } from "lucide-react";
+import { openTool } from "@/utils/uiEvents";
+
+const noSubscribe = () => () => {};
+const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform);
+
+// Opens the command palette (Ctrl/Cmd+K); ⌘ on a Mac, decided after hydration.
+function PaletteButton() {
+  const mac = useSyncExternalStore(noSubscribe, isMac, () => false);
+  return (
+    <button
+      type="button"
+      // Safari does not focus a button on click; focus it so the palette
+      // can hand focus back here when it closes.
+      onClick={(e) => {
+        e.currentTarget.focus();
+        openTool("palette");
+      }}
+      aria-label="Search and commands"
+      aria-keyshortcuts="Control+K Meta+K"
+      title={`Search and commands (${mac ? "⌘K" : "Ctrl+K"})`}
+      className="flex min-h-8 items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-(--brand)"
+    >
+      <Search size={14} aria-hidden="true" />
+      <span className="hidden sm:inline">Search…</span>
+      <kbd className="hidden rounded border border-white/15 px-1.5 font-mono text-[11px] text-white/70 sm:inline">
+        {mac ? "⌘K" : "Ctrl K"}
+      </kbd>
+    </button>
+  );
+}
 
 type NavLink = { label: string; href: string; external?: boolean };
 const GITHUB: NavLink = { label: "GitHub", href: "https://github.com/Pantho-Haque/hittable", external: true };
@@ -48,7 +80,7 @@ export default function Topbar() {
 
         {(isApp || isDocs) && (
           <>
-            <span className="text-white/15 text-xs">/</span>
+            <span className="text-white/50 text-xs">/</span>
             <span className="text-[11px] tracking-[0.15em] uppercase text-cyan-400/70">
               {isApp ? "App" : "Docs"}
             </span>
@@ -65,10 +97,10 @@ export default function Topbar() {
               href={item.href}
               target={item.external ? "_blank" : undefined}
               rel={item.external ? "noopener noreferrer" : undefined}
-              className={`text-[10px] tracking-[0.2em] uppercase transition-colors hover:text-cyan-400 ${
+              className={`text-[11px] tracking-[0.2em] uppercase transition-colors hover:text-cyan-400 ${
                 (item.href === "/docs" && pathname === "/docs") || (item.href !== "/docs" && !item.external && pathname.startsWith(item.href))
                   ? "text-cyan-400"
-                  : "text-white/30"
+                  : "text-white/50"
               }`}
             >
               {item.label}
@@ -80,13 +112,16 @@ export default function Topbar() {
       {/* Right — CTA */}
       <div className="flex items-center gap-3">
         {isApp ? (
-          <WorkspaceSwitcher />
+          <>
+            <PaletteButton />
+            <WorkspaceSwitcher />
+          </>
         ) : (
           <Link
             href="/hittable"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold tracking-[0.15em] uppercase rounded text-black transition-all hover:scale-105 active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-[0.15em] uppercase rounded text-black transition-all hover:scale-105 active:scale-95"
             style={{
-              background: "#00e5cc",
+              background: "var(--brand)",
               boxShadow: "0 0 12px rgba(0,229,204,0.3)",
             }}
           >

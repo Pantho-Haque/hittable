@@ -58,56 +58,56 @@ export default function JsonNode({
   const indent = depth * 16;
 
   return (
-    <div className="font-mono text-[9px] md:text-[11px] leading-[1.7]">
+    <div className="font-mono text-[11px] md:text-[11px] leading-[1.7]">
       <div
         className="flex items-start group hover:bg-white/3 rounded transition-colors"
         style={{ paddingLeft: indent }}
       >
-        <button
-          onClick={() => isExpandable && setOpen((o) => !o)}
-          aria-label={isExpandable ? (open ? "Collapse" : "Expand") : undefined}
-          aria-expanded={isExpandable ? open : undefined}
-          className={`w-3.5 h-4 md:w-4 md:h-5 flex items-center justify-center shrink-0 transition-colors ${
-            isExpandable
-              ? "cursor-pointer text-white/30 hover:text-white/60"
-              : "cursor-default text-transparent"
-          }`}
-        >
-          {isExpandable ? (
-            open ? (
+        {/* Only containers get a toggle; a leaf keeps the indent with a plain
+            spacer (an empty button there was an unnamed tab stop per value). */}
+        {isExpandable ? (
+          <button
+            onClick={() => setOpen((o) => !o)}
+            aria-label={open ? "Collapse" : "Expand"}
+            aria-expanded={open}
+            className="w-3.5 h-4 md:w-4 md:h-5 flex items-center justify-center shrink-0 transition-colors cursor-pointer text-white/60 hover:text-white/80"
+          >
+            {open ? (
               <ChevronDown className="w-2.5 h-2.5 md:w-3 md:h-3" />
             ) : (
               <ChevronRight className="w-2.5 h-2.5 md:w-3 md:h-3" />
-            )
-          ) : null}
-        </button>
+            )}
+          </button>
+        ) : (
+          <span aria-hidden="true" className="w-3.5 h-4 md:w-4 md:h-5 shrink-0" />
+        )}
 
         {keyName !== undefined && (
           <>
-            <span className="text-[#7eb8f7]/70 shrink-0">
+            <span className="text-sky-300/80 shrink-0">
               <Highlight text={`"${keyName}"`} query={searchQuery} />
             </span>
-            <span className="text-white/25 mx-1 shrink-0">:</span>
+            <span className="text-white/50 mx-1 shrink-0">:</span>
           </>
         )}
 
         {isExpandable ? (
-          <span className="text-white/40">
+          <span className="text-white/60">
             {type === "array" ? "[" : "{"}
             {!open && (
               <>
-                <span className="text-white/25 mx-1 text-[8px] md:text-[10px] italic">
+                <span className="text-white/50 mx-1 text-[11px] md:text-[11px] italic">
                   {childCount} {type === "array" ? "items" : "keys"}
                 </span>
                 {type === "array" ? "]" : "}"}
-                {!isLast && <span className="text-white/20">,</span>}
+                {!isLast && <span className="text-white/50">,</span>}
               </>
             )}
           </span>
         ) : (
           <span>
             {renderPrimitive()}
-            {!isLast && <span className="text-white/20">,</span>}
+            {!isLast && <span className="text-white/50">,</span>}
           </span>
         )}
       </div>
@@ -137,11 +137,11 @@ export default function JsonNode({
                 ),
               )}
           <div
-            className="font-mono text-[8px] md:text-[11px] text-white/40 leading-[1.7]"
+            className="font-mono text-[11px] md:text-[11px] text-white/60 leading-[1.7]"
             style={{ paddingLeft: indent + 4 }}
           >
             {type === "array" ? "]" : "}"}
-            {!isLast && <span className="text-white/20">,</span>}
+            {!isLast && <span className="text-white/50">,</span>}
           </div>
         </>
       )}

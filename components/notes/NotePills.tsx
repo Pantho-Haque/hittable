@@ -142,7 +142,7 @@ export default function NotePills({
               ) : (
                 <>
                   <div className="flex items-center gap-2">
-                    <FileText size={11} className={`shrink-0 ${isSelected ? "text-cyan-400" : "text-white/20"}`} />
+                    <FileText size={11} className={`shrink-0 ${isSelected ? "text-cyan-400" : "text-white/50"}`} />
                     <span
                       className={`text-xs font-medium truncate ${isSelected ? "text-cyan-300" : "text-white/60"}`}
                     >
@@ -150,7 +150,7 @@ export default function NotePills({
                     </span>
                   </div>
                   {preview && (
-                    <p className="text-[10px] text-white/20 truncate pl-[19px] leading-relaxed">
+                    <p className="text-[11px] text-white/50 truncate pl-[19px] leading-relaxed">
                       {preview}
                     </p>
                   )}
@@ -166,14 +166,14 @@ export default function NotePills({
                   <button
                     onClick={() => startRename(id)}
                     title="Rename"
-                    className="text-white/20 hover:text-cyan-400 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
+                    className="text-white/50 hover:text-cyan-400 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
                   >
                     <Pencil size={11} />
                   </button>
                   <button
                     onClick={() => handleDelete(id)}
                     title="Delete"
-                    className="text-white/20 hover:text-red-400 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
+                    className="text-white/50 hover:text-red-400 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
                   >
                     <Trash2 size={11} />
                   </button>
@@ -189,14 +189,14 @@ export default function NotePills({
                   <button
                     onClick={confirmRename}
                     title="Confirm rename"
-                    className="text-white/30 hover:text-green-400 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
+                    className="text-white/50 hover:text-green-400 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
                   >
                     <Check size={11} />
                   </button>
                   <button
                     onClick={() => setRenamingId(null)}
                     title="Cancel"
-                    className="text-white/30 hover:text-white/60 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
+                    className="text-white/50 hover:text-white/60 transition-colors cursor-pointer p-1 rounded hover:bg-white/5"
                   >
                     <X size={11} />
                   </button>
@@ -210,7 +210,7 @@ export default function NotePills({
       {/* add new — pinned to bottom */}
       <button
         onClick={addNote}
-        className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-dashed border-white/10 text-white/30 hover:border-cyan-500/30 hover:text-cyan-400 transition-all text-xs w-full cursor-pointer"
+        className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-dashed border-white/10 text-white/50 hover:border-cyan-500/30 hover:text-cyan-400 transition-all text-xs w-full cursor-pointer"
       >
         <Plus size={11} />
         New note

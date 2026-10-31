@@ -12,16 +12,16 @@ export const useNotification = () => {
 
   const { notify } = context;
 
-  const info = ({ title, desc, position, timeout }: TNotify) => {
-    notify({ title, desc, position, mode: "info", timeout });
+  const info = ({ title, desc, position, timeout, action }: TNotify) => {
+    notify({ title, desc, position, mode: "info", timeout, action });
   };
 
-  const success = ({ title, desc, position, timeout }: TNotify) => {
-    notify({ title, desc, position, mode: "success", timeout });
+  const success = ({ title, desc, position, timeout, action }: TNotify) => {
+    notify({ title, desc, position, mode: "success", timeout, action });
   };
 
-  const error = ({ title, desc, position, timeout }: TNotify) => {
-    notify({ title, desc, position, mode: "error", timeout });
+  const error = ({ title, desc, position, timeout, action }: TNotify) => {
+    notify({ title, desc, position, mode: "error", timeout, action });
   };
 
   return {

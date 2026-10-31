@@ -141,8 +141,25 @@ describe("DirectoryTree (explorer)", () => {
     await user.click(row("users"));
     await user.keyboard("{Delete}");
     await user.click(screen.getByRole("button", { name: "Delete" }));
+    // The files leave the disk only after the confirmation, which names the
+    // folder and says it goes with everything in it.
+    const dialog = within(screen.getByRole("dialog", { name: "Delete “users”?" }));
+    expect(dialog.getByText(/everything in it/)).toBeInTheDocument();
+    expect(root.at("hittable/users")).toBeDefined();
+    await user.click(dialog.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(screen.queryByRole("treeitem", { name: "users" })).not.toBeInTheDocument());
     expect(root.at("hittable/users")).toBeUndefined();
+  });
+
+  it("cancelling the delete confirmation keeps the files", async () => {
+    const user = await mount();
+    await user.click(row("users"));
+    await user.keyboard("{Delete}");
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(root.at("hittable/users")).toBeDefined();
+    expect(screen.getByRole("treeitem", { name: "users" })).toBeInTheDocument();
   });
 
   it("deleting the open file closes it", async () => {
@@ -151,6 +168,7 @@ describe("DirectoryTree (explorer)", () => {
     expect(screen.getByLabelText("open file")).toHaveTextContent("README.md");
     await user.pointer({ keys: "[MouseRight]", target: row("README.md") });
     await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(screen.getByLabelText("open file")).toHaveTextContent(""));
   });
 

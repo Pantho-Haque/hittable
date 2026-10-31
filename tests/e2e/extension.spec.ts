@@ -18,15 +18,22 @@ import {
 test.describe("without the browser extension", () => {
   test.use({ extension: false });
 
-  test("the app explains how to install it and can be dismissed", async ({ page, seed }) => {
+  // FR-10: the "No Extension Found" dialog used to open by itself on every
+  // visit, even for people who never call localhost. Now nothing pops up; a
+  // status button explains on demand, and a localhost send says what to do.
+  const extensionButton = (page: import("@playwright/test").Page) =>
+    page.getByRole("button", { name: "Extension not installed" });
+
+  test("nothing pops up; the status button explains how to install it", async ({ page, seed }) => {
     await seed({ collections: [collection("Local", [route("r", `curl -X GET ${LOCAL_API}/users`)])] });
     await openRoute(page, "Local", "r");
     // The app pings for ~5 s before deciding the extension is missing.
-    const modal = dialog(page, "No Extension Found");
-    await expect(modal).toBeVisible({ timeout: 10_000 });
-    await expect(modal.getByText(/install Hittable Extension/i)).toBeVisible();
+    await expect(extensionButton(page)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await extensionButton(page).click();
+    const modal = dialog(page, "Localhost extension");
     await expect(modal.getByText("chrome://extensions")).toBeVisible();
-    await expect(modal.getByRole("button", { name: "Download" })).toBeVisible();
+    await expect(modal.getByText(/Only needed for localhost/)).toBeVisible();
     await modal.getByRole("button", { name: "Close" }).click();
     await expect(modal).toBeHidden();
   });
@@ -35,8 +42,8 @@ test.describe("without the browser extension", () => {
     await seed({ collections: [collection("Local", [route("r", `curl -X GET ${LOCAL_API}/users`)])] });
     await context.route("https://github.com/**", (r) => r.fulfill({ status: 200, body: "ok" }));
     await openRoute(page, "Local", "r");
-    const modal = dialog(page, "No Extension Found");
-    await expect(modal).toBeVisible({ timeout: 10_000 });
+    await extensionButton(page).click({ timeout: 10_000 });
+    const modal = dialog(page, "Localhost extension");
     const [popup] = await Promise.all([context.waitForEvent("page"), modal.getByRole("button", { name: "Download" }).click()]);
     expect(popup.url()).toBe("https://github.com/Pantho-Haque/hittable/releases/latest/download/hittable-extension.zip");
   });
@@ -45,13 +52,12 @@ test.describe("without the browser extension", () => {
     test(`a request to ${host} says to install the extension and never hits the proxy`, async ({ page, seed }) => {
       await seed({ collections: [collection("Local", [route("r", `curl -X GET http://${host}:4100/users`)])] });
       await openRoute(page, "Local", "r");
-      const modal = dialog(page, "No Extension Found");
-      await expect(modal).toBeVisible({ timeout: 10_000 });
-      await modal.getByRole("button", { name: "Close" }).click();
+      await expect(extensionButton(page)).toBeVisible({ timeout: 10_000 });
       let proxied = false;
       page.on("request", (r) => r.url().endsWith("/api/proxy") && (proxied = true));
       await send(page);
-      await expect(response(page).getByText("Install the Hittable Extension to make localhost requests")).toBeVisible();
+      await expect(response(page).getByText("localhost needs the Hittable browser extension")).toBeVisible();
+      await expect(response(page).getByRole("link", { name: "Install the extension" })).toBeVisible();
       expect(proxied).toBe(false);
     });
   }

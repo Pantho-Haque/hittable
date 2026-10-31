@@ -15,6 +15,7 @@ import {
   scaffoldHittable,
   validateHittable,
   readEnvFile,
+  LOCAL_ENV_FILE,
 } from "@/services/workspace/DirectoryService";
 import {
   saveDirectoryHandle,
@@ -309,7 +310,9 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
       const writable = await file.handle.createWritable();
       await writable.write(latest);
       await writable.close();
-      if (file.kind === "env" && workspaceDir && workspaceDir === hittableDirRef.current) {
+      // env.local.json layers over env.json, so saving either re-reads both.
+      const envFile = file.kind === "env" || file.path[file.path.length - 1] === LOCAL_ENV_FILE;
+      if (envFile && workspaceDir && workspaceDir === hittableDirRef.current) {
         const env = await readEnvFile(workspaceDir);
         setEnvContent(env);
       }

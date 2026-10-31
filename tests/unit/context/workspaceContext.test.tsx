@@ -84,8 +84,14 @@ describe("WorkspaceProvider", () => {
         hittable: { "env.json": '{"BASE_URL":"https://api.example.com"}', notes: { "mine.md": "keep" }, testcollection: { "test.hit": "custom" } },
       });
       const ctx = await openedWorkspace();
+      // The only addition is the .gitignore that keeps env.local.json out of git (FR-17).
       expect(root.toTree()).toEqual({
-        hittable: { "env.json": '{"BASE_URL":"https://api.example.com"}', notes: { "mine.md": "keep" }, testcollection: { "test.hit": "custom" } },
+        hittable: {
+          ".gitignore": "env.local.json\n",
+          "env.json": '{"BASE_URL":"https://api.example.com"}',
+          notes: { "mine.md": "keep" },
+          testcollection: { "test.hit": "custom" },
+        },
       });
       expect(ctx().envContent).toEqual({ BASE_URL: "https://api.example.com" });
     });
@@ -96,7 +102,32 @@ describe("WorkspaceProvider", () => {
       expect(names).toEqual(["README.md", "hittable", "todo.txt"]);
       const hittable = ctx().tree.find((n) => n.name === "hittable")!;
       expect(hittable.kind).toBe("directory");
-      expect(hittable.children!.map((n) => n.name).sort()).toEqual(["env.json", "notes", "testcollection"]);
+      expect(hittable.children!.map((n) => n.name).sort()).toEqual([".gitignore", "env.json", "notes", "testcollection"]);
+    });
+
+    // FR-17: env.local.json holds values that must not reach git.
+    describe("env.local.json", () => {
+      it("overrides env.json values", async () => {
+        root = new FakeDir("repo", {
+          hittable: { "env.json": '{"BASE_URL":"https://api.example.com","TOKEN":"placeholder"}', "env.local.json": '{"TOKEN":"real-secret"}' },
+        });
+        const ctx = await openedWorkspace();
+        expect(ctx().envContent).toEqual({ BASE_URL: "https://api.example.com", TOKEN: "real-secret" });
+      });
+
+      it("is added to an existing .gitignore once, keeping what is there", async () => {
+        root = new FakeDir("repo", { hittable: { "env.json": "{}", ".gitignore": "*.log" } });
+        await openedWorkspace();
+        expect((root.toTree().hittable as Record<string, string>)[".gitignore"]).toBe("*.log\nenv.local.json\n");
+        await openedWorkspace(); // opening again does not add it twice
+        expect((root.toTree().hittable as Record<string, string>)[".gitignore"]).toBe("*.log\nenv.local.json\n");
+      });
+
+      it("a broken env.local.json is ignored rather than breaking the folder", async () => {
+        root = new FakeDir("repo", { hittable: { "env.json": '{"A":"1"}', "env.local.json": "{oops" } });
+        const ctx = await openedWorkspace();
+        expect(ctx().envContent).toEqual({ A: "1" });
+      });
     });
 
     it("remembers the choice and the folder handle", async () => {

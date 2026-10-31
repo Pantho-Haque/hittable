@@ -21,7 +21,7 @@ export default function Error({
         <p className="mb-6 text-slate-300">
           {error.message || 'An unexpected error has occurred.'}
         </p>
-        <div className="mb-6 text-sm text-slate-500">
+        <div className="mb-6 text-sm text-slate-400">
           {error.digest && <p>Error ID: {error.digest}</p>}
         </div>
         <button

@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import {
   test,
@@ -180,16 +181,33 @@ test.describe("reduced motion", () => {
 
 test.describe("screen-reader users", () => {
   // Serious and critical WCAG A/AA problems block someone using a screen reader
-  // or keyboard; colour-contrast of decorative dim text is reported separately.
+  // or keyboard. Colour contrast is checked too (NFR-1): it used to be switched
+  // off because most labels were 8–10px at 15–30% white.
+  // Checked with motion reduced (set before the page loads), so a fade-in
+  // caught half way, like the landing page's terminal demo, is not reported
+  // as low contrast.
+  test.beforeEach(({ page }) => page.emulateMedia({ reducedMotion: "reduce" }));
+
+  const blockingViolations = async (page: Page) => {
+    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze();
+    return results.violations
+      .filter((v) => v.impact === "serious" || v.impact === "critical")
+      .map((v) => `${v.id}: ${v.help} (${v.nodes.length}× e.g. ${v.nodes[0]?.target.join(" ")})`);
+  };
+
   for (const path of ["/", "/docs", "/docs/getting-started", "/hittable"]) {
     test(`${path} has no serious accessibility violations`, async ({ page }) => {
       await page.goto(path);
       await page.waitForLoadState("networkidle");
-      const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).disableRules(["color-contrast"]).analyze();
-      const blocking = results.violations
-        .filter((v) => v.impact === "serious" || v.impact === "critical")
-        .map((v) => `${v.id}: ${v.help} (${v.nodes.length}× e.g. ${v.nodes[0]?.target.join(" ")})`);
-      expect(blocking).toEqual([]);
+      expect(await blockingViolations(page)).toEqual([]);
     });
   }
+
+  test("a request with its response has no serious accessibility violations", async ({ page, seed }) => {
+    await blankRequest(page, seed);
+    await urlInput(page).fill(`${API}/users`);
+    await send(page);
+    await expect(statusBadge(page)).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
 });

@@ -14,7 +14,7 @@ async function setup(route = "List users", folderPath: string[] = []) {
   return { user, ...r };
 }
 
-const tab = (name: "Params" | "Body" | "Headers") => screen.getByRole("button", { name });
+const tab = (name: "Params" | "Body" | "Headers") => screen.getByRole("tab", { name });
 const editor = (t: "params" | "body" | "headers") => screen.getByLabelText(`${t} JSON`) as HTMLTextAreaElement;
 const send = () => screen.getByRole("button", { name: "Send" });
 
@@ -90,15 +90,19 @@ describe("Params / Body / Headers editor", () => {
     expect(JSON.parse(editor("params").value)).toEqual({ limit: "5" });
   });
 
-  it("Beautify (and Ctrl/Cmd+J) formats the active tab's JSON", async () => {
+  // Beautify moved from Ctrl/Cmd+J (the browser's Downloads shortcut) to
+  // Shift+Alt+F, the VS Code format chord (FR-2).
+  it("Beautify (and Shift+Alt+F) formats the active tab's JSON; Ctrl+J no longer does", async () => {
     const { user, ctx } = await setup();
     await user.click(tab("Body"));
     await replace(user, editor("body"), '{"a":1,"b":[1,2]}');
-    await user.click(screen.getByTitle("Beautify JSON (Ctrl/Cmd+J)"));
+    await user.click(screen.getByRole("button", { name: "Beautify JSON (Shift+Alt+F)" }));
     expect(editor("body").value).toBe('{\n\t"a": 1,\n\t"b": [\n\t\t1,\n\t\t2\n\t]\n}');
 
     await replace(user, editor("body"), '{"c":true}');
     await user.keyboard("{Control>}j{/Control}");
+    expect(ctx().formInput.body).toBe('{"c":true}');
+    await user.keyboard("{Shift>}{Alt>}f{/Alt}{/Shift}");
     expect(ctx().formInput.body).toBe('{\n\t"c": true\n}');
   });
 
@@ -106,7 +110,7 @@ describe("Params / Body / Headers editor", () => {
     const { user } = await setup();
     await user.click(tab("Body"));
     await replace(user, editor("body"), '{"a":');
-    await user.keyboard("{Control>}j{/Control}");
+    await user.keyboard("{Shift>}{Alt>}f{/Alt}{/Shift}");
     expect(editor("body").value).toBe('{"a":');
     expect(send()).toBeDisabled();
   });
@@ -157,5 +161,52 @@ describe("Params / Body / Headers editor", () => {
       await user.click(screen.getByTitle("JSON mode"));
       expect(JSON.parse(editor("body").value)).toEqual({ name: "Ada" });
     });
+  });
+
+  describe("body types (FR-4)", () => {
+    it("a Form body is edited as rows and stored URL-encoded with its Content-Type", async () => {
+      const { user, ctx } = await setup();
+      await user.click(tab("Body"));
+      await user.click(screen.getByRole("radio", { name: "Form" }));
+      expect(screen.getByRole("radio", { name: "Form" })).toHaveAttribute("aria-checked", "true");
+      expect(JSON.parse(ctx().formInput.headers)).toMatchObject({ "Content-Type": "application/x-www-form-urlencoded" });
+      const [key] = screen.getAllByPlaceholderText("Field");
+      const [value] = screen.getAllByPlaceholderText("Value");
+      await user.clear(key);
+      await user.type(key, "b");
+      await user.clear(value);
+      await user.type(value, "x y");
+      expect(ctx().formInput.body).toBe("b=x+y");
+    });
+
+    it("a Text body is sent as written and never blocks Send", async () => {
+      const { user, ctx } = await setup();
+      await user.click(tab("Body"));
+      await user.click(screen.getByRole("radio", { name: "Text" }));
+      const body = screen.getByLabelText("body text");
+      await user.clear(body);
+      await user.type(body, "not {{json");
+      expect(ctx().formInput.body).toBe("not {json"); // user-event types "{{" as "{"
+      expect(send()).toBeEnabled();
+    });
+
+    it("None clears the body", async () => {
+      const { user, ctx } = await setup();
+      await user.click(tab("Body"));
+      await user.click(screen.getByRole("radio", { name: "None" }));
+      expect(ctx().formInput.body).toBe("");
+      expect(screen.getByText(/This request has no body/)).toBeInTheDocument();
+    });
+  });
+
+  it("tabs follow the ARIA tabs pattern: one selected, arrow keys move", async () => {
+    const { user } = await setup();
+    expect(tab("Params")).toHaveAttribute("aria-selected", "true");
+    tab("Params").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(tab("Body")).toHaveAttribute("aria-selected", "true");
+    expect(tab("Body")).toHaveFocus();
+    await user.keyboard("{ArrowLeft}{ArrowLeft}");
+    expect(tab("Headers")).toHaveAttribute("aria-selected", "true");
   });
 });

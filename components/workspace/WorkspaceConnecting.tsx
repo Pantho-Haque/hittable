@@ -19,12 +19,12 @@ export default function WorkspaceConnecting({ stage }: { stage: TConnectingStage
     <div
       role="status"
       aria-live="polite"
-      className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-[#080f1a]/90 p-8 text-center backdrop-blur-sm"
+      className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-(--surface-0)/90 p-8 text-center backdrop-blur-sm"
     >
-      <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-[#0e1f35]">
+      <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-(--surface-2)">
         <FolderOpen className="h-7 w-7 text-cyan-300" aria-hidden="true" />
         <Loader2
-          className="absolute -bottom-1 -right-1 h-6 w-6 animate-spin rounded-full bg-[#0e1f35] p-1 text-cyan-400"
+          className="absolute -bottom-1 -right-1 h-6 w-6 animate-spin rounded-full bg-(--surface-2) p-1 text-cyan-400"
           aria-hidden="true"
         />
       </div>

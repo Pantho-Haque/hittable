@@ -102,9 +102,9 @@ const DirectoryTreeNode = memo(function DirectoryTreeNode({
       >
         {isDirectory &&
           (isExpanded ? (
-            <ChevronDown className="w-4 h-4 text-white/40 shrink-0" />
+            <ChevronDown className="w-4 h-4 text-white/60 shrink-0" />
           ) : (
-            <ChevronRight className="w-4 h-4 text-white/40 shrink-0" />
+            <ChevronRight className="w-4 h-4 text-white/60 shrink-0" />
           ))}
 
         <Icon className={`w-4 h-4 shrink-0 ${iconClassName}`} />
@@ -121,7 +121,7 @@ const DirectoryTreeNode = memo(function DirectoryTreeNode({
               {isCreating.type === "directory" ? (
                 <Folder className="w-4 h-4 text-amber-400/60 shrink-0" />
               ) : (
-                <File className="w-4 h-4 text-white/30 shrink-0" />
+                <File className="w-4 h-4 text-white/50 shrink-0" />
               )}
               <input
                 autoFocus
@@ -132,7 +132,7 @@ const DirectoryTreeNode = memo(function DirectoryTreeNode({
                   if (e.key === "Escape") onCreateCancel();
                 }}
                 onBlur={onCreateConfirm}
-                className="flex-1 px-1 py-0.5 bg-[#0e1f35] border border-cyan-400/50 rounded text-[13px] text-white/80 focus:outline-none min-w-0"
+                className="flex-1 px-1 py-0.5 bg-(--surface-2) border border-cyan-400/50 rounded text-[13px] text-white/80 focus:outline-none min-w-0"
                 placeholder={isCreating.type === "directory" ? "Folder name" : "File name"}
               />
             </div>

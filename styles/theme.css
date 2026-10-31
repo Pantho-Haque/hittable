@@ -15,6 +15,20 @@
   --ink-500: #0e1f35; /* hover, selection */
   --ink-400: #1e3a5f; /* strong borders */
   --brand: #00e5cc;   /* accent (teal) */
+
+  /* Workspace surfaces, deepest first. Components use these through
+     arbitrary-value utilities (bg-(--surface-1)); no hex in components. */
+  --surface-0: #080f1a; /* app chrome behind panels */
+  --surface-1: #0a1628; /* panels, inputs */
+  --surface-2: #0e1f35; /* raised: hover, selected, chips */
+  --surface-3: #101c2d; /* toolbars */
+
+  /* Status. Text on --surface-1 meets WCAG AA (4.5:1) in each. */
+  --success: #4ade80;
+  --info: #7dd3fc;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --muted: #94a3b8;
 }
 
 /* The top bar is translucent; without this it blends with a white body and

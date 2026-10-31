@@ -154,6 +154,7 @@ export type ProxyRequest = { url: unknown; method: unknown; headers?: unknown; b
 
 export type ProxyResult = {
   data: unknown;
+  sizeBytes: number; // body bytes as received
   status: number;
   statusText: string;
   ok: boolean;
@@ -212,8 +213,10 @@ export async function forward(req: ProxyRequest, opts: { dispatcher?: Agent } = 
 
   const noBody = method === "HEAD" || [101, 103, 204, 205, 304].includes(upstream.status);
   let data: unknown = null;
+  let rawText: string | undefined;
   if (!noBody && upstream.body) {
     const raw = await readCapped(upstream, cfg.maxResponseBytes, cfg.timeoutMs);
+    rawText = raw;
     if (raw) {
       const type = upstream.headers.get("content-type") ?? "";
       data = raw;
@@ -229,6 +232,8 @@ export async function forward(req: ProxyRequest, opts: { dispatcher?: Agent } = 
 
   return {
     data: method === "HEAD" ? responseHeaders : data,
+    // Bytes as received, not the size of the parsed body re-serialised.
+    sizeBytes: typeof rawText === "string" ? Buffer.byteLength(rawText, "utf8") : 0,
     status: upstream.status,
     statusText: upstream.statusText,
     ok: upstream.ok,

@@ -1,6 +1,7 @@
 "use client";
 
 import { NotebookIcon } from "lucide-react";
+import { useToolListener } from "@/utils/uiEvents";
 import { useState, useEffect, useCallback } from "react";
 import { NotePills, NoteEditor, ModalShell } from "@/components";
 import { loadStore, updateNoteContent } from "@/utils/noteModifier";
@@ -10,6 +11,7 @@ import { ModalActions } from "@/components";
 export default function NoteModal() {
   const [noteStore, setNoteStore] = useState<NotesStore>(() => loadStore());
   const [open, setOpen] = useState(false);
+  useToolListener("notes", () => setOpen(true));
   const [editContent, setEditContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
   const [selectedId, setSelectedId] = useState<NoteId | null>(null);
@@ -93,6 +95,7 @@ export default function NoteModal() {
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         title="Notes"
+        aria-label="Notes"
         className="modal-button-mini mt-2"
       >
         <NotebookIcon size={14} />
@@ -110,7 +113,7 @@ export default function NoteModal() {
             role="dialog"
             aria-modal="true"
             aria-label="Notebook"
-            className="relative bg-[#0a1628] border border-white/10 rounded-xl shadow-2xl shadow-black/80 w-[95vw] max-w-[1100px] h-[85vh] flex flex-col font-mono outline-none"
+            className="relative bg-(--surface-1) border border-white/10 rounded-xl shadow-2xl shadow-black/80 w-[95vw] max-w-[1100px] h-[85vh] flex flex-col font-mono outline-none"
             style={{ boxShadow: "0 0 0 1px rgba(0,229,204,0.08), 0 24px 80px rgba(0,0,0,0.8)" }}
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -123,14 +126,14 @@ export default function NoteModal() {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 shrink-0">
               <div>
-                <p className="text-[9px] tracking-[0.3em] uppercase text-cyan-500/60 mb-0.5">
+                <p className="text-[11px] tracking-[0.3em] uppercase text-cyan-300 mb-0.5">
                   Hittable
                 </p>
                 <h2 className="text-sm font-bold text-white/90">Notebook</h2>
               </div>
               <button
                 onClick={handleCloseAttempt}
-                className="text-white/20 hover:text-white/50 transition-colors cursor-pointer p-1"
+                className="text-white/50 hover:text-white/50 transition-colors cursor-pointer p-1"
                 title="Close"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -186,13 +189,13 @@ export default function NoteModal() {
           onClose={cancelClose}
           size="sm"
         >
-          <p className="text-xs text-white/40 leading-relaxed">
+          <p className="text-xs text-white/60 leading-relaxed">
             What would you like to do with your unsaved changes?
           </p>
           <div className="flex justify-end gap-2 pt-2">
             <button
               onClick={cancelClose}
-              className="px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/40 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer"
+              className="px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/60 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -208,7 +211,7 @@ export default function NoteModal() {
               style={{
                 background: "rgba(0,229,204,0.15)",
                 border: "1px solid rgba(0,229,204,0.3)",
-                color: "#00e5cc",
+                color: "var(--brand)",
               }}
             >
               Save & Close

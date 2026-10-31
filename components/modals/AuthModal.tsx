@@ -1,6 +1,7 @@
 "use client";
 
 import { Shield } from "lucide-react";
+import { useToolListener } from "@/utils/uiEvents";
 import { useState } from "react";
 import { ModalShell } from "@/components";
 import { useDataContext } from "@/context/dataContext";
@@ -17,6 +18,7 @@ const AUTH_PRESETS: { value: AuthPreset; label: string; description: string }[] 
 export default function AuthModal() {
   const { formInput, setFormInput } = useDataContext();
   const [open, setOpen] = useState(false);
+  useToolListener("auth", () => setOpen(true));
   const [selectedPreset, setSelectedPreset] = useState<AuthPreset>("none");
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
@@ -87,6 +89,7 @@ export default function AuthModal() {
           setOpen(true);
         }}
         title="Auth"
+        aria-label="Auth"
         className="modal-button-mini"
       >
         <Shield size={14} />
@@ -102,7 +105,7 @@ export default function AuthModal() {
           <div className="flex flex-col gap-4">
             {/* Preset selector */}
             <div className="flex flex-col gap-2">
-              <label className="text-[9px] tracking-[0.2em] uppercase text-white/30">
+              <label className="text-[11px] tracking-[0.2em] uppercase text-white/50">
                 Type
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -123,7 +126,7 @@ export default function AuthModal() {
                     >
                       {preset.label}
                     </span>
-                    <span className="text-[10px] text-white/30 mt-0.5">
+                    <span className="text-[11px] text-white/50 mt-0.5">
                       {preset.description}
                     </span>
                   </button>
@@ -134,7 +137,7 @@ export default function AuthModal() {
             {/* Preset-specific fields */}
             {selectedPreset === "bearer" && (
               <div className="flex flex-col gap-2">
-                <label className="text-[9px] tracking-[0.2em] uppercase text-white/30">
+                <label className="text-[11px] tracking-[0.2em] uppercase text-white/50">
                   Token
                 </label>
                 <input
@@ -150,7 +153,7 @@ export default function AuthModal() {
             {selectedPreset === "basic" && (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-2">
-                  <label className="text-[9px] tracking-[0.2em] uppercase text-white/30">
+                  <label className="text-[11px] tracking-[0.2em] uppercase text-white/50">
                     Username
                   </label>
                   <input
@@ -162,7 +165,7 @@ export default function AuthModal() {
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-[9px] tracking-[0.2em] uppercase text-white/30">
+                  <label className="text-[11px] tracking-[0.2em] uppercase text-white/50">
                     Password
                   </label>
                   <input
@@ -179,7 +182,7 @@ export default function AuthModal() {
             {selectedPreset === "apikey" && (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-2">
-                  <label className="text-[9px] tracking-[0.2em] uppercase text-white/30">
+                  <label className="text-[11px] tracking-[0.2em] uppercase text-white/50">
                     Header Name
                   </label>
                   <input
@@ -191,7 +194,7 @@ export default function AuthModal() {
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-[9px] tracking-[0.2em] uppercase text-white/30">
+                  <label className="text-[11px] tracking-[0.2em] uppercase text-white/50">
                     Value
                   </label>
                   <input
@@ -206,7 +209,7 @@ export default function AuthModal() {
             )}
 
             {selectedPreset === "none" && (
-              <div className="flex items-center justify-center py-6 text-white/20 text-xs">
+              <div className="flex items-center justify-center py-6 text-white/50 text-xs">
                 No authentication will be added to requests
               </div>
             )}
@@ -222,7 +225,7 @@ export default function AuthModal() {
             <div className="flex gap-2">
               <button
                 onClick={() => setOpen(false)}
-                className="px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/40 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer"
+                className="px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/60 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -232,7 +235,7 @@ export default function AuthModal() {
                 style={{
                   background: "rgba(0,229,204,0.15)",
                   border: "1px solid rgba(0,229,204,0.3)",
-                  color: "#00e5cc",
+                  color: "var(--brand)",
                 }}
               >
                 Apply

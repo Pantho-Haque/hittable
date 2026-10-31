@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 
 const sizes = {
   sm: "w-[90vw] max-w-[380px]",
+  wide: "w-[92vw] max-w-[560px] max-h-[85dvh]",
   md: "w-[90vw] max-w-[60%] h-[60%]",
   lg: "w-[95vw] max-w-[90%] h-[80%]",
 };
@@ -86,7 +87,7 @@ export function ModalShell({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`relative bg-[#0a1628] border border-white/10 rounded-xl shadow-2xl shadow-black/80 p-6 ${sizes[size]}  flex flex-col gap-5 font-mono outline-none`}
+        className={`relative bg-(--surface-1) border border-white/10 rounded-xl shadow-2xl shadow-black/80 p-6 ${sizes[size]}  flex flex-col gap-5 font-mono outline-none`}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -101,12 +102,12 @@ export function ModalShell({
         <span className="absolute bottom-0 right-0 w-4 h-4 border-b border-r border-cyan-500/30 rounded-br-xl" aria-hidden="true" />
 
         <div>
-          <p className="text-[9px] tracking-[0.3em] uppercase text-cyan-500/60 mb-1">
+          <p className="text-[11px] tracking-[0.3em] uppercase text-cyan-300 mb-1">
             Hittable
           </p>
           <h2 id={titleId} className="text-sm font-bold text-white/90">{title}</h2>
           {subtitle && (
-            <p className="text-xs text-white/30 mt-1 capitalize">{subtitle}</p>
+            <p className="text-xs text-white/50 mt-1 capitalize">{subtitle}</p>
           )}
         </div>
 
@@ -182,7 +183,7 @@ export function ModalActions({
         onClick={onCancel}
         disabled={loading}
         aria-label={cancelLabel}
-        className="px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/40 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        className="px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/60 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {cancelLabel}
       </button>
@@ -201,7 +202,7 @@ export function ModalActions({
             : {
                 background: "rgba(0,229,204,0.15)",
                 border: "1px solid rgba(0,229,204,0.3)",
-                color: "#00e5cc",
+                color: "var(--brand)",
               }
         }
       >

@@ -3,12 +3,13 @@ package hitfile
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -47,11 +48,15 @@ func Resolve(h *HitFile, env map[string]string) *ResolvedRequest {
 }
 
 func (r *ResolvedRequest) ToHTTPRequest() (*http.Request, error) {
+	return r.toHTTPRequest(context.Background())
+}
+
+func (r *ResolvedRequest) toHTTPRequest(ctx context.Context) (*http.Request, error) {
 	var body io.Reader
 	if r.Body != "" {
 		body = strings.NewReader(r.Body)
 	}
-	req, err := http.NewRequest(r.Method, r.FullURL(), body)
+	req, err := http.NewRequestWithContext(ctx, r.Method, r.FullURL(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -63,19 +68,70 @@ func (r *ResolvedRequest) ToHTTPRequest() (*http.Request, error) {
 	return req, nil
 }
 
+// AsCurl is a command that runs as-is in a POSIX shell. Headers come out in a
+// stable order so the same request always copies the same text.
 func (r *ResolvedRequest) AsCurl() string {
 	parts := []string{"curl", "-X", r.Method}
 
-	for k, v := range r.Headers {
-		parts = append(parts, "-H", fmt.Sprintf("'%s: %s'", k, v))
+	keys := make([]string, 0, len(r.Headers))
+	for k := range r.Headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		parts = append(parts, "-H", shellQuote(k+": "+r.Headers[k]))
 	}
 
 	if r.Body != "" {
-		parts = append(parts, "-d", fmt.Sprintf("'%s'", r.Body))
+		parts = append(parts, "-d", shellQuote(r.Body))
 	}
 
-	parts = append(parts, fmt.Sprintf("'%s'", r.FullURL()))
+	parts = append(parts, shellQuote(r.FullURL()))
 	return strings.Join(parts, " ")
+}
+
+// shellQuote single-quotes s; an embedded ' becomes '\” so a value like
+// O'Brien cannot end the quoting early.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// UnknownVars lists, once each and in order of appearance, the <<KEY>> names
+// in the request that env does not define. They are sent as written, which is
+// almost never what was meant, so the UI says so.
+func UnknownVars(h *HitFile, env map[string]string) []string {
+	texts := []string{h.URL, h.Body}
+	for _, m := range []map[string]string{h.Headers, h.Params} {
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			texts = append(texts, m[k])
+		}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, s := range texts {
+		for {
+			i := strings.Index(s, "<<")
+			if i < 0 {
+				break
+			}
+			end := strings.Index(s[i+2:], ">>")
+			if end < 0 {
+				break
+			}
+			key := s[i+2 : i+2+end]
+			if _, ok := env[key]; !ok && !seen[key] {
+				seen[key] = true
+				out = append(out, key)
+			}
+			s = s[i+4+end:]
+		}
+	}
+	return out
 }
 
 // FullURL appends Params to URL as a URL-encoded query string.
@@ -95,8 +151,14 @@ func (r *ResolvedRequest) FullURL() string {
 }
 
 func ExecuteAndCapture(h *HitFile, env map[string]string) (*Response, error) {
+	return ExecuteAndCaptureContext(context.Background(), h, env)
+}
+
+// ExecuteAndCaptureContext is ExecuteAndCapture with cancellation: cancelling
+// ctx aborts the request and returns ctx.Err().
+func ExecuteAndCaptureContext(ctx context.Context, h *HitFile, env map[string]string) (*Response, error) {
 	resolved := Resolve(h, env)
-	req, err := resolved.ToHTTPRequest()
+	req, err := resolved.toHTTPRequest(ctx)
 	if err != nil {
 		return nil, err
 	}

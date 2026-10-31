@@ -164,7 +164,8 @@ test.describe("routes and folders", () => {
   test("a deep link opens the route inside its folder", async ({ page }) => {
     await page.goto("/hittable?c=Store&r=list%20orders&p=orders");
     await expect(urlInput(page)).toHaveValue(`${API}/users`);
-    await expect(page.getByRole("button", { name: "list orders" })).toBeVisible();
+    // The sidebar row is a real button now (NFR-3) as well as the breadcrumb.
+    await expect(sidebar(page).getByRole("button", { name: "list orders" })).toBeVisible();
   });
 
   test("Shift+T adds an untitled route, but not while typing", async ({ page }) => {

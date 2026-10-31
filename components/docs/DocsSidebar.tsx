@@ -34,7 +34,7 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
   const list = (
     <nav aria-label="Documentation" className="flex flex-col gap-6 text-sm">
       <label className="relative block">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/50" />
         <input
           type="search"
           value={query}
@@ -46,7 +46,7 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
 
       {results ? (
         <ul className="flex flex-col gap-1">
-          {results.length === 0 && <li className="px-3 py-2 text-white/40">No matches</li>}
+          {results.length === 0 && <li className="px-3 py-2 text-white/60">No matches</li>}
           {results.map((r) => (
             <li key={r.slug}>
               <Link
@@ -55,7 +55,7 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
                 className="block rounded-md px-3 py-2 hover:bg-white/5 transition-colors"
               >
                 <div className="text-slate-100">{r.title}</div>
-                {r.hint && <div className="text-[12px] text-white/40 truncate">§ {r.hint}</div>}
+                {r.hint && <div className="text-[12px] text-white/60 truncate">§ {r.hint}</div>}
               </Link>
             </li>
           ))}
@@ -63,7 +63,7 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
       ) : (
         nav.map((g) => (
           <div key={g.title}>
-            <div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-white/30">{g.title}</div>
+            <div className="mb-2 px-3 text-[11px] font-bold uppercase tracking-[0.2em] text-white/50">{g.title}</div>
             <ul className="flex flex-col gap-0.5 border-l border-white/5">
               {g.items.map((d) => {
                 const isActive = d.slug === active;
@@ -105,7 +105,7 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
           {open ? <X size={14} /> : <Menu size={14} />}
           Docs menu
         </button>
-        <span className="text-[11px] text-white/30">{nav.flatMap((g) => g.items).find((d) => d.slug === active)?.title}</span>
+        <span className="text-[11px] text-white/50">{nav.flatMap((g) => g.items).find((d) => d.slug === active)?.title}</span>
       </div>
       {open && (
         <div className="lg:hidden border-b border-white/5 bg-(--ink-800) px-4 py-5">{list}</div>

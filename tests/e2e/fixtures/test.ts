@@ -173,7 +173,7 @@ export async function blankRequest(page: Page, seed: Fixtures["seed"], url = "")
 
 /** Replace the whole content of a request editor tab. */
 export async function fillTab(page: Page, tab: "params" | "body" | "headers", value: string) {
-  await page.getByRole("button", { name: tab[0].toUpperCase() + tab.slice(1), exact: true }).click();
+  await page.getByRole("tab", { name: tab[0].toUpperCase() + tab.slice(1), exact: true }).click();
   await editor(page, tab).fill(value);
 }
 

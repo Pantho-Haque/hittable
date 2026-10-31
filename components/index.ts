@@ -27,7 +27,7 @@ import {
 
 import Selector from "./hittable/Selector";
 import RequestForm from "./hittable/RequestForm";
-import NoExtensionModal from "./modals/NoExtensionModal";
+import ExtensionStatus from "./modals/ExtensionStatus";
 import Menu from "./hittable/Menu";
 import Topbar from "./homepage/TopBar";
 import HistoryPanel from "./hittable/HistoryPanel";
@@ -60,7 +60,7 @@ export {
   RequestForm,
   Menu,
   Topbar,
-  NoExtensionModal,
+  ExtensionStatus,
   PortfolioSection,
   HistoryPanel,
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { ModalActions, ModalShell } from "@/components/ui/SharedModal";
 import { Folder, File, Plus, RefreshCw, FolderOpen } from "lucide-react";
 import { useWorkspace } from "@/context/workspaceContext";
 import { TDirectoryNode } from "@/types";
@@ -121,14 +122,25 @@ export default function DirectoryTree() {
     setNewName("");
   }, []);
 
-  const handleDelete = useCallback(async () => {
+  // Deleting removes real files from disk (a folder recursively), so the menu
+  // only asks; the dialog below does it.
+  const [pendingDelete, setPendingDelete] = useState<NonNullable<typeof contextMenu> | null>(null);
+
+  const handleDelete = useCallback(() => {
     if (!contextMenu) return;
-    await deleteEntry(contextMenu.parentHandle, contextMenu.node.name);
-    if (activeFile?.path.join("/") === contextMenu.node.path.join("/")) {
+    setPendingDelete(contextMenu);
+    closeContextMenu();
+  }, [contextMenu, closeContextMenu]);
+
+  const confirmDelete = useCallback(async () => {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (!target) return;
+    await deleteEntry(target.parentHandle, target.node.name);
+    if (activeFile?.path.join("/") === target.node.path.join("/")) {
       setActiveFile(null);
     }
-    closeContextMenu();
-  }, [contextMenu, activeFile, deleteEntry, setActiveFile, closeContextMenu]);
+  }, [pendingDelete, activeFile, deleteEntry, setActiveFile]);
 
   const handleRename = useCallback(async (newName: string) => {
     if (!contextMenu || !newName.trim() || newName === contextMenu.node.name) {
@@ -278,7 +290,7 @@ export default function DirectoryTree() {
   }, [selectedPath]);
 
   return (
-    <div className="flex flex-col h-full bg-[#0a1628]">
+    <div className="flex flex-col h-full bg-(--surface-1)">
       <div className="flex flex-wrap items-center gap-1 px-3 py-2 border-b border-white/10">
         <span className="text-xs font-semibold text-slate-300 truncate">
           {folderName}
@@ -328,7 +340,7 @@ export default function DirectoryTree() {
             {isCreating.type === "directory" ? (
               <Folder className="w-3.5 h-3.5 text-amber-400/70" />
             ) : (
-              <File className="w-3.5 h-3.5 text-white/30" />
+              <File className="w-3.5 h-3.5 text-white/50" />
             )}
             <input
               autoFocus
@@ -339,7 +351,7 @@ export default function DirectoryTree() {
                 if (e.key === "Escape") handleCreateCancel();
               }}
               onBlur={handleCreateConfirm}
-              className="flex-1 px-1 py-0.5 bg-[#0e1f35] border border-cyan-400/50 rounded text-xs text-white/80 focus:outline-none"
+              className="flex-1 px-1 py-0.5 bg-(--surface-2) border border-cyan-400/50 rounded text-xs text-white/80 focus:outline-none"
               placeholder={isCreating.type === "directory" ? "Folder name" : "File name"}
             />
           </div>
@@ -379,6 +391,25 @@ export default function DirectoryTree() {
           onCreate={handleCreate}
         />
       )}
+
+      {pendingDelete && (
+        <ModalShell
+          title={`Delete “${pendingDelete.node.name}”?`}
+          subtitle={
+            pendingDelete.node.kind === "directory"
+              ? "This deletes the folder and everything in it from your disk. It cannot be undone here."
+              : "This deletes the file from your disk. It cannot be undone here."
+          }
+          onClose={() => setPendingDelete(null)}
+        >
+          <ModalActions
+            onCancel={() => setPendingDelete(null)}
+            onConfirm={confirmDelete}
+            confirmLabel="Delete"
+            confirmDanger
+          />
+        </ModalShell>
+      )}
     </div>
   );
 }
@@ -415,7 +446,7 @@ function ContextMenu({
       <>
         <div className="fixed inset-0 z-40" onClick={onClose} />
         <div
-          className="fixed z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl p-2"
+          className="fixed z-50 bg-(--surface-2) border border-white/10 rounded-lg shadow-xl p-2"
           style={{ left: x, top: y }}
         >
           <input
@@ -427,18 +458,18 @@ function ContextMenu({
               if (e.key === "Enter") handleRenameConfirm();
               if (e.key === "Escape") onClose();
             }}
-            className="w-48 px-2 py-1 bg-[#0a1628] border border-white/10 rounded text-xs text-white/80 focus:outline-none focus:border-cyan-400/50"
+            className="w-48 px-2 py-1 bg-(--surface-1) border border-white/10 rounded text-xs text-white/80 focus:outline-none focus:border-cyan-400/50"
           />
           <div className="flex gap-1 mt-1">
             <button
               onClick={handleRenameConfirm}
-              className="px-2 py-0.5 text-[10px] bg-cyan-400/10 text-cyan-400 rounded hover:bg-cyan-400/20"
+              className="px-2 py-0.5 text-[11px] bg-cyan-400/10 text-cyan-400 rounded hover:bg-cyan-400/20"
             >
               Rename
             </button>
             <button
               onClick={onClose}
-              className="px-2 py-0.5 text-[10px] text-white/40 rounded hover:bg-white/5"
+              className="px-2 py-0.5 text-[11px] text-white/60 rounded hover:bg-white/5"
             >
               Cancel
             </button>
@@ -452,7 +483,7 @@ function ContextMenu({
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
-        className="fixed z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px]"
+        className="fixed z-50 bg-(--surface-2) border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px]"
         style={{ left: x, top: y }}
       >
         {node.kind === "directory" && (

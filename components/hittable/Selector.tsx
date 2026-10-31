@@ -48,6 +48,8 @@ import {
   findRoute,
   collectAllRouteNames,
 } from "@/utils/treeHelpers";
+import { selectionHref } from "@/utils/selectionHref";
+import { useToolListener } from "@/utils/uiEvents";
 
 function EmptyState({
   icon: Icon,
@@ -59,11 +61,14 @@ function EmptyState({
   return (
     <div className="px-3 py-6 text-center">
       <Icon size={18} className="text-white/10 mx-auto mb-2" />
-      <p className="text-[10px] text-white/20 leading-relaxed">{label}</p>
+      <p className="text-[11px] text-white/50 leading-relaxed">{label}</p>
     </div>
   );
 }
 
+// Each row's label is a real <button> so keyboard users can reach it; its
+// click (mouse, Enter or Space) bubbles to the row, which owns the action,
+// and the ⋮ menu beside it stops its own clicks from reaching the row.
 function PanelItem({
   name,
   isActive,
@@ -89,12 +94,14 @@ function PanelItem({
       {isActive && (
         <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-cyan-400 rounded-r-full" />
       )}
-      <div
-        className="flex-1 pl-3 pr-1 py-2.5 truncate text-xs font-semibold capitalize"
-        style={{ color: isActive ? "#00e5cc" : "rgba(255,255,255,0.5)" }}
+      <button
+        type="button"
+        aria-current={isActive ? "true" : undefined}
+        className="flex-1 min-w-0 pl-3 pr-1 py-2.5 truncate text-xs font-semibold capitalize outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--brand)/70 rounded-md cursor-pointer text-left"
+        style={{ color: isActive ? "var(--brand)" : "rgba(255,255,255,0.5)" }}
       >
         {name}
-      </div>
+      </button>
       <div onClick={(e) => e.stopPropagation()}>
         {menuSlot}
       </div>
@@ -115,7 +122,7 @@ function MethodBadge({ method }: { method: string }) {
   const color = METHOD_COLORS[method.toUpperCase()] ?? "#94a3b8";
   return (
     <span
-      className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold leading-none border"
+      className="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-bold leading-none border"
       style={{
         color,
         borderColor: `${color}40`,
@@ -162,15 +169,19 @@ function RouteItem({
       {isActive && (
         <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-cyan-400 rounded-r-full" />
       )}
-      <div className="flex items-center gap-1.5 flex-1 min-w-0 pl-3 pr-1 py-2.5">
+      <button
+        type="button"
+        aria-current={isActive ? "true" : undefined}
+        className="flex items-center gap-1.5 flex-1 min-w-0 pl-3 pr-1 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--brand)/70 rounded-md cursor-pointer text-left"
+      >
         <MethodBadge method={method} />
         <span
           className="flex-1 truncate text-xs font-semibold capitalize"
-          style={{ color: isActive ? "#00e5cc" : "rgba(255,255,255,0.5)" }}
+          style={{ color: isActive ? "var(--brand)" : "rgba(255,255,255,0.5)" }}
         >
           {item.name}
         </span>
-      </div>
+      </button>
       <div onClick={(e) => e.stopPropagation()}>
         <Menu
           type="route"
@@ -201,13 +212,16 @@ function FolderItem({
       onClick={onClick}
       className="group/menu relative flex items-center justify-between mx-2 mb-0.5 rounded-md border border-transparent hover:bg-white/4 hover:border-white/5 transition-all cursor-pointer"
     >
-      <div className="flex items-center gap-1.5 flex-1 min-w-0 pl-3 pr-1 py-2.5">
-        <Folder size={12} className="shrink-0 text-cyan-500/40" />
+      <button
+        type="button"
+        className="flex items-center gap-1.5 flex-1 min-w-0 pl-3 pr-1 py-2.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--brand)/70 rounded-md cursor-pointer text-left"
+      >
+        <Folder size={12} className="shrink-0 text-cyan-300" />
         <span className="flex-1 truncate text-xs font-semibold text-white/50">
           {item.name}
         </span>
-        <span className="text-[9px] text-white/50">{item.items.length}</span>
-      </div>
+        <span className="text-[11px] text-white/50">{item.items.length}</span>
+      </button>
       {menuSlot && (
         <div onClick={(e) => e.stopPropagation()}>
           {menuSlot}
@@ -260,24 +274,7 @@ export default function Selector() {
             ? valueOrUpdater(selection)
             : valueOrUpdater;
 
-        const c = next.collectionName ?? "";
-        const r = next.curlName ?? "";
-        const p = next.folderPath ?? [];
-
-        if (!c) {
-          router.push("/hittable");
-          return;
-        }
-
-        const pathParam = p.length > 0 ? `&p=${encodeURIComponent(p.join("/"))}` : "";
-        if (!r) {
-          router.push(`/hittable?c=${encodeURIComponent(c)}${pathParam}`);
-          return;
-        }
-
-        router.push(
-          `/hittable?c=${encodeURIComponent(c)}&r=${encodeURIComponent(r)}${pathParam}`,
-        );
+        router.push(selectionHref(next));
       },
       [router, selection],
     );
@@ -388,6 +385,8 @@ export default function Selector() {
     isShift: true,
     func: createNewRoute,
   });
+  // "New request" in the command palette.
+  useToolListener("new-request", createNewRoute, navCollection ?? "");
 
   useEffect(() => {
     if (!selection.curlName) return setSelectorResponse(null);
@@ -438,7 +437,7 @@ export default function Selector() {
 
   const collectionsPanel = (
     <div
-      className={`min-w-[75px] h-full flex flex-col bg-[#0a1628]/80 border-r border-white/5 overflow-visible transition-all duration-200 ${toggleSidebar ? "w-[40px]" : "w-[180px]"}`}
+      className={`min-w-[75px] h-full flex flex-col bg-(--surface-1)/80 border-r border-white/5 overflow-visible transition-all duration-200 ${toggleSidebar ? "w-[40px]" : "w-[180px]"}`}
     >
       {/* Header */}
       <div
@@ -449,20 +448,21 @@ export default function Selector() {
             {navCollection ? (
               <button
                 onClick={handleBack}
-                className="flex items-center gap-1.5 text-[9px] tracking-[0.25em] uppercase text-cyan-500/50 hover:text-cyan-400 transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 text-[11px] tracking-[0.25em] uppercase text-cyan-300 hover:text-cyan-400 transition-colors cursor-pointer"
               >
                 <ArrowLeft size={12} />
                 <span className="truncate">{currentCollection?.collectionName}</span>
               </button>
             ) : (
-              <p className="text-[9px] tracking-[0.25em] uppercase text-cyan-500/50">
+              <p className="text-[11px] tracking-[0.25em] uppercase text-cyan-300">
                 Collections
               </p>
             )}
             <button
               onClick={() => toggle("toggleSidebar")}
               aria-label="Collapse sidebar"
-              className="text-white/30 hover:text-cyan-400 transition-colors cursor-pointer"
+              title="Collapse sidebar (Ctrl/Cmd+B)"
+              className="text-white/50 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               <ChevronLeft size={14} />
             </button>
@@ -472,7 +472,8 @@ export default function Selector() {
             <button
               onClick={() => toggle("toggleSidebar")}
               aria-label="Expand sidebar"
-              className="text-white/30 hover:text-cyan-400 transition-colors cursor-pointer"
+              title="Expand sidebar (Ctrl/Cmd+B)"
+              className="text-white/50 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               <ChevronRight size={14} />
             </button>
@@ -488,19 +489,19 @@ export default function Selector() {
 
       {/* Breadcrumb trail (when inside a collection) */}
       {navCollection && !toggleSidebar && navPath.length > 0 && (
-        <div className="px-3 py-1.5 border-b border-white/5 flex items-center gap-1 text-[9px] overflow-x-auto whitespace-nowrap">
+        <div className="px-3 py-1.5 border-b border-white/5 flex items-center gap-1 text-[11px] overflow-x-auto whitespace-nowrap">
           <button
             onClick={() => handleBreadcrumbJump([])}
-            className="text-cyan-500/40 hover:text-cyan-400 transition-colors cursor-pointer shrink-0"
+            className="text-cyan-300 hover:text-cyan-400 transition-colors cursor-pointer shrink-0"
           >
             {navCollection}
           </button>
           {navPath.map((segment, i) => (
             <span key={i} className="flex items-center gap-1 shrink-0">
-              <span className="text-white/15">/</span>
+              <span className="text-white/50">/</span>
               <button
                 onClick={() => handleBreadcrumbJump(navPath.slice(0, i + 1))}
-                className="text-cyan-500/40 hover:text-cyan-400 transition-colors cursor-pointer"
+                className="text-cyan-300 hover:text-cyan-400 transition-colors cursor-pointer"
               >
                 {segment}
               </button>
@@ -519,14 +520,14 @@ export default function Selector() {
                   <div className="relative">
                     <Search
                       size={10}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 text-white/20"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 text-white/50"
                     />
                     <input
                       type="text"
                       value={filterQuery}
                       onChange={(e) => setFilterQuery(e.target.value)}
                       placeholder="Filter..."
-                      className="w-full bg-white/3 border border-white/5 rounded px-2 py-1 pl-6 text-[10px] text-white/60 placeholder-white/15 outline-none focus:border-cyan-500/30 transition-colors"
+                      className="w-full bg-white/3 border border-white/5 rounded px-2 py-1 pl-6 text-[11px] text-white/60 placeholder-white/15 outline-none focus:border-cyan-500/30 transition-colors"
                     />
                   </div>
                 )}
@@ -542,6 +543,7 @@ export default function Selector() {
                   <button
                     onClick={createNewFolder}
                     title="New Folder"
+                    aria-label="New Folder"
                     className="modal-button-mini"
                   >
                     <Folder size={14} />

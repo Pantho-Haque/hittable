@@ -80,6 +80,9 @@ test.describe("directory mode", () => {
 
     await node(page, "ping.hit").click({ button: "right" });
     await page.getByRole("button", { name: "Delete" }).click();
+    // Deleting touches the real disk, so it is confirmed first.
+    const confirm = page.getByRole("dialog", { name: "Delete “ping.hit”?" });
+    await confirm.getByRole("button", { name: "Delete" }).click();
     await expect(node(page, "ping.hit")).toHaveCount(0);
     await expect(readFile(page, "ping.hit")).rejects.toThrow();
   });

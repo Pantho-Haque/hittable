@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { EXTENSION_URL } from "@/config";
 import { describe, it, expect, beforeEach } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -32,14 +33,24 @@ describe("Response panel", () => {
     expect(screen.getByText("Send a request to see the response")).toBeInTheDocument();
   });
 
+  // FR-7: 3xx is no longer lumped in with 4xx as a warning, and 1xx is not an
+  // error. The class is exposed as data-status-kind and drawn from the status
+  // tokens (--success/--info/--warning/--danger).
   it.each([
-    [200, "#4ade80"], [204, "#4ade80"],
-    [301, "#fb923c"], [404, "#fb923c"], [499, "#fb923c"],
-    [500, "#f87171"], [100, "#f87171"],
-  ])("status %i is coloured %s", (code, colour) => {
+    [200, "success"], [204, "success"],
+    [301, "info"], [100, "info"],
+    [404, "warning"], [499, "warning"],
+    [500, "danger"], [503, "danger"],
+  ])("status %i is shown as %s", (code, kind) => {
     setup(json({}, { status: code, statusText: "X" }));
     expect(status()).toHaveTextContent(`${code} X`);
-    expect(status().style.color).toBe(hexToRgb(colour));
+    expect(status()).toHaveAttribute("data-status-kind", kind);
+    expect(status().className).toContain(`text-(--${kind})`);
+  });
+
+  it("fills in the reason phrase when the server sent none (HTTP/2)", () => {
+    setup(json({}, { status: 201, statusText: "" }));
+    expect(status()).toHaveTextContent("201 Created");
   });
 
   it("shows duration and size, switching units for large values", () => {
@@ -59,9 +70,23 @@ describe("Response panel", () => {
   });
 
   it("an error response shows the message instead of tabs", () => {
+    setup({ error: "Error: Failed to connect to target URL" });
+    expect(screen.getByRole("alert")).toHaveTextContent("Failed to connect to target URL");
+    expect(screen.queryByRole("tab", { name: /headers/i })).not.toBeInTheDocument();
+  });
+
+  // FR-10: the missing-extension case says what to do, with a primary
+  // Install button, instead of a raw error string.
+  it("a localhost request without the extension explains it and links the install", () => {
     setup({ error: "Error: Install the Hittable Extension to make localhost requests" });
-    expect(screen.getByText(/Install the Hittable Extension/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /headers/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("localhost needs the Hittable browser extension");
+    expect(screen.getByRole("link", { name: "Install the extension" })).toHaveAttribute("href", EXTENSION_URL);
+  });
+
+  it("a cancelled request is a calm status, not an error", () => {
+    setup({ error: "Request cancelled" });
+    expect(screen.getByRole("status")).toHaveTextContent("Request cancelled.");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   describe("headers tab", () => {
@@ -70,7 +95,7 @@ describe("Response panel", () => {
 
     it("shows the header count and every header", async () => {
       const { user } = withHeaders();
-      const headersTab = screen.getByRole("button", { name: /headers/i });
+      const headersTab = screen.getByRole("tab", { name: /headers/i });
       expect(headersTab).toHaveTextContent("(3)");
       await user.click(headersTab);
       expect(screen.getByText("x-request-id")).toBeInTheDocument();
@@ -79,7 +104,7 @@ describe("Response panel", () => {
 
     it("copies one header or all of them", async () => {
       const { user } = withHeaders();
-      await user.click(screen.getByRole("button", { name: /headers/i }));
+      await user.click(screen.getByRole("tab", { name: /headers/i }));
       await user.click(screen.getByTitle("Copy x-request-id"));
       expect(await navigator.clipboard.readText()).toBe("x-request-id: abc123");
       await user.click(screen.getByTitle("Copy all headers"));
@@ -90,7 +115,7 @@ describe("Response panel", () => {
 
     it("search filters header rows by name or value", async () => {
       const { user } = withHeaders();
-      await user.click(screen.getByRole("button", { name: /headers/i }));
+      await user.click(screen.getByRole("tab", { name: /headers/i }));
       await user.click(screen.getByTitle("Search (⌘F)"));
       await user.type(screen.getByPlaceholderText("Search keys & values…"), "STORE");
       expect(screen.getByText("cache-control")).toBeInTheDocument();
@@ -104,7 +129,7 @@ describe("Response panel", () => {
 
     it("a response without headers says so", async () => {
       const { user } = setup({ status: 200, data: "x" });
-      await user.click(screen.getByRole("button", { name: /headers/i }));
+      await user.click(screen.getByRole("tab", { name: /headers/i }));
       expect(screen.getByText("No response headers")).toBeInTheDocument();
     });
   });
@@ -311,7 +336,3 @@ describe("HTML preview", () => {
   });
 });
 
-function hexToRgb(hex: string) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
-}

@@ -15,7 +15,7 @@ func (m *MainScreen) renderFooter() string {
 
 func (m *MainScreen) footerText() string {
 	if m.Sending {
-		return m.Spinner.View() + " Sending…"
+		return m.Spinner.View() + " Sending… · esc cancels"
 	}
 	if m.StatusBar != "" {
 		return m.StatusBar

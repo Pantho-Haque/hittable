@@ -66,7 +66,7 @@ export default function WorkspaceSwitcher() {
       </button>
 
       {showTooltip && !isSupported && (
-        <div id="directory-support-hint" role="status" className="absolute top-full mt-2 right-0 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl p-3 w-64 max-w-[90vw]">
+        <div id="directory-support-hint" role="status" className="absolute top-full mt-2 right-0 z-50 bg-(--surface-2) border border-white/10 rounded-lg shadow-xl p-3 w-64 max-w-[90vw]">
           <div className="flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>

@@ -11,7 +11,7 @@ async function applyAuth(page: Page, preset: RegExp, fill: (d: ReturnType<typeof
 }
 
 const headersJson = async (page: Page) => {
-  await page.getByRole("button", { name: "Headers", exact: true }).click();
+  await page.getByRole("tab", { name: "Headers", exact: true }).click();
   return JSON.parse((await editor(page, "headers").inputValue()) || "{}");
 };
 

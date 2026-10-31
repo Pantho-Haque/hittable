@@ -6,6 +6,7 @@ import { TerminalDemo } from "../components/homepage/TerminalDemo";
 import { LANDING_PAGE_DATA } from "../constants/landing";
 import { GetResume } from "@/services";
 import { PortfolioSection } from "@/components";
+import { SHORTCUTS } from "@/constants/shortcuts";
 
 function FeatureCard({
   icon: Icon,
@@ -93,7 +94,7 @@ export default async function HomePage() {
               </span>{" "}
               <br />
               <span className="text-slate-300">{appInfo.title}</span> <br />
-              <span className="text-slate-500">{appInfo.subtitle}</span>
+              <span className="text-slate-400">{appInfo.subtitle}</span>
             </h1>
             <p className="text-lg text-slate-400 leading-relaxed max-w-lg font-light my-8">
               {appInfo.description}
@@ -163,14 +164,9 @@ export default async function HomePage() {
               </p>
             </div>
             <div className="flex-1 w-full flex flex-col gap-2 bg-(--ink-800)/50 p-6 rounded-2xl border border-white/5">
-              <KbdBadge keys={["Ctrl", "↵"]} label="Send request" />
-              <KbdBadge
-                keys={["Ctrl", "S"]}
-                label="Save changes to collection"
-              />
-              <KbdBadge keys={["Ctrl", "F"]} label="Search response payload" />
-              <KbdBadge keys={["Ctrl", "B"]} label="Toggle sidebar" />
-              <KbdBadge keys={["Shift", "T"]} label="Create new route" />
+              {SHORTCUTS.map((s) => (
+                <KbdBadge key={s.id} keys={s.keys} label={s.description} />
+              ))}
             </div>
           </div>
         </section>
@@ -181,10 +177,10 @@ export default async function HomePage() {
         {/* ── Footer ── */}
         <footer className="max-w-6xl mx-auto px-6 py-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded flex items-center justify-center border border-white/20 bg-white/10 text-white text-[10px] font-bold">
+            <div className="w-6 h-6 rounded flex items-center justify-center border border-white/20 bg-white/10 text-white text-[11px] font-bold">
               H
             </div>
-            <span className="text-xs text-slate-500 font-medium">
+            <span className="text-xs text-slate-400 font-medium">
               Hittable · MIT License
             </span>
           </div>
@@ -197,13 +193,13 @@ export default async function HomePage() {
               }
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-slate-500 hover:text-slate-300 transition-colors font-medium"
+              className="text-xs text-slate-400 hover:text-slate-300 transition-colors font-medium"
             >
               Pantho Haque
             </a>
             <Link
               href="/hittable"
-              className="text-xs text-slate-500 hover:text-slate-300 transition-colors font-medium"
+              className="text-xs text-slate-400 hover:text-slate-300 transition-colors font-medium"
             >
               Launch App
             </Link>

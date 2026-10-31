@@ -129,7 +129,7 @@ test.describe(".hit files: Runner and Text stay in step", () => {
 
   test("typing headers keeps exactly what you type, and half-typed JSON never wipes the saved headers", async ({ page }) => {
     await open(page, { "hittable/req.hit": hit() }, "hittable/req.hit");
-    await page.getByRole("button", { name: "Headers", exact: true }).click();
+    await page.getByRole("tab", { name: "Headers", exact: true }).click();
     const headers = editor(page, "headers");
     await headers.click();
     await page.keyboard.press("ControlOrMeta+a");
@@ -145,7 +145,7 @@ test.describe(".hit files: Runner and Text stay in step", () => {
 
   test("switching to Text with half-typed headers shows the last valid file, not empty headers", async ({ page }) => {
     await open(page, { "hittable/req.hit": hit() }, "hittable/req.hit");
-    await page.getByRole("button", { name: "Headers", exact: true }).click();
+    await page.getByRole("tab", { name: "Headers", exact: true }).click();
     await editor(page, "headers").click();
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.type('{"X-Broken": ', { delay: 10 });

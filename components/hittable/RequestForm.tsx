@@ -4,7 +4,7 @@ import { MessageCircleWarning, ChevronDown, RotateCcw, Folder, Route } from "luc
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
-  NoExtensionModal,
+  ExtensionStatus,
   ResponsePanel,
   TabEditor,
   UrlBar,
@@ -161,11 +161,6 @@ function InputForm() {
 
   return (
     <div className="h-full w-full flex flex-col gap-4 font-mono">
-      <NoExtensionModal
-        checked={extensionChecked}
-        available={extensionAvailable}
-      />
-
       <div className="flex flex-col md:flex-row justify-between items-center">
         <nav
           aria-label="Breadcrumb"
@@ -180,7 +175,7 @@ function InputForm() {
                   openDropdown === "collection" ? null : "collection",
                 )
               }
-              className="flex items-center gap-1 text-[8px] md:text-[9px] uppercase text-cyan-500/40 hover:text-cyan-400 transition-colors cursor-pointer"
+              className="flex items-center gap-1 text-[11px] md:text-[11px] uppercase text-cyan-300 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               {collectionName || "No collection"}
               <ChevronDown
@@ -189,12 +184,12 @@ function InputForm() {
               />
             </button>
             {openDropdown === "collection" && collectionNames.length > 0 && (
-              <div className="absolute top-full left-0 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[200px] overflow-y-auto">
+              <div className="absolute top-full left-0 mt-1 z-50 bg-(--surface-2) border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[200px] overflow-y-auto">
                 {collectionNames.map((name) => (
                   <button
                     key={name}
                     onClick={() => handleCollectionSelect(name)}
-                    className={`w-full text-left px-3 py-1.5 text-[10px] transition-colors cursor-pointer ${
+                    className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors cursor-pointer ${
                       name === collectionName
                         ? "text-cyan-400 bg-cyan-500/10"
                         : "text-white/50 hover:text-white/80 hover:bg-white/5"
@@ -216,7 +211,7 @@ function InputForm() {
                 <span className="text-white/10 text-xs">/</span>
                 <button
                   onClick={() => setOpenDropdown(isOpen ? null : i)}
-                  className="flex items-center gap-1 text-[8px] md:text-[9px] uppercase text-cyan-500/40 hover:text-cyan-400 transition-colors cursor-pointer"
+                  className="flex items-center gap-1 text-[11px] md:text-[11px] uppercase text-cyan-300 hover:text-cyan-400 transition-colors cursor-pointer"
                 >
                   {segment}
                   <ChevronDown
@@ -225,7 +220,7 @@ function InputForm() {
                   />
                 </button>
                 {isOpen && siblingItems.length > 0 && (
-                  <div className="absolute top-full left-2 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[220px] overflow-y-auto">
+                  <div className="absolute top-full left-2 mt-1 z-50 bg-(--surface-2) border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[220px] overflow-y-auto">
                     {siblingItems.map((item) => {
                       const isCurrentFolder = item.type === "folder" && item.name === segment;
                       const isCurrentRoute = item.type === "route" && item.name === curlName;
@@ -236,7 +231,7 @@ function InputForm() {
                         <button
                           key={item.name}
                           onClick={() => handleFolderItemSelect(i, item)}
-                          className={`w-full text-left px-3 py-1.5 text-[10px] transition-colors cursor-pointer flex items-center gap-2 ${
+                          className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors cursor-pointer flex items-center gap-2 ${
                             isActive
                               ? "text-cyan-400 bg-cyan-500/10"
                               : "text-white/50 hover:text-white/80 hover:bg-white/5"
@@ -246,10 +241,10 @@ function InputForm() {
                             <span className="w-0.5 h-3 bg-cyan-400 rounded-r-full shrink-0" />
                           )}
                           {item.type === "folder" ? (
-                            <Folder size={10} className="text-cyan-500/40 shrink-0" />
+                            <Folder size={10} className="text-cyan-300 shrink-0" />
                           ) : mc ? (
                             <span
-                              className="shrink-0 px-1 py-0.5 rounded text-[8px] font-bold leading-none border"
+                              className="shrink-0 px-1 py-0.5 rounded text-[11px] font-bold leading-none border"
                               style={{
                                 color: mc,
                                 borderColor: `${mc}40`,
@@ -259,7 +254,7 @@ function InputForm() {
                               {method}
                             </span>
                           ) : (
-                            <Route size={10} className="text-white/30 shrink-0" />
+                            <Route size={10} className="text-white/50 shrink-0" />
                           )}
                           <span className="truncate">{item.name}</span>
                         </button>
@@ -281,7 +276,7 @@ function InputForm() {
                   openDropdown === "route" ? null : "route",
                 )
               }
-              className="flex items-center gap-1 text-[8px] md:text-[9px] uppercase text-cyan-500/70 hover:text-cyan-400 transition-colors cursor-pointer"
+              className="flex items-center gap-1 text-[11px] md:text-[11px] uppercase text-cyan-300 hover:text-cyan-400 transition-colors cursor-pointer"
             >
               {curlName || "No route"}
               <ChevronDown
@@ -290,7 +285,7 @@ function InputForm() {
               />
             </button>
             {openDropdown === "route" && currentRoutes.length > 0 && (
-              <div className="absolute top-full left-0 mt-1 z-50 bg-[#0e1f35] border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[220px] overflow-y-auto">
+              <div className="absolute top-full left-0 mt-1 z-50 bg-(--surface-2) border border-white/10 rounded-lg shadow-xl shadow-black/50 py-1 min-w-[180px] max-h-[220px] overflow-y-auto">
                 {currentRoutes.map((item) => {
                   const isActive = item.name === curlName;
                   const method = extractMethod(item.curl);
@@ -299,7 +294,7 @@ function InputForm() {
                     <button
                       key={item.name}
                       onClick={() => handleRouteSelect(item.name)}
-                      className={`w-full text-left px-3 py-1.5 text-[10px] transition-colors cursor-pointer flex items-center gap-2 ${
+                      className={`w-full text-left px-3 py-1.5 text-[11px] transition-colors cursor-pointer flex items-center gap-2 ${
                         isActive
                           ? "text-cyan-400 bg-cyan-500/10"
                           : "text-white/50 hover:text-white/80 hover:bg-white/5"
@@ -309,7 +304,7 @@ function InputForm() {
                         <span className="w-0.5 h-3 bg-cyan-400 rounded-r-full shrink-0" />
                       )}
                       <span
-                        className="shrink-0 px-1 py-0.5 rounded text-[8px] font-bold leading-none border"
+                        className="shrink-0 px-1 py-0.5 rounded text-[11px] font-bold leading-none border"
                         style={{
                           color: mc,
                           borderColor: `${mc}40`,
@@ -326,24 +321,27 @@ function InputForm() {
             )}
           </div>
         </nav>
+        <div className="flex items-center w-full justify-start md:justify-end gap-2">
         {isUnsaved() && (
-          <div className="flex items-center w-full justify-start md:justify-end gap-2">
+          <>
             <button
               onClick={handleRevert}
               title="Discard changes"
-              className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[8px] md:text-[10px] font-semibold text-white/40 transition-all cursor-pointer hover:border-amber-500/30 hover:text-amber-400 min-h-[28px]"
+              className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] md:text-[11px] font-semibold text-white/60 transition-all cursor-pointer hover:border-amber-500/30 hover:text-amber-400 min-h-[28px]"
             >
               <RotateCcw className="h-3 w-3" />
             </button>
-            <span className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1 text-[8px] md:text-[10px] font-semibold text-amber-400 border border-amber-500/20">
+            <span className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1 text-[11px] md:text-[11px] font-semibold text-amber-400 border border-amber-500/20">
               <MessageCircleWarning
                 className="h-3 w-3"
                 strokeWidth={2.5}
               />
               Unsaved · Ctrl/Cmd+S
             </span>
-          </div>
+          </>
         )}
+          <ExtensionStatus checked={extensionChecked} available={extensionAvailable} />
+        </div>
       </div>
 
       <UrlBar error={error} />
@@ -371,7 +369,7 @@ function EmptyState() {
             height="28"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#00e5cc"
+            stroke="var(--brand)"
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"

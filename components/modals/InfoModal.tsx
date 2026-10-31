@@ -1,6 +1,8 @@
 "use client";
 
 import { Info, Keyboard, Puzzle, Database, Variable, Server } from "lucide-react";
+import { openTool, useToolListener } from "@/utils/uiEvents";
+import { ShortcutKeys } from "@/components/modals/ShortcutsModal";
 import { useState } from "react";
 import { ModalShell, ModalActions } from "@/components";
 import {
@@ -15,31 +17,31 @@ import { EXTENSION_URL } from "@/config";
 const acordionItems = [
     {
       value: "keybindings",
-      triggerIcon: <Keyboard size={12} className="text-cyan-500/50" />,
+      triggerIcon: <Keyboard size={12} className="text-cyan-300" />,
       triggerText: "Keybindings",
-      content: <Keybindings />,
+      content: null, // rendered below: it needs to close this dialog
     },
     {
       value: "extension",
-      triggerIcon: <Puzzle size={12} className="text-cyan-500/50" />,
+      triggerIcon: <Puzzle size={12} className="text-cyan-300" />,
       triggerText: "Localhost Extension",
       content: <LocalExtension />,
     },
     {
       value: "proxy",
-      triggerIcon: <Server size={12} className="text-cyan-500/50" />,
+      triggerIcon: <Server size={12} className="text-cyan-300" />,
       triggerText: "How the Proxy Works",
       content: <ProxyInfo />,
     },
     {
       value: "envvars",
-      triggerIcon: <Variable size={12} className="text-cyan-500/50" />,
+      triggerIcon: <Variable size={12} className="text-cyan-300" />,
       triggerText: "Environment Variables",
       content: <EnvVarsInfo />,
     },
     {
       value: "storage",
-      triggerIcon: <Database size={12} className="text-cyan-500/50" />,
+      triggerIcon: <Database size={12} className="text-cyan-300" />,
       triggerText: "Data & Privacy",
       content: <StorageInfo />,
     },
@@ -47,6 +49,7 @@ const acordionItems = [
   
 export default function InfoModal() {
   const [open, setOpen] = useState(false);
+  useToolListener("info", () => setOpen(true));
 
   
   return (
@@ -57,6 +60,7 @@ export default function InfoModal() {
           setOpen(true);
         }}
         title="Info"
+        aria-label="Info"
         className="modal-button-mini mt-auto mb-2"
       >
         <Info size={14} />
@@ -79,7 +83,19 @@ export default function InfoModal() {
                       {item.triggerText}
                     </span>
                   </AccordionTrigger>
-                  <AccordionContent className="pt-2">{item.content}</AccordionContent>
+                  <AccordionContent className="pt-2">
+                    {item.value === "keybindings" ? (
+                      <Keybindings
+                        onShowAll={() => {
+                          setOpen(false);
+                          // After this dialog has returned focus, so the cheatsheet returns it there too.
+                          setTimeout(() => openTool("shortcuts"));
+                        }}
+                      />
+                    ) : (
+                      item.content
+                    )}
+                  </AccordionContent>
                 </AccordionItem>
               ))}
             </Accordion>
@@ -96,32 +112,22 @@ export default function InfoModal() {
   );
 }
 
-function Keybindings() {
+function Keybindings({ onShowAll }: { onShowAll: () => void }) {
   return (
     <div className="flex flex-col gap-2">
-      {KEYBINDINGS.map(({ keys, description }) => (
-        <div key={description} className="flex items-center justify-between">
-          <span className="text-white/30">{description}</span>
-          <div className="flex items-center gap-1">
-            {keys.map((k, i) => (
-              <span key={k} className="flex items-center gap-1">
-                <kbd className="kbd">{k}</kbd>
-                {i < keys.length - 1 && (
-                  <span className="text-white/20 text-[10px]">+</span>
-                )}
-              </span>
-            ))}
-          </div>
+      {KEYBINDINGS.map(({ id, keys, description }) => (
+        <div key={id} className="flex items-center justify-between gap-3">
+          <span className="text-white/60">{description}</span>
+          <ShortcutKeys keys={keys} />
         </div>
       ))}
-      <div className="mt-2 pt-2 border-t border-white/5">
-        <div className="flex items-center justify-between">
-          <span className="text-white/30">Close modals</span>
-          <div className="flex items-center gap-1">
-            <kbd className="kbd">Esc</kbd>
-          </div>
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={onShowAll}
+        className="self-start mt-2 text-xs text-(--brand) hover:underline cursor-pointer"
+      >
+        All shortcuts by area
+      </button>
     </div>
   );
 }
@@ -129,11 +135,11 @@ function Keybindings() {
 function LocalExtension() {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-white/30 leading-relaxed">
+      <p className="text-white/50 leading-relaxed">
         To send requests to your local servers, install the Hittable browser
         extension.
       </p>
-      <ol className="flex flex-col gap-1.5 text-white/30">
+      <ol className="flex flex-col gap-1.5 text-white/50">
         {[
           "Download and unzip the extension",
           "Go to chrome://extensions",
@@ -141,7 +147,7 @@ function LocalExtension() {
           "Click Load unpacked → select the folder",
         ].map((step, i) => (
           <li key={i} className="flex items-start gap-2">
-            <span className="text-cyan-500/40 shrink-0">{i + 1}.</span>
+            <span className="text-cyan-300 shrink-0">{i + 1}.</span>
             {step}
           </li>
         ))}
@@ -150,7 +156,7 @@ function LocalExtension() {
         href={EXTENSION_URL}
         target="_blank"
         rel="noreferrer"
-        className="flex items-center justify-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-3 py-1.5 text-[10px] font-semibold text-cyan-400 transition-colors hover:bg-cyan-500/10"
+        className="flex items-center justify-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/5 px-3 py-1.5 text-[11px] font-semibold text-cyan-400 transition-colors hover:bg-cyan-500/10"
       >
         Download Extension
       </a>
@@ -160,19 +166,19 @@ function LocalExtension() {
 
 function ProxyInfo() {
   return (
-    <div className="flex flex-col gap-3 text-white/30 leading-relaxed text-[11px]">
+    <div className="flex flex-col gap-3 text-white/50 leading-relaxed text-[11px]">
       <p>
         Hittable routes external API requests through a Next.js server-side proxy
-        at <code className="text-cyan-400/60 bg-white/5 px-1 py-0.5 rounded text-[10px]">/api/proxy</code>. This bypasses
+        at <code className="text-cyan-300 bg-white/5 px-1 py-0.5 rounded text-[11px]">/api/proxy</code>. This bypasses
         CORS restrictions that would normally block browser-to-server requests.
       </p>
       <p>
         For <strong className="text-white/50">localhost</strong> requests, the
-        browser extension takes over — it intercepts requests to <code className="text-cyan-400/60 bg-white/5 px-1 py-0.5 rounded text-[10px]">localhost</code> / <code className="text-cyan-400/60 bg-white/5 px-1 py-0.5 rounded text-[10px]">127.0.0.1</code> and
+        browser extension takes over — it intercepts requests to <code className="text-cyan-300 bg-white/5 px-1 py-0.5 rounded text-[11px]">localhost</code> / <code className="text-cyan-300 bg-white/5 px-1 py-0.5 rounded text-[11px]">127.0.0.1</code> and
         makes them directly from the extension&apos;s background service worker, which
         is not subject to CORS.
       </p>
-      <p className="text-white/20">
+      <p className="text-white/50">
         Requests never leave your machine for localhost. External requests pass
         through the Vercel-hosted proxy server.
       </p>
@@ -182,19 +188,19 @@ function ProxyInfo() {
 
 function EnvVarsInfo() {
   return (
-    <div className="flex flex-col gap-3 text-white/30 leading-relaxed text-[11px]">
+    <div className="flex flex-col gap-3 text-white/50 leading-relaxed text-[11px]">
       <p>
         Define environment variables per collection in the Env Vars modal. Reference them in URLs,
         headers, and body using double angle brackets:
       </p>
-      <div className="bg-white/5 rounded-md p-3 font-mono text-[10px]">
-        <div className="text-white/20 mb-1"># Example usage in a URL:</div>
+      <div className="bg-white/5 rounded-md p-3 font-mono text-[11px]">
+        <div className="text-white/50 mb-1"># Example usage in a URL:</div>
         <div className="text-cyan-400/70">https://api.example.com/{'<<'}host{'>>'}/users</div>
-        <div className="text-white/20 mt-2 mb-1"># Example usage in headers:</div>
+        <div className="text-white/50 mt-2 mb-1"># Example usage in headers:</div>
         <div className="text-cyan-400/70">Authorization: Bearer {'<<'}token{'>>'}</div>
       </div>
       <p>
-        Variable names can contain letters, numbers, and underscores — e.g. <code className="text-cyan-400/60 bg-white/5 px-1 py-0.5 rounded text-[10px]">{'<<'}API_KEY{'>>'}</code>, <code className="text-cyan-400/60 bg-white/5 px-1 py-0.5 rounded text-[10px]">{'<<'}BASE_URL{'>>'}</code>.
+        Variable names can contain letters, numbers, and underscores — e.g. <code className="text-cyan-300 bg-white/5 px-1 py-0.5 rounded text-[11px]">{'<<'}API_KEY{'>>'}</code>, <code className="text-cyan-300 bg-white/5 px-1 py-0.5 rounded text-[11px]">{'<<'}BASE_URL{'>>'}</code>.
       </p>
     </div>
   );
@@ -202,7 +208,7 @@ function EnvVarsInfo() {
 
 function StorageInfo() {
   return (
-    <div className="flex flex-col gap-3 text-white/30 leading-relaxed text-[11px]">
+    <div className="flex flex-col gap-3 text-white/50 leading-relaxed text-[11px]">
       <p>
         <strong className="text-white/50">Everything stays on your machine.</strong> Hittable
         stores all data in your browser&apos;s localStorage — collections, environment
@@ -215,7 +221,7 @@ function StorageInfo() {
         <li>• API requests you explicitly send (routed through the proxy or extension)</li>
         <li>• Landing page resume data (fetched from the developer&apos;s portfolio API)</li>
       </ul>
-      <p className="text-white/20">
+      <p className="text-white/50">
         Clearing your browser data will delete all Hittable data. Use the Export
         feature to back up collections.
       </p>

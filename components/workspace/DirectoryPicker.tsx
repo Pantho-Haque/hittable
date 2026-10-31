@@ -9,7 +9,7 @@ export default function DirectoryPicker() {
 
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-[#0e1f35] border border-white/10 flex items-center justify-center">
+      <div className="w-16 h-16 rounded-2xl bg-(--surface-2) border border-white/10 flex items-center justify-center">
         <FolderOpen className="w-8 h-8 text-cyan-300" />
       </div>
       <div className="space-y-2">

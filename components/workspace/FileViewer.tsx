@@ -35,11 +35,11 @@ export default function FileViewer() {
   return (
     <div className="flex flex-1 items-center justify-center p-8">
       <div className="flex flex-col items-center gap-2 text-center">
-        <FileWarning size={28} className="text-slate-500" aria-hidden />
+        <FileWarning size={28} className="text-slate-400" aria-hidden />
         <p className="text-sm text-slate-300">
           {text} · {humanSize(fileSize)}
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-400">
           {fileView.kind === "toolarge" ? "Over the 1 MB editing limit" : "Not shown as text"}, and never changed from here.
         </p>
       </div>

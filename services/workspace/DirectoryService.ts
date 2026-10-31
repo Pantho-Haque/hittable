@@ -8,6 +8,10 @@ import {
 
 const HITTABLE_DIR = "hittable";
 const ENV_FILE = "env.json";
+// FR-17: values that must not reach git. Same flat map as env.json, layered
+// on top of it, and listed in hittable/.gitignore so it is never committed.
+export const LOCAL_ENV_FILE = "env.local.json";
+const GITIGNORE = ".gitignore";
 const NOTES_DIR = "notes";
 const EMPTY_ENV = "{}";
 
@@ -51,6 +55,8 @@ export async function scaffoldHittable(
     await createFile(hittableDir, ENV_FILE, EMPTY_ENV);
   }
 
+  await ensureLocalEnvIgnored(hittableDir);
+
   if (!(await directoryExists(hittableDir, NOTES_DIR))) {
     await createDirectory(hittableDir, NOTES_DIR);
     const notesDir = await hittableDir.getDirectoryHandle(NOTES_DIR);
@@ -73,14 +79,39 @@ export async function validateHittable(
   return hittableDir;
 }
 
-export async function readEnvFile(
-  hittableDir: FileSystemDirectoryHandle
-): Promise<Record<string, string>> {
-  const handle = await hittableDir.getFileHandle(ENV_FILE);
-  const content = await readFileText(handle);
+/**
+ * Adds env.local.json to hittable/.gitignore unless a line already names it.
+ * Appends; never rewrites what the user has there.
+ */
+export async function ensureLocalEnvIgnored(hittableDir: FileSystemDirectoryHandle): Promise<void> {
   try {
-    return JSON.parse(content);
+    let current = "";
+    if (await fileExists(hittableDir, GITIGNORE)) {
+      current = await readFileText(await hittableDir.getFileHandle(GITIGNORE));
+    }
+    const listed = current.split(/\r?\n/).some((l) => l.trim().replace(/^\//, "") === LOCAL_ENV_FILE);
+    if (listed) return;
+    const sep = current && !current.endsWith("\n") ? "\n" : "";
+    await createFile(hittableDir, GITIGNORE, `${current}${sep}${LOCAL_ENV_FILE}\n`);
+  } catch (err) {
+    // A read-only folder still opens; it just cannot be protected.
+    console.error("Could not update hittable/.gitignore:", err);
+  }
+}
+
+async function readFlatMap(dir: FileSystemDirectoryHandle, name: string): Promise<Record<string, string>> {
+  try {
+    const parsed = JSON.parse(await readFileText(await dir.getFileHandle(name)));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)]));
   } catch {
     return {};
   }
+}
+
+/** env.json with env.local.json layered on top (the local value wins). */
+export async function readEnvFile(
+  hittableDir: FileSystemDirectoryHandle
+): Promise<Record<string, string>> {
+  return { ...(await readFlatMap(hittableDir, ENV_FILE)), ...(await readFlatMap(hittableDir, LOCAL_ENV_FILE)) };
 }

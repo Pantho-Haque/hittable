@@ -86,7 +86,7 @@ test.describe("response viewer", () => {
     await blankRequest(page, seed);
     await urlInput(page).fill(`${API}/users`);
     await send(page);
-    const tab = response(page).getByRole("button", { name: /^headers\s*\(\d+\)$/ });
+    const tab = response(page).getByRole("tab", { name: /^headers\s*\(\d+\)$/ });
     await expect(tab).toBeVisible();
     await tab.click();
     await expect(response(page).getByText("x-total-count")).toBeVisible();
@@ -112,7 +112,7 @@ test.describe("response viewer", () => {
     await blankRequest(page, seed);
     await urlInput(page).fill(`${API}/cookie`);
     await send(page);
-    await response(page).getByRole("button", { name: /^headers/ }).click();
+    await response(page).getByRole("tab", { name: /^headers/ }).click();
     await expect(response(page).getByText("set-cookie")).toBeVisible();
     await expect(response(page).getByText(/session=abc123; Path=\/; HttpOnly/)).toBeVisible();
     await expect(response(page).getByText(/theme=dark/)).toBeVisible();

@@ -2,14 +2,19 @@
 
 import { METHOD_COLORS, HITTABLE_METHODS } from "@/constants";
 import useKeypress from "@/hooks/useKeypress";
-import { curlConverter, jsonToCurl } from "@/utils/curlConverter";
-import { hittableProxy } from "@/utils/hittableProxy";
+import { curlConverter } from "@/utils/curlConverter";
+import CopyAsMenu from "./CopyAsMenu";
+import { copyAs } from "@/utils/codegen";
+import { COPY_CURL_EVENT, openTool } from "@/utils/uiEvents";
+import { isProduction, needsConfirmation, targetHost } from "@/utils/productionGuard";
+import { ModalActions, ModalShell } from "@/components/ui/SharedModal";
+import { hittableProxy, isAbortError } from "@/utils/hittableProxy";
 import { getParamsfromUrl } from "@/utils/responsePanelUtils";
 import { addHistoryEntry } from "@/utils/historyModifier";
 import { updateEnv } from "@/utils/hittableCollectionModifier";
 import { ensureEnvVarsForText } from "@/utils/importers/variableSyntax";
-import { CheckCircle2, Terminal, Loader2, Save, Send } from "lucide-react";
-import { useCallback, useState, useRef, useEffect } from "react";
+import { Loader2, Save, Send, X, TriangleAlert } from "lucide-react";
+import { useCallback, useState, useRef, useEffect, useMemo } from "react";
 import { useDataContext } from "@/context/dataContext";
 import { useNotification } from "@/hooks/useNotify";
 import SaveFromHistoryModal from "@/components/modals/SaveFromHistoryModal";
@@ -30,13 +35,14 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
     collections,
     setCollections,
   } = propDataSource ?? contextData;
-  const { error: notifyError } = useNotification();
+  const { error: notifyError, success: notifySuccess } = useNotification();
 
   const { env, secrets } = selectorResponse!;
   const mc = METHOD_COLORS[formInput.method] ?? "#94a3b8";
 
-  const [curlCopied, setCurlCopied] = useState(false);
   const [proxyLoading, setProxyLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const sentAtRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   const envRef = useRef(env);
@@ -65,17 +71,35 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
     }
   };
 
-  const handleCopyCurl = () => {
-    navigator.clipboard.writeText(jsonToCurl(formInput));
-    setCurlCopied(true);
-    setTimeout(() => setCurlCopied(false), 2000);
-  };
 
-  // Render URL with :param path segments highlighted in amber
+  // Variables the request uses that neither env nor secrets define. Shown as a
+  // note under the bar so a typo is caught before the request goes out.
+  const unknownVars = useMemo(
+    () => findUnknownVars([formInput.url, formInput.headers, formInput.body, formInput.params], env, secrets),
+    [formInput.url, formInput.headers, formInput.body, formInput.params, env, secrets],
+  );
+
+  // Render URL with <<KEY>> variables (teal when defined, red when not) and
+  // :param path segments (amber) highlighted. Values are never shown here:
+  // a secret must not leak into a screenshot.
   function renderHighlightedUrl(url: string): React.ReactNode {
-    if (!url) return <span className="text-white/20">https://api.example.com/endpoint</span>;
-    const parts = url.split(/(:\w+)/g);
+    if (!url) return <span className="text-white/50">https://api.example.com/endpoint</span>;
+    const parts = url.split(/(<<\w+>>|:\w+)/g);
     return parts.map((part, i) => {
+      const v = /^<<(\w+)>>$/.exec(part);
+      if (v) {
+        const known = isDefined(v[1], env, secrets);
+        return (
+          <span
+            key={i}
+            data-var={v[1]}
+            data-resolved={known}
+            className={known ? "text-(--brand) font-semibold" : "text-(--danger) font-semibold underline decoration-wavy underline-offset-2"}
+          >
+            {part}
+          </span>
+        );
+      }
       if (/^:\w+$/.test(part)) {
         return (
           <span key={i} className="text-amber-400 font-semibold">
@@ -92,12 +116,18 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
   }
 
   const sendProxyRequest = useCallback(async () => {
+    if (abortRef.current) return; // one request at a time; the button is Cancel now
+    const controller = new AbortController();
+    abortRef.current = controller;
+    sentAtRef.current = performance.now();
     setProxyLoading(true);
     const startTime = performance.now();
     try {
-      const res = await hittableProxy(formInput, envRef.current, secretsRef.current, extensionAvailable);
+      const res = await hittableProxy(formInput, envRef.current, secretsRef.current, extensionAvailable, controller.signal);
       const durationMs = Math.round(performance.now() - startTime);
-      const sizeBytes = res.data ? new TextEncoder().encode(JSON.stringify(res.data)).byteLength : 0;
+      // The proxy reports the bytes it received; the extension path does not,
+      // so fall back to measuring the body here.
+      const sizeBytes = typeof res.sizeBytes === "number" ? res.sizeBytes : bodyBytes(res.data);
       setProxyResponse({ ...res, durationMs, sizeBytes });
 
       // Record in history via context
@@ -112,6 +142,10 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
         responseJson: { ...res, durationMs, sizeBytes },
       }));
     } catch (err) {
+      if (isAbortError(err)) {
+        setProxyResponse({ error: "Request cancelled" });
+        return;
+      }
       setProxyResponse({ error: String(err) });
 
       // Record failed request in history
@@ -121,24 +155,65 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
         curlJson: formInput,
       }));
     } finally {
+      abortRef.current = null;
       setProxyLoading(false);
     }
   }, [setProxyResponse, formInput, extensionAvailable, history, setHistory]);
+
+  // FR-16: against a production environment, anything that changes state is
+  // confirmed first. Every way of sending goes through here.
+  const [confirmProd, setConfirmProd] = useState(false);
+  const production = isProduction(env, secrets);
+  const requestSend = useCallback(() => {
+    if (abortRef.current) return;
+    if (needsConfirmation(formInput.method, envRef.current, secretsRef.current)) {
+      setConfirmProd(true);
+      return;
+    }
+    sendProxyRequest();
+  }, [formInput.method, sendProxyRequest]);
+
+  const cancelRequest = useCallback(() => abortRef.current?.abort(), []);
+  // Send turns into Cancel under the pointer, so the second click of a
+  // double-click would cancel what the first one sent. Clicks that soon after
+  // sending are ignored; Esc still cancels at once.
+  const cancelByClick = useCallback(() => {
+    if (performance.now() - sentAtRef.current < 400) return;
+    cancelRequest();
+  }, [cancelRequest]);
+
+  // "Copy request as cURL" from the command palette.
+  useEffect(() => {
+    const onCopy = () => {
+      copyAs("curl", formInput, { ...(env ?? {}), ...(secrets ?? {}) })
+        .then(() => notifySuccess({ title: "Copied as cURL", desc: "Variables are filled in." }))
+        .catch(() => notifyError({ title: "Could not copy", desc: "The clipboard is not available here." }));
+    };
+    window.addEventListener(COPY_CURL_EVENT, onCopy);
+    return () => window.removeEventListener(COPY_CURL_EVENT, onCopy);
+  }, [formInput, env, secrets, notifySuccess, notifyError]);
+
+  // Leaving the request (or the page) must not leave a request running whose
+  // answer would land in whatever is open next.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   function handleUrlPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const pasted = e.clipboardData.getData("text").trim();
 
     if (!pasted.startsWith("curl ")) return;
 
-    setFormInput({ ...formInput, url: pasted });
-
     e.preventDefault(); // stop it from being typed into the input
     // Postman {{var}} and Insomnia {{ _.var }} become Hittable <<var>>, so the
     // variables created below are the ones resolved at send time.
     const parsed = curlConverter(pasted.replace(/\{\{\s*(?:_\.)?(\w+)\s*\}\}/g, "<<$1>>"));
-    setTimeout(() => {
-      setFormInput(parsed);
-    }, 1000);
+    const before = formInput;
+    setFormInput(parsed);
+    notifySuccess({
+      title: "Imported from curl",
+      desc: `${parsed.method} ${parsed.url}`,
+      timeout: 6000,
+      action: { label: "Undo", onClick: () => setFormInput(before) },
+    });
 
     // Create empty env entries for the referenced variables, keeping existing values
     if (selectorResponse?.collectionName) {
@@ -160,7 +235,7 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
         notifyError({ title: "Cannot send request", desc: "Fix the JSON error in your request body before sending." });
         return;
       }
-      sendProxyRequest();
+      requestSend();
     },
   });
 
@@ -176,9 +251,16 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
   }, [formInput.url]);
 
   return (
+    <>
     <div
-      className="relative flex items-center gap-2 rounded-lg flex-wrap border bg-[#0a1628] px-2 py-1.5 transition-all"
+      className="relative flex items-center gap-2 rounded-lg flex-wrap border bg-(--surface-1) px-2 py-1.5 transition-all"
       style={{ borderColor: `${mc}33`, boxShadow: `0 0 20px ${mc}0d` }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && abortRef.current) {
+          e.preventDefault();
+          cancelRequest();
+        }
+      }}
     >
       {/* Corner brackets */}
       <span
@@ -200,7 +282,7 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
 
       <select
         aria-label="HTTP method"
-        className="w-full md:w-auto shrink-0 rounded-md border-0 bg-[#0e1f35] px-2 py-2 md:py-1.5 text-xs font-bold tracking-widest outline-none cursor-pointer min-h-[44px] md:min-h-0"
+        className="w-full md:w-auto shrink-0 rounded-md border-0 bg-(--surface-2) px-2 py-2 md:py-1.5 text-xs font-bold tracking-widest outline-none cursor-pointer min-h-[44px] md:min-h-0"
         style={{ color: mc }}
         value={formInput.method}
         onChange={(e) => setFormInput({ ...formInput, method: e.target.value })}
@@ -212,6 +294,15 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
         ))}
       </select>
 
+      {production && (
+        <span
+          title="This environment is marked production: changes are confirmed before sending"
+          className="shrink-0 rounded border border-(--danger)/50 bg-(--danger)/15 px-1.5 py-0.5 text-xs font-bold tracking-wide text-(--danger)"
+        >
+          PRODUCTION
+        </span>
+      )}
+
       <div className="h-4 w-px bg-white/10" />
 
       {/* URL input with path parameter highlighting */}
@@ -219,7 +310,7 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
         {/* Highlight layer behind textarea */}
         <div
           ref={highlightRef}
-          className="absolute inset-0 pointer-events-none whitespace-pre-wrap break-all py-1 text-[10px] md:text-xs leading-normal overflow-hidden"
+          className="absolute inset-0 pointer-events-none whitespace-pre-wrap break-all py-1 text-[11px] md:text-xs leading-normal overflow-hidden"
           aria-hidden="true"
         >
           {renderHighlightedUrl(formInput.url)}
@@ -228,7 +319,7 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
         <textarea
           ref={textareaRef}
           aria-label="Request URL"
-          className="relative w-full bg-transparent py-1 text-[10px] md:text-xs text-transparent caret-white/80 outline-none resize-none overflow-hidden z-10"
+          className="relative w-full bg-transparent py-1 text-[11px] md:text-xs text-transparent caret-white/80 outline-none resize-none overflow-hidden z-10"
           style={{ caretColor: "rgba(255,255,255,0.8)" }}
           placeholder="https://api.example.com/endpoint"
           value={formInput.url}
@@ -253,41 +344,98 @@ export default function UrlBar({ error, dataSource: propDataSource }: { error: s
           title="Save (Ctrl/Cmd+S)"
           disabled={!isUnsaved()}
           onClick={handleSaveCollection}
-          className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-2 md:py-1.5 text-[8px] md:text-xs font-semibold text-white/40 transition-all cursor-pointer hover:border-cyan-500/30 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-20 min-h-[44px] md:min-h-0"
+          className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-2 md:py-1.5 text-[11px] md:text-xs font-semibold text-white/60 transition-all cursor-pointer hover:border-cyan-500/30 hover:text-cyan-400 disabled:cursor-not-allowed disabled:opacity-20 min-h-[44px] md:min-h-0"
         >
           <Save className="h-3 w-3 md:h-3 md:w-3" />
           <span className="hidden sm:inline">Save</span>
         </button>
 
         <button
-          title="Send (Ctrl/Cmd+Enter)"
-          disabled={proxyLoading || !!error}
-          onClick={sendProxyRequest}
-          className="flex items-center gap-1.5 rounded-md px-3 py-2 md:py-1.5 text-[8px] md:text-xs font-bold text-black transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:scale-95 min-h-[44px] md:min-h-0"
+          title={proxyLoading ? "Cancel (Esc)" : "Send (Ctrl/Cmd+Enter)"}
+          aria-label={proxyLoading ? "Cancel" : "Send"}
+          disabled={!proxyLoading && !!error}
+          onClick={proxyLoading ? cancelByClick : requestSend}
+          className="flex items-center gap-1.5 rounded-md px-3 py-2 md:py-1.5 text-[11px] md:text-xs font-bold text-black transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:scale-95 min-h-[44px] md:min-h-0"
           style={{ background: mc, boxShadow: `0 0 12px ${mc}44` }}
         >
           {proxyLoading ? (
-            <Loader2 className="h-3 w-3 md:h-3 md:w-3 animate-spin" />
+            <span className="relative flex h-3 w-3 items-center justify-center">
+              <Loader2 className="absolute h-3 w-3 animate-spin" aria-hidden="true" />
+              <X className="h-2 w-2" aria-hidden="true" />
+            </span>
           ) : (
-            <Send className="h-3 w-3" />
+            <Send className="h-3 w-3" aria-hidden="true" />
           )}
-          <span className="hidden sm:inline">{proxyLoading ? "Sending…" : "Send"}</span>
+          <span className="hidden sm:inline">{proxyLoading ? "Cancel" : "Send"}</span>
         </button>
 
-        <button
-          title="Copy as CURL"
-          disabled={curlCopied}
-          onClick={handleCopyCurl}
-          className="flex items-center gap-1.5 rounded-md px-3 py-2 md:py-1.5 text-[8px] md:text-xs font-bold text-black transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 active:scale-95 min-h-[44px] md:min-h-0"
-          style={{ background: mc, boxShadow: `0 0 12px ${mc}44` }}
-        >
-          {curlCopied ? (
-            <CheckCircle2 className="h-3 w-3 md:h-3 md:w-3" />
-          ) : (
-            <Terminal className="h-3 w-3" />
-          )}
-        </button>
+        <CopyAsMenu
+          formInput={formInput}
+          env={env}
+          secrets={secrets}
+          onCopied={(label) => notifySuccess({ title: `Copied as ${label}`, desc: "Variables are filled in." })}
+        />
       </div>
     </div>
+    {confirmProd && (
+      <ModalShell
+        title={`Send ${formInput.method} to production?`}
+        subtitle={`This goes to ${targetHost(formInput.url, env, secrets)}, which this environment marks as production.`}
+        onClose={() => setConfirmProd(false)}
+      >
+        <ModalActions
+          onCancel={() => setConfirmProd(false)}
+          onConfirm={() => {
+            setConfirmProd(false);
+            sendProxyRequest();
+          }}
+          confirmLabel={`Send ${formInput.method}`}
+          confirmDanger
+        />
+      </ModalShell>
+    )}
+    {unknownVars.length > 0 && (
+      <p role="note" className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-white/70">
+        <TriangleAlert className="h-3.5 w-3.5 text-(--warning)" aria-hidden="true" />
+        <span>
+          Unknown variable{unknownVars.length > 1 ? "s" : ""}{" "}
+          {unknownVars.map((k, i) => (
+            <span key={k}>
+              {i > 0 && ", "}
+              <code className="rounded bg-white/5 px-1 font-mono text-(--danger)">{`<<${k}>>`}</code>
+            </span>
+          ))}{" "}
+          — {unknownVars.length > 1 ? "they will be" : "it will be"} sent as written.
+        </span>
+        <button
+          type="button"
+          onClick={() => openTool("env")}
+          className="rounded px-1.5 py-0.5 text-xs font-semibold text-(--brand) underline-offset-2 hover:underline cursor-pointer"
+        >
+          Open Environment
+        </button>
+      </p>
+    )}
+    </>
   );
+}
+
+function isDefined(key: string, env?: Record<string, string>, secrets?: Record<string, string>) {
+  return Object.prototype.hasOwnProperty.call(env ?? {}, key) || Object.prototype.hasOwnProperty.call(secrets ?? {}, key);
+}
+
+/** Distinct <<KEY>> names in the given texts that env and secrets do not define. */
+export function findUnknownVars(texts: (string | undefined)[], env?: Record<string, string>, secrets?: Record<string, string>): string[] {
+  const seen = new Set<string>();
+  for (const t of texts) {
+    for (const m of (t ?? "").matchAll(/<<(\w+)>>/g)) {
+      if (!isDefined(m[1], env, secrets)) seen.add(m[1]);
+    }
+  }
+  return [...seen];
+}
+
+function bodyBytes(data: unknown): number {
+  if (data === null || data === undefined) return 0;
+  return new TextEncoder().encode(typeof data === "string" ? data : JSON.stringify(data)).byteLength;
 }

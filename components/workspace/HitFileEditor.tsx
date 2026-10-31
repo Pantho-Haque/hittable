@@ -4,6 +4,7 @@ import { useCallback, useState, useEffect, useRef, useMemo } from "react";
 import { useWorkspace } from "@/context/workspaceContext";
 import { THitFileContent, THittableCurlJson, TResponseJson, THittableEnv } from "@/types";
 import { useExtension } from "@/hooks/useExtension";
+import ExtensionStatus from "@/components/modals/ExtensionStatus";
 import UrlBar from "@/components/RequestForm/UrlBar";
 import TabEditor from "@/components/RequestForm/TabEditor";
 import ResponsePanel from "@/components/RequestForm/ResponsePanel";
@@ -164,7 +165,7 @@ export default function HitFileEditor() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex shrink-0 items-center gap-1 px-3 py-2 border-b border-white/10 bg-[#101c2d]">
+      <div className="flex shrink-0 items-center gap-1 px-3 py-2 border-b border-white/10 bg-(--surface-3)">
         <button
           aria-pressed={viewMode === "text"}
           onClick={() => setViewMode("text")}
@@ -182,6 +183,9 @@ export default function HitFileEditor() {
         >
           Runner
         </button>
+        <div className="ml-auto">
+          <ExtensionStatus checked={extensionChecked} available={extensionAvailable} />
+        </div>
       </div>
 
       {viewMode === "text" ? (

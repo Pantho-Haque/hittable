@@ -32,21 +32,29 @@ Every `.hit` file has two views. **Text** is the CodeMirror editor on the raw JS
 
 ## The request runner
 
-**URL bar.** The method dropdown offers `GET POST PUT PATCH DELETE HEAD`, and the bar's border takes the method's colour. `:param` segments in the path render amber. Editing the URL's query string updates the Params tab, and editing Params rewrites the query string; the two are one value. Buttons: **Save** (<kbd>Ctrl/Cmd+S</kbd>), **Send** (<kbd>Ctrl/Cmd+Enter</kbd>), **Copy as CURL**, and **Save to…** when the open request came from history and belongs to no collection yet.
+**URL bar.** The method dropdown offers `GET POST PUT PATCH DELETE HEAD OPTIONS`, and the bar's border takes the method's colour. `:param` segments in the path render amber; `<<KEY>>` variables render teal when the environment defines them and red with a wavy underline when it does not, and a note under the bar names unknown variables with an **Open Environment** link (values are never shown in the bar). Editing the URL's query string updates the Params tab, and editing Params rewrites the query string; the two are one value. Buttons: **Save** (<kbd>Ctrl/Cmd+S</kbd>), **Send** (<kbd>Ctrl/Cmd+Enter</kbd>), **Copy as**, and **Save to…** when the open request came from history and belongs to no collection yet.
 
-**Paste a curl command** into the URL field and it is parsed into method, URL, headers, params and body. `{{var}}` (Postman) and `{{ _.var }}` (Insomnia) references found in it are created as empty variables on the collection.
+**Send and Cancel.** While a request is in flight, Send turns into **Cancel**; <kbd>Esc</kbd> in the URL bar cancels too. A cancelled request says so and is not logged in history.
 
-**Params, Body, Headers** each have a **JSON mode** (a textarea with line numbers and an inline parse-error banner) and a **Table mode** (key / value rows). <kbd>Ctrl/Cmd+J</kbd> beautifies JSON. A JSON error in any tab disables Send and explains why when you try anyway.
+**Copy as** copies the request as **cURL**, **JavaScript fetch**, **Python requests** or **HTTPie**, with variables filled in, or as a **Share link** (below). The command palette has **Copy request as cURL** too.
+
+**Paste a curl command** into the URL field and it is parsed at once into method, URL, headers, params and body; a toast offers **Undo**. `{{var}}` (Postman) and `{{ _.var }}` (Insomnia) references found in it are created as empty variables on the collection.
+
+**Params, Body, Headers** each have a **JSON mode** (a textarea with line numbers and an inline parse-error banner) and a **Table mode** (key / value rows). <kbd>Shift+Alt+F</kbd> beautifies JSON. A JSON error in any JSON tab disables Send and explains why when you try anyway.
+
+**Body types.** The Body tab picks **None**, **JSON**, **Text** or **Form** (URL-encoded key / value rows). Picking one sets a matching `Content-Type` unless you set your own. The type is read from the body and its `Content-Type`, never stored separately, so files and collections stay exactly as they were; only a JSON body has to be valid JSON.
 
 **Auth** (shield icon) writes a header for you: **Bearer Token**, **Basic Auth** (base64 of `user:pass`) or **API Key** with a custom header name, default `X-API-Key`. Only the resulting header is stored with the request, so exports carry the header, not the preset.
 
-**Variables** use `<<KEY>>` in any string field and resolve only when you send; the template stays in storage. Unknown keys are left as-is so you notice them. In Local mode each collection has **Env Vars** and **Secrets** tabs (variable icon); secrets win on a name clash and are excluded from exports, but they are stored in plain `localStorage` like everything else. In Directory mode the one `hittable/env.json` is the source.
+**Variables** use `<<KEY>>` in any string field and resolve only when you send; the template stays in storage. Unknown keys are left as-is, and the URL bar names them. In Local mode each collection has **Env Vars** and **Secrets** tabs (variable icon); secrets win on a name clash and are excluded from exports, but they are stored in plain `localStorage` like everything else. In Directory mode `hittable/env.json` is the source, with `hittable/env.local.json` layered on top for values that must not be committed (see [Project format](/docs/project-format)).
 
-**Sending.** Remote URLs go through the app's `/api/proxy` so browser CORS does not get in the way. URLs on `localhost` or `127.0.0.1` cannot be reached by a server, so they are handed to the [browser extension](/docs/browser-extension), which makes the request from the user's own machine and also returns the cookies for that origin. Duration is measured in the browser; size is the serialised JSON of the body.
+**Production guard.** Tick **Production environment** in the Environment dialog (or set `HITTABLE_PRODUCTION` to `true` in `env.json`) and requests show a red **PRODUCTION** badge, and anything but `GET`, `HEAD` or `OPTIONS` asks "Send POST to production?" with the host before it goes. It is an ordinary variable, so it travels with exports and the terminal app honours it too.
+
+**Sending.** Remote URLs go through the app's `/api/proxy` so browser CORS does not get in the way. URLs on `localhost` or `127.0.0.1` cannot be reached by a server, so they are handed to the [browser extension](/docs/browser-extension), which makes the request from the user's own machine and also returns the cookies for that origin. Duration is the round trip measured in the browser, proxy hop included; size is the body's bytes as received.
 
 ## Response viewer
 
-The header shows the status (green 2xx, amber 3xx and 4xx, red otherwise), duration and size. Two tabs: **body** and **headers** (with a count).
+The header shows the status with its reason phrase (filled in when an HTTP/2 server sends none) coloured by class — green 2xx, blue 1xx and 3xx, amber 4xx, red 5xx and network errors — plus duration and size. A localhost request without the extension shows what to do and an **Install the extension** button; a cancelled one just says so. Two tabs: **body** and **headers** (with a count).
 
 The body picks a view from the content type and lets you override it until the next response arrives:
 
@@ -55,6 +63,14 @@ The body picks a view from the content type and lets you override it until the n
 - **HTML preview**: a sandboxed iframe that never runs the page's scripts, with a `<base href>` injected so relative assets resolve, beside a formatted, line-numbered source pane. Turn on **Inspect**, hover to outline elements, click one to see its tag and attributes and jump to its line in the source.
 
 **Search** (<kbd>Ctrl/Cmd+F</kbd>) counts matches across keys and values, <kbd>Enter</kbd> and <kbd>Shift+Enter</kbd> step through them, <kbd>Esc</kbd> closes. On the headers tab it filters rows. **Copy** copies the body; each header row has its own copy button and there is **Copy all headers**.
+
+**Filter** (funnel icon, JSON bodies) narrows the body with a JSONPath: `$.items[*].id`, `$..id`, `$['odd key']`, `$[0]`, `$[-1]`, `$[1:3]`. An invalid path is marked as such and the full body stays; a valid one that matches nothing says so. A new response clears it. Search and Copy work on the filtered result.
+
+**Compare** diffs the response against the previous one for the same request — the response saved with it, or the one before this send (in Local mode it falls back to history). It lists every added, removed and changed path with before → after values, key order does not count as a change, and changed headers are listed separately. The **Ignore paths** box takes body paths (`$.updatedAt`, `$.items[*].id`) and header names (`date`), so timestamps don't drown the real changes.
+
+## Share links
+
+**Copy as → Share link** copies a link that carries the request itself, compressed in the part after `#`, which browsers never send to a server — nothing is uploaded and there is no account. Variables stay `<<KEY>>`; secrets are never included; credentials in `Authorization`, `Cookie`, API-key headers, the URL's `user:password@` and query parameters such as `api_key` or `access_token` are replaced with variables (the toast lists what was replaced). Opening a link shows a preview — nothing is sent — with **Import** (into a **Shared** collection, or `hittable/shared/` in Directory mode) and **Dismiss**. Links are capped at 32 KB.
 
 ## History
 
@@ -80,9 +96,12 @@ The import icon accepts pasted Postman v2.1 JSON, Insomnia export JSON, or a Hit
 
 | Keys | Action |
 | :--- | :--- |
+| `Ctrl/Cmd + K` | command palette: requests, files and actions |
+| `?` or `Ctrl/Cmd + /` | keyboard shortcuts |
 | `Ctrl/Cmd + Enter` | send the request |
+| `Esc` (URL bar) | cancel the request in flight |
 | `Ctrl/Cmd + S` | save the route or file |
-| `Ctrl/Cmd + J` | beautify JSON in the active tab |
+| `Shift + Alt + F` | beautify JSON in the active tab |
 | `Ctrl/Cmd + F` | search the response |
 | `Ctrl/Cmd + B` | toggle the sidebar or explorer |
 | `Shift + T` | new route in the current folder |
@@ -90,7 +109,9 @@ The import icon accepts pasted Postman v2.1 JSON, Insomnia export JSON, or a Hit
 | `Enter` | confirm the input in create, rename and save dialogs |
 | `Tab` / `Shift+Tab` | move inside a modal; focus returns to where you were on close |
 
-The info icon in the tool rail shows the same list inside the app, with sections on the proxy, the extension and data privacy.
+All of these come from one list, which the `?` cheatsheet, the command palette's hints and the info dialog all show.
+
+**Command palette** (<kbd>Ctrl/Cmd+K</kbd>, or **Search** in the top bar) fuzzy-searches every request in every collection, the files of an open folder, and actions — new request, environment, import, export, history, notes, auth, copy as cURL, switch Local / Directory. Recently used items come first.
 
 ## Unsaved changes
 

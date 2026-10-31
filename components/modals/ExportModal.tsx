@@ -1,6 +1,7 @@
 "use client";
 
 import { Download } from "lucide-react";
+import { useToolListener } from "@/utils/uiEvents";
 import { useCallback, useState } from "react";
 import { ModalShell, ModalActions } from "@/components";
 import { compressString } from "@/utils/compressString";
@@ -26,6 +27,7 @@ export default function ExportModal({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [format, setFormat] = useState<ExportFormat>("hittable");
+  useToolListener("export", () => { setError(""); setOpen(true); }, collectionName);
 
   const generateExport = useCallback(() => {
     try {
@@ -109,11 +111,11 @@ export default function ExportModal({
           onClose={() => setOpen(false)}
         >
           <div className="w-full h-full flex flex-col gap-3">
-            {error && <p className="text-[10px] text-red-400">{error}</p>}
+            {error && <p className="text-[11px] text-red-400">{error}</p>}
 
             {/* Format selector */}
             <div className="flex flex-col gap-1.5">
-              <span className="text-[9px] text-white/25 uppercase tracking-wider">Format</span>
+              <span className="text-[11px] text-white/50 uppercase tracking-wider">Format</span>
               <div className="flex flex-col gap-1">
                 {FORMAT_OPTIONS.map((opt) => (
                   <label
@@ -121,7 +123,7 @@ export default function ExportModal({
                     className={`flex items-center gap-2 px-2 py-1.5 rounded-md border cursor-pointer transition-colors ${
                       format === opt.value
                         ? "border-cyan-500/30 bg-cyan-500/5 text-cyan-400"
-                        : "border-white/5 bg-white/2 text-white/40 hover:border-white/10 hover:text-white/60"
+                        : "border-white/5 bg-white/2 text-white/60 hover:border-white/10 hover:text-white/60"
                     }`}
                   >
                     <input
@@ -136,8 +138,8 @@ export default function ExportModal({
                       {format === opt.value && <div className="w-1.5 h-1.5 rounded-full bg-current" />}
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-medium">{opt.label}</span>
-                      <span className="text-[8px] text-white/25">{opt.description}</span>
+                      <span className="text-[11px] font-medium">{opt.label}</span>
+                      <span className="text-[11px] text-white/50">{opt.description}</span>
                     </div>
                   </label>
                 ))}
@@ -154,7 +156,7 @@ export default function ExportModal({
             {format !== "hittable" && (
               <button
                 onClick={downloadFile}
-                className="flex-1 px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/40 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer"
+                className="flex-1 px-4 py-1.5 text-xs rounded-md border border-white/10 text-white/60 hover:bg-white/5 hover:text-white/70 transition-colors cursor-pointer"
               >
                 Download .json
               </button>

@@ -45,7 +45,7 @@ export default function Menu({
   return (
     <div
       ref={menuRef}
-      className="hidden group-hover/menu:flex items-center justify-center shrink-0 pr-1"
+      className="hidden group-hover/menu:flex group-focus-within/menu:flex items-center justify-center shrink-0 pr-1"
     >
       <button
         type="button"
@@ -59,7 +59,7 @@ export default function Menu({
           setOpen((prev) => !prev);
         }}
         ref={triggerRef}
-        className="p-1 rounded text-white/20 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors cursor-pointer"
+        className="p-1 rounded text-white/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors cursor-pointer"
       >
         <EllipsisVertical size={14} />
       </button>
@@ -74,7 +74,7 @@ export default function Menu({
               left: pos.left,
               zIndex: 9999,
             }}
-            className="flex flex-col min-w-[130px] bg-[#0e1f35] border border-white/10 shadow-2xl shadow-black/60 rounded-lg backdrop-blur-md"
+            className="flex flex-col min-w-[130px] bg-(--surface-2) border border-white/10 shadow-2xl shadow-black/60 rounded-lg backdrop-blur-md"
           >
             <RenameModal
               currentName={currentName}

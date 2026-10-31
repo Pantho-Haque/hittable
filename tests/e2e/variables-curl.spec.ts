@@ -147,9 +147,9 @@ test.describe("curl", () => {
     );
     await expect(methodSelect(page)).toHaveValue("POST");
     await expect(urlInput(page)).toHaveValue(`${API}/echo?source=paste`);
-    await page.getByRole("button", { name: "Headers", exact: true }).click();
+    await page.getByRole("tab", { name: "Headers", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "headers").inputValue())).toEqual({ "Content-Type": "application/json", "X-Pasted": "yes" });
-    await page.getByRole("button", { name: "Params", exact: true }).click();
+    await page.getByRole("tab", { name: "Params", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "params").inputValue())).toEqual({ source: "paste" });
     await send(page);
     await expect(response(page).getByText('"world"')).toBeVisible();
@@ -175,23 +175,25 @@ test.describe("curl", () => {
     await expect(methodSelect(page)).toHaveValue("GET");
   });
 
-  test("Copy as CURL produces a command that pastes back to the same request", async ({ page, seed, browserName }) => {
+  // The cURL button became a "Copy as" menu (FR-8); cURL is its first entry.
+  test("Copy as cURL produces a command that pastes back to the same request", async ({ page, seed, browserName }) => {
     await seed({ collections: [collection("Copy", [route("src", ""), route("dst", "")])] });
     await openRoute(page, "Copy", "src");
     await methodSelect(page).selectOption("PUT");
     await urlInput(page).fill(`${API}/users/2`);
     await fillTab(page, "headers", '{"Content-Type": "application/json", "X-Quote": "say \\"hi\\""}');
     await fillTab(page, "body", `{"name": "O'Brien", "age": 30}`);
-    await page.getByRole("button", { name: "Copy as CURL" }).click();
+    await page.getByRole("button", { name: /Copy as/ }).click();
+    await page.getByRole("menuitem", { name: "cURL" }).click();
     const curl = await clipboardText(page);
-    expect(curl).toMatch(/^curl -X PUT /);
+    expect(curl).toMatch(/^curl -X PUT\b/);
     expect(curl).toContain(`${API}/users/2`);
     expect(curl).toContain("Content-Type: application/json");
 
     await sidebarItem(page, "dst").click();
     await pasteInto(page, curl, browserName);
     await expect(methodSelect(page)).toHaveValue("PUT");
-    await page.getByRole("button", { name: "Body", exact: true }).click();
+    await page.getByRole("tab", { name: "Body", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "body").inputValue())).toEqual({ name: "O'Brien", age: 30 });
     await send(page);
     await expect(response(page).getByText(`"O'Brien"`)).toBeVisible();
