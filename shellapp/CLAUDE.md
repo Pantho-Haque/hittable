@@ -21,8 +21,11 @@ hittable          # opens Directory Mode against the current directory
 hittable ~/code/myproject   # opens Directory Mode against an explicit path
 ```
 
-That's the entire invocation surface. There is no `hittable open <file>`, no separate
-"global mode," no alternate storage backend to pick between. One mode, one behavior.
+The one exception is a single file: `hittable path/to/file` opens just that file
+(v3.2) — the editor and the integrated terminal, with no explorer, Git or Find. A `.hit`
+file still opens in the runner (Runner / Text toggle, send), and its `<<KEY>>` tokens
+resolve against the nearest `hittable/env.json` above it. Any other file opens in the
+editor. There is no separate "global mode" and no alternate storage backend.
 
 ### 1.1 File-format parity with the web app
 
@@ -406,7 +409,8 @@ send binding.
 | Response headers      | `h`             | Response focused     |
 | Delete Confirm        | `y` / `n`       | Delete confirmation  |
 | Editor: undo / redo   | `ctrl+z` / `ctrl+y` | Text editor      |
-| Editor: find / next   | `ctrl+f` / `⏎`, `F3` | Text editor     |
+| Editor: find / next   | `ctrl+f`, then `⏎`/`↓` next, `↑` prev, `F3` | Text editor (every match highlighted, `n of m` count) |
+| Editor: replace       | `⇥` (or `ctrl+f` again) in the find bar; `⏎` replace & next, `ctrl+a` replace all | Text editor (each is one undo step) |
 | Editor: go to line    | `ctrl+g`        | Text editor          |
 | Editor: word jump     | `ctrl+←/→`, `alt+←/→` | Text editor    |
 | Editor: indent        | `tab` (2 spaces) | Text editor         |
@@ -448,6 +452,22 @@ send binding.
 | Resize markdown split | drag the seam between editor and preview | Markdown split view |
 
 ## 10. Changelog
+
+### v3.2 — Single-file mode, find & replace
+- `hittable <file>` opens one file on its own. `MainScreen.SingleFile` gates the
+  chokepoints rather than each caller: `explorerHidden()` is always true,
+  `toggleGit` / `openPalette` / `toggleExplorer` / `closeFile` do nothing, git
+  is never polled (the tick still reloads external edits), and
+  `setExplorerFocused(true)` hands the keyboard back to the file — so `ctrl+b`,
+  leaving the terminal and `tab` all land on the file. The top bar shows the
+  file name, Terminal and Help only.
+- The editor's find bar (`texteditor/find.go`) highlights every match, shows
+  `n of m`, moves with `⏎`/`↓`/`↑`, and has a replace field (`⇥`): `⏎` replaces
+  the match under the cursor and moves on (first press only moves there),
+  `ctrl+a` replaces all. Case-insensitive and literal like the response search;
+  matches are non-overlapping and cached on (query, content) since View runs
+  every frame. Not `ctrl+h` for replace: the textarea treats it as backspace,
+  which some terminals send.
 
 ### v3.1 — Resizable panes, Git side-by-side, line-level revert
 - Every pane drags. The `▸ TERMINAL` strip resizes the panel (a still click

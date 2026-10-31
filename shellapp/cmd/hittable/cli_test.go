@@ -196,11 +196,9 @@ func TestCLIImportErrorsDoNotOpenTUI(t *testing.T) {
 
 func TestCLIRootBadArgs(t *testing.T) {
 	tmp := t.TempDir()
-	file := filepath.Join(tmp, "f")
-	os.WriteFile(file, nil, 0o644)
+	// A lone file is not a bad argument: it opens single-file mode.
 	for _, args := range [][]string{
 		{filepath.Join(tmp, "missing")},
-		{file},
 		{tmp, tmp},
 		{"--no-such-flag"},
 		{"version", "extra"},

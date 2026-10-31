@@ -44,13 +44,16 @@ const (
 	binName     = "hittable"
 	// maxAsset bounds a download so a wrong URL cannot fill the disk.
 	maxAsset = 200 << 20
+	// TagPrefix marks terminal-app releases. The browser extension releases
+	// from the same repo as ext-v*, so "the latest release" may not be ours.
+	TagPrefix = "sh-v"
 )
 
 // Config describes where to look and what is running. The URL fields exist so
 // the tests can point at an httptest server; leave them empty in production.
 type Config struct {
 	Repo    string
-	Current string // the running version, e.g. "shellapp-v1.2.0" or "dev"
+	Current string // the running version, e.g. "sh-v1.2.0" or "dev"
 	Client  *http.Client
 	Site    string // default https://github.com
 	API     string // default https://api.github.com
@@ -82,10 +85,13 @@ func (c *Config) fill() {
 // Progress reports download bytes. total is 0 when the server sends no length.
 type Progress func(done, total int64)
 
-// Latest returns the most recent release tag.
+// Latest returns the most recent terminal-app (sh-v*) release tag. It lists
+// releases rather than asking for /releases/latest, which is repo-wide and is
+// the browser extension's whenever that shipped last. The API lists newest
+// first, so the first matching tag wins.
 func Latest(ctx context.Context, cfg Config) (string, error) {
 	cfg.fill()
-	url := cfg.API + "/repos/" + cfg.Repo + "/releases/latest"
+	url := cfg.API + "/repos/" + cfg.Repo + "/releases?per_page=100"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -99,15 +105,20 @@ func Latest(ctx context.Context, cfg Config) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("selfupdate: the release API answered %s", resp.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return "", err
 	}
-	tag := jsonString(string(body), "tag_name")
-	if tag == "" {
-		return "", errors.New("selfupdate: no tag_name in the release response")
+	for rest := string(body); ; {
+		tag := jsonString(rest, "tag_name")
+		if tag == "" {
+			return "", fmt.Errorf("selfupdate: no %s* release published yet", TagPrefix)
+		}
+		if strings.HasPrefix(tag, TagPrefix) {
+			return tag, nil
+		}
+		rest = rest[strings.Index(rest, `"tag_name"`)+len(`"tag_name"`):]
 	}
-	return tag, nil
 }
 
 // jsonString pulls one top-level string field out without a struct, so this

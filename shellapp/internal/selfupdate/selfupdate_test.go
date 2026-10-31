@@ -66,8 +66,10 @@ func serve(t *testing.T, r *release) (*httptest.Server, Config) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.hits[req.URL.Path]++
 		switch {
-		case strings.HasSuffix(req.URL.Path, "/releases/latest"):
-			fmt.Fprintf(w, `{"tag_name": %q, "name": "whatever"}`, r.tag)
+		case strings.HasSuffix(req.URL.Path, "/releases"):
+			// Newest first, with a later extension release on top: the
+			// lookup has to skip it rather than take "the latest".
+			fmt.Fprintf(w, `[{"tag_name": "ext-v9.9.9", "name": "extension"}, {"tag_name": %q, "name": "whatever"}, {"tag_name": "sh-v0.0.1"}]`, r.tag)
 		case strings.HasSuffix(req.URL.Path, "/checksums.txt"):
 			if r.noSums {
 				http.NotFound(w, req)
@@ -99,19 +101,19 @@ func newRelease(t *testing.T, tag string, body []byte) *release {
 }
 
 func TestLatest(t *testing.T) {
-	_, cfg := serve(t, newRelease(t, "shellapp-v2.0.0", []byte("#!/bin/sh\n")))
+	_, cfg := serve(t, newRelease(t, "sh-v2.0.0", []byte("#!/bin/sh\n")))
 	got, err := Latest(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "shellapp-v2.0.0" {
+	if got != "sh-v2.0.0" {
 		t.Errorf("Latest = %q", got)
 	}
 }
 
 // The whole point: the binary on disk is replaced by the downloaded one.
 func TestApplyReplacesTheExecutable(t *testing.T) {
-	r := newRelease(t, "shellapp-v2.0.0", []byte("NEW BINARY"))
+	r := newRelease(t, "sh-v2.0.0", []byte("NEW BINARY"))
 	_, cfg := serve(t, r)
 
 	dir := t.TempDir()
@@ -146,7 +148,7 @@ func TestApplyReplacesTheExecutable(t *testing.T) {
 // A corrupted download is code we were about to execute. It must not land, and
 // the old binary must survive.
 func TestApplyRefusesACorruptedDownload(t *testing.T) {
-	r := newRelease(t, "shellapp-v2.0.0", []byte("NEW BINARY"))
+	r := newRelease(t, "sh-v2.0.0", []byte("NEW BINARY"))
 	r.corrupt = true
 	_, cfg := serve(t, r)
 
@@ -170,7 +172,7 @@ func TestApplyRefusesACorruptedDownload(t *testing.T) {
 
 // No checksums means nothing to verify against, so there is nothing to trust.
 func TestApplyRefusesWhenNoChecksumsArePublished(t *testing.T) {
-	r := newRelease(t, "shellapp-v2.0.0", []byte("NEW"))
+	r := newRelease(t, "sh-v2.0.0", []byte("NEW"))
 	r.noSums = true
 	_, cfg := serve(t, r)
 
@@ -188,7 +190,7 @@ func TestApplyRefusesWhenNoChecksumsArePublished(t *testing.T) {
 }
 
 func TestApplyReportsAMissingBuildForThisPlatform(t *testing.T) {
-	r := newRelease(t, "shellapp-v2.0.0", []byte("NEW"))
+	r := newRelease(t, "sh-v2.0.0", []byte("NEW"))
 	_, cfg := serve(t, r)
 	cfg.GOARCH = "riscv64" // nothing published for it
 
@@ -205,7 +207,7 @@ func TestApplyReportsAMissingBuildForThisPlatform(t *testing.T) {
 
 // Refuse before downloading 25MB, not after.
 func TestApplyChecksWritabilityFirst(t *testing.T) {
-	r := newRelease(t, "shellapp-v2.0.0", []byte("NEW"))
+	r := newRelease(t, "sh-v2.0.0", []byte("NEW"))
 	_, cfg := serve(t, r)
 
 	dir := t.TempDir()

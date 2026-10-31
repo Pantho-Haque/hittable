@@ -72,8 +72,8 @@ Load `browserExtension/` unpacked from `chrome://extensions` with Developer mode
 
 | What | Trigger | Output |
 | :--- | :--- | :--- |
-| Browser extension | tag `v*` | `hittable-extension.zip` on a GitHub release |
-| Terminal app | tag `shellapp-v*` | six static binaries (darwin, linux, windows × amd64, arm64), `checksums.txt`, release notes with the install one-liner |
+| Browser extension | tag `ext-v*` | `hittable-extension.zip` on a GitHub release, marked latest (the site's download link points at `releases/latest`) |
+| Terminal app | tag `sh-v*` | six static binaries (darwin, linux, windows × amd64, arm64), `checksums.txt`, release notes with the install one-liner; never marked latest — `install.sh` and `hittable update` look up the newest `sh-v*` tag |
 | Web app | push to `main` | Vercel |
 
 The terminal release runs `go vet` and `go test` first. A release that does not pass its own tests is not a release.

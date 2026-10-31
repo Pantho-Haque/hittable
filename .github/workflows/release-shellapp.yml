@@ -1,16 +1,16 @@
 name: Release shellapp
 
-# The browser extension has its own workflow on v* tags. This one uses a
-# separate prefix so the two can be released independently: tag `shellapp-v1.2.0`
-# to cut a TUI release without touching the extension.
+# The terminal app and the browser extension release independently from this
+# one repo, told apart by tag prefix: `sh-v1.2.0` runs this workflow,
+# `ext-v1.2.0` runs release.yml (the extension).
 on:
   push:
     tags:
-      - "shellapp-v*"
+      - "sh-v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build and publish (e.g. shellapp-v1.0.0)"
+        description: "Tag to build and publish (e.g. sh-v1.0.0)"
         required: true
 
 permissions:
@@ -114,6 +114,10 @@ jobs:
           name: hittable.sh ${{ github.event.inputs.tag || github.ref_name }}
           files: dist/*
           generate_release_notes: true
+          # GitHub has one "latest" release per repo, and the website's
+          # extension download links to releases/latest. Leave it to the
+          # extension; install.sh and `hittable update` find sh-v* by name.
+          make_latest: "false"
           body: |
             ## Install
 

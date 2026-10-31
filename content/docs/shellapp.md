@@ -33,15 +33,15 @@ Two environment variables steer it:
 
 | Variable | Effect |
 | :--- | :--- |
-| `HITTABLE_VERSION` | release tag to install, e.g. `shellapp-v1.2.0` (default: the latest release) |
+| `HITTABLE_VERSION` | release tag to install, e.g. `sh-v1.2.0` (default: the newest `sh-v*` release) |
 | `HITTABLE_INSTALL_DIR` | where to put the binary (default: `~/.local/bin`) |
 
 ```sh
-HITTABLE_VERSION=shellapp-v1.2.0 sh -c "$(curl -fsSL https://raw.githubusercontent.com/Pantho-Haque/hittable/main/install.sh)"
+HITTABLE_VERSION=sh-v1.2.0 sh -c "$(curl -fsSL https://raw.githubusercontent.com/Pantho-Haque/hittable/main/install.sh)"
 HITTABLE_INSTALL_DIR=/usr/local/bin sh -c "$(curl -fsSL https://raw.githubusercontent.com/Pantho-Haque/hittable/main/install.sh)"
 ```
 
-> Releases of the terminal app are tagged `shellapp-v*`. The browser extension has its own `v*` tags in the same repository, so pin with `HITTABLE_VERSION` when "latest" is not the one you want.
+> Releases of the terminal app are tagged `sh-v*`; the browser extension has its own `ext-v*` tags in the same repository. The installer and `hittable update` always take the newest `sh-v*` release.
 
 ### Prebuilt platforms
 
@@ -79,7 +79,7 @@ make uninstall  # remove ~/.local/bin/hittable and ~/go/bin/hittable
 
 ```sh
 which hittable      # ~/.local/bin/hittable
-hittable version    # hittable shellapp-v1.2.0 darwin/arm64
+hittable version    # hittable sh-v1.2.0 darwin/arm64
 hittable --help
 ```
 
@@ -156,7 +156,7 @@ Some chords cannot arrive at all: a terminal sends the same byte for <kbd>ctrl+c
 ```sh
 hittable update            # download the latest release, verify SHA-256, replace this binary
 hittable update --check    # only report whether a newer release exists
-hittable update --tag shellapp-v1.2.0
+hittable update --tag sh-v1.2.0
 hittable uninstall         # remove the binary, ~/.hittable and any downloaded model
 ```
 

@@ -135,8 +135,8 @@ func (m *MainScreen) refreshAI() string {
 	return "AI commit drafts disabled"
 }
 
-// CloseAI stops a sidecar this process started. A server adopted from another
-// hittable window is left alone.
+// CloseAI stops the shared sidecar only if this is the last hittable window
+// using it; otherwise it is left running for the others.
 func (m *MainScreen) CloseAI() {
 	if m.AI != nil && m.AI.sup != nil {
 		m.AI.sup.Close()

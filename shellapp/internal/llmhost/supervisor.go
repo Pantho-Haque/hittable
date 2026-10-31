@@ -33,16 +33,23 @@ type Supervisor struct {
 	// holding mu, so Close during a model load does not block behind it.
 	startMu sync.Mutex
 
-	mu     sync.Mutex
-	cmd    *exec.Cmd
-	wait   chan error
-	log    *os.File
-	pid    int
-	port   int
-	owned  bool // false for a server we adopted and must never kill
-	closed bool
-	last   time.Time
-	starts []time.Time
+	mu    sync.Mutex
+	cmd   *exec.Cmd
+	wait  chan error
+	log   *os.File
+	pid   int
+	port  int
+	owned bool // we hold its *exec.Cmd
+	// shared means the server is the one the run file names: hittable started
+	// it and every hittable window uses it. Any of them may stop it once all of
+	// them are idle, or when the last one quits. A server the user runs
+	// themselves on :8080 is never shared and never stopped.
+	shared     bool
+	registered bool // this process is listed under run/clients
+	solo       bool // SmokeTest: a private server, never shared
+	closed     bool
+	last       time.Time
+	starts     []time.Time
 
 	stopIdle chan struct{}
 
@@ -149,20 +156,29 @@ func (s *Supervisor) Endpoint(ctx context.Context) (string, error) {
 	// a hung server that is still alive would otherwise sit there holding three
 	// gigabytes while we started a second one beside it.
 	if port != 0 {
-		s.stop()
+		s.stop(true)
 	}
+
+	// Every window funnels through this lock, so two windows asking at once
+	// (both opening the Git panel, say) load the model once, not twice: the
+	// second waits out the first one's model load and then adopts it.
+	s.mu.Lock()
+	noAdopt, ready, poll := s.noAdopt, s.ready, s.poll
+	s.mu.Unlock()
+	unlock, err := lockSpawn(ctx, poll, ready+30*time.Second)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 
 	if rs, err := readRunState(); err == nil && rs.Port != 0 &&
 		processAlive(rs.PID) && health(ctx, client, rs.Port) {
-		s.adopt(rs.PID, rs.Port)
+		s.adopt(rs.PID, rs.Port, true)
 		return addr(rs.Port), nil
 	}
 
-	s.mu.Lock()
-	noAdopt := s.noAdopt
-	s.mu.Unlock()
 	if !noAdopt && health(ctx, client, defaultLlamaPort) {
-		s.adopt(0, defaultLlamaPort)
+		s.adopt(0, defaultLlamaPort, false)
 		return addr(defaultLlamaPort), nil
 	}
 
@@ -185,17 +201,30 @@ func (s *Supervisor) Running() (pid, port int, ok bool) {
 	return s.pid, s.port, true
 }
 
+// touch records a use. For the shared server it also bumps the run file's
+// mtime, which is the idle clock every window reads, so one window's idle
+// timer never stops a server another window is busy with.
 func (s *Supervisor) touch() {
 	s.mu.Lock()
 	s.last = s.now()
+	shared := s.shared
 	s.mu.Unlock()
+	if shared {
+		now := time.Now()
+		_ = os.Chtimes(hithome.RunFile(), now, now)
+	}
 }
 
-func (s *Supervisor) adopt(pid, port int) {
+func (s *Supervisor) adopt(pid, port int, shared bool) {
 	s.mu.Lock()
 	s.pid, s.port, s.owned, s.cmd, s.wait = pid, port, false, nil, nil
+	s.shared = shared
 	s.last = s.now()
 	s.mu.Unlock()
+	if shared {
+		s.register()
+		s.startIdleWatch()
+	}
 }
 
 // spawn picks a port, starts the server and waits for it to answer /health.
@@ -267,7 +296,7 @@ func (s *Supervisor) spawn(ctx context.Context) error {
 				return errors.New("llmhost: supervisor is closed")
 			}
 			s.cmd, s.wait, s.log = cmd, waitCh, logf
-			s.pid, s.port, s.owned = cmd.Process.Pid, port, true
+			s.pid, s.port, s.owned, s.shared = cmd.Process.Pid, port, true, true
 			s.last = s.now()
 			s.mu.Unlock()
 
@@ -275,6 +304,7 @@ func (s *Supervisor) spawn(ctx context.Context) error {
 				PID: cmd.Process.Pid, Port: port, Model: model,
 				Binary: bin, Started: time.Now(),
 			})
+			s.register()
 			s.startIdleWatch()
 			return nil
 		}
@@ -404,8 +434,8 @@ func health(ctx context.Context, client *http.Client, port int) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// startIdleWatch reclaims the memory when nobody has asked for anything in a
-// while. It only ever stops a server this supervisor started.
+// startIdleWatch reclaims the memory when no hittable window has asked for
+// anything in a while. It only ever stops the shared server.
 func (s *Supervisor) startIdleWatch() {
 	s.mu.Lock()
 	if s.stopIdle != nil {
@@ -428,12 +458,22 @@ func (s *Supervisor) startIdleWatch() {
 			case <-stop:
 				return
 			case <-t.C:
+				last := sharedLastUse()
 				s.mu.Lock()
-				idleFor := s.now().Sub(s.last)
-				expired := s.owned && s.port != 0 && idleFor >= s.idle
+				if s.last.After(last) {
+					last = s.last
+				}
+				idleFor := s.now().Sub(last)
+				expired := s.shared && s.port != 0 && idleFor >= s.idle
+				pid := s.pid
 				s.mu.Unlock()
 				if expired {
-					s.stop()
+					s.stop(true)
+					// Adopted from another window: stop it by its recorded pid,
+					// but only if the run file still names that same process.
+					if rs, err := readRunState(); err == nil && rs.PID == pid {
+						stopRunFileServer()
+					}
 					return
 				}
 			}
@@ -441,31 +481,135 @@ func (s *Supervisor) startIdleWatch() {
 	}()
 }
 
-// Close stops the server if this supervisor started it, and does nothing to one
-// it merely adopted — three hittable windows share one process, and the first
-// to quit must not take it away from the other two.
+// sharedLastUse is the newest request from any hittable window.
+func sharedLastUse() time.Time {
+	fi, err := os.Stat(hithome.RunFile())
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
+}
+
+// Close leaves the shared server running while another hittable window is
+// still open and using it, and stops it when this is the last one — three
+// windows share one process, and the first to quit must not take it away from
+// the other two, nor the last to quit leave three gigabytes behind.
 func (s *Supervisor) Close() {
 	s.mu.Lock()
 	s.closed = true
+	registered := s.registered
+	s.registered = false
 	s.mu.Unlock()
-	s.stop()
+
+	if !registered {
+		s.stop(true)
+		return
+	}
+	_ = os.Remove(clientFile(os.Getpid()))
+	if otherClients() {
+		s.stop(false)
+		return
+	}
+	s.stop(true)
+	stopRunFileServer()
 }
 
-func (s *Supervisor) stop() {
+// stop forgets the current server, and terminates it when kill is set and this
+// supervisor started it.
+func (s *Supervisor) stop(kill bool) {
 	s.mu.Lock()
 	cmd, wait, owned, logf := s.cmd, s.wait, s.owned, s.log
 	stop := s.stopIdle
-	s.cmd, s.wait, s.log, s.pid, s.port, s.owned, s.stopIdle = nil, nil, nil, 0, 0, false, nil
+	s.cmd, s.wait, s.log, s.pid, s.port, s.owned, s.shared, s.stopIdle = nil, nil, nil, 0, 0, false, false, nil
 	s.mu.Unlock()
 
 	if stop != nil {
 		close(stop)
 	}
-	if owned && cmd != nil {
+	if kill && owned && cmd != nil {
 		terminate(cmd, wait)
 		_ = os.Remove(hithome.RunFile())
 	}
 	closeLog(logf)
+}
+
+// --- sharing between windows ------------------------------------------------
+
+func clientFile(pid int) string {
+	return filepath.Join(hithome.Run(), "clients", strconv.Itoa(pid))
+}
+
+// register lists this process as a user of the shared server, so another
+// window quitting knows not to stop it.
+func (s *Supervisor) register() {
+	s.mu.Lock()
+	if s.solo || s.registered {
+		s.mu.Unlock()
+		return
+	}
+	s.registered = true
+	s.mu.Unlock()
+	p := clientFile(os.Getpid())
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	_ = os.WriteFile(p, nil, 0o644)
+}
+
+// otherClients reports whether another live hittable process uses the shared
+// server, pruning entries left behind by windows that crashed.
+func otherClients() bool {
+	dir := filepath.Dir(clientFile(0))
+	entries, _ := os.ReadDir(dir)
+	found := false
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid == os.Getpid() {
+			continue
+		}
+		if processAlive(pid) {
+			found = true
+		} else {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+	return found
+}
+
+// lockSpawn is a cross-process mutex around "find or start the shared server".
+// A lock file rather than flock, because this package also builds for Windows.
+// A lock whose holder died, or that outlived any model load, is broken.
+//
+// ponytail: two waiters breaking the same stale lock at once can both proceed;
+// that needs a crashed holder plus two racing windows, and costs one extra
+// server until the idle timer reaps it.
+func lockSpawn(ctx context.Context, poll, stale time.Duration) (func(), error) {
+	p := filepath.Join(hithome.Run(), "llama.lock")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return nil, err
+	}
+	for {
+		f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			_, _ = f.WriteString(strconv.Itoa(os.Getpid()))
+			_ = f.Close()
+			return func() { _ = os.Remove(p) }, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, err
+		}
+		if fi, statErr := os.Stat(p); statErr == nil {
+			b, _ := os.ReadFile(p)
+			pid, _ := strconv.Atoi(string(b))
+			if (pid > 0 && !processAlive(pid)) || time.Since(fi.ModTime()) > stale {
+				_ = os.Remove(p)
+				continue
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(poll):
+		}
+	}
 }
 
 // terminate asks politely, then insists.
@@ -590,6 +734,7 @@ func SmokeTest(ctx context.Context) (out string, tokPerSec float64, err error) {
 	// Prove *this* install runs. Adopting whatever happens to be on 8080 would
 	// make the smoke test pass without the new files ever being executed.
 	s.noAdopt = true
+	s.solo = true
 	defer s.Close()
 	return smoke(ctx, s)
 }

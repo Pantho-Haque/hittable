@@ -27,7 +27,7 @@ export default function useKeypress({
       if (shouldIgnore) {
         const tag = (e.target as HTMLElement).tagName;
         const isTyping = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement).isContentEditable;
-        if (isTyping) return;
+        if (isTyping) return; 
       }
 
       const isTargetKey  = e.key.toLowerCase() === key.toLowerCase();

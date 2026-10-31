@@ -171,6 +171,9 @@ func (m *MainScreen) toggleGit() {
 		}
 		return
 	}
+	if m.SingleFile {
+		return
+	}
 	m.closePanels()
 	m.GitOpen = true
 	m.blurAll()
@@ -224,9 +227,16 @@ func (m *MainScreen) renderTopBar() string {
 		btn("top_find", findIcon+" Find", m.Palette.Open) + sp(1) +
 		btn("top_term", termIcon+" Terminal", m.Term.Open) + sp(1) +
 		btn("top_help", helpIcon+" Help", m.ShowHelp)
+	if m.SingleFile { // one file: no sidebar, Git or Find to offer
+		left = sp(1) + theme.HitMarkStyle.Render(" H ") + sp(1) + theme.TopBarBrandStyle.Render("HITTABLE") +
+			theme.TopBarDimStyle.Render("  ›  ") + theme.TopBarTextStyle.Render(filepath.Base(m.ActiveFile)) + sp(4)
+		buttons = btn("top_term", termIcon+" Terminal", m.Term.Open) + sp(1) +
+			btn("top_help", helpIcon+" Help", m.ShowHelp)
+	}
 
 	right := ""
 	switch {
+	case m.SingleFile:
 	case m.Git.Status != nil:
 		st := m.Git.Status
 		badge := gitIcon + " " + st.Branch
@@ -279,8 +289,8 @@ func (m *MainScreen) pollGit() tea.Cmd {
 	if msg := m.refreshAI(); msg != "" {
 		m.StatusBar = msg
 	}
-	if m.Repo == nil || m.gitPolling {
-		return gitTick()
+	if m.Repo == nil || m.gitPolling || m.SingleFile {
+		return gitTick() // the tick still drives reloadExternalEdits
 	}
 	m.gitPolling = true
 	repo := m.Repo
@@ -334,6 +344,9 @@ func (m *MainScreen) applyStatus(msg gitStatusMsg) {
 
 // toggleExplorer hides / shows the sidebar (alt+b, ☰ button).
 func (m *MainScreen) toggleExplorer() {
+	if m.SingleFile {
+		return
+	}
 	m.ExplorerHidden = !m.ExplorerHidden
 	if m.ExplorerHidden && m.ExplorerFocused {
 		m.setExplorerFocused(false)

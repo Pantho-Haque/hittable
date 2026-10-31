@@ -92,7 +92,7 @@ func (m *MainScreen) copyResponseBody() tea.Cmd {
 }
 
 func (m *MainScreen) closeFile() {
-	if m.ActiveFile == "" {
+	if m.ActiveFile == "" || m.SingleFile { // the one file is the whole window
 		return
 	}
 	m.saveAndEnqueue()

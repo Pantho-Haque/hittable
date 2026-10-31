@@ -1,9 +1,11 @@
 name: Release Extension
 
+# Tag `ext-v1.2.0` to release the browser extension. The terminal app has its
+# own workflow on `sh-v*` tags (release-shellapp.yml).
 on:
   push:
     tags:
-      - "v*" # triggers on v1.0.0, v1.2.3 etc
+      - "ext-v*"
 
 jobs:
   release:
@@ -24,7 +26,11 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: Browser extension ${{ github.ref_name }}
           files: hittable-extension.zip
           generate_release_notes: true
+          # The website downloads releases/latest/download/hittable-extension.zip,
+          # so every extension release must be the repo's latest.
+          make_latest: "true"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

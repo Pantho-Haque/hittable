@@ -128,6 +128,12 @@ var (
 				Foreground(lipgloss.Color("#282a36")).
 				Bold(true)
 
+	// FindMatchStyle marks the other matches while the editor's find bar is
+	// open; the current one uses SearchHighlightStyle.
+	FindMatchStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#6272a4")).
+			Foreground(TextColor)
+
 	SearchInputStyle = lipgloss.NewStyle().
 				Foreground(TextColor)
 

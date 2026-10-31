@@ -93,6 +93,7 @@ type MainScreen struct {
 	TermFocused      bool
 	GitOpen          bool
 	ExplorerHidden   bool // the user's preference (alt+b, ☰)
+	SingleFile       bool // `hittable <file>`: no explorer, Git or Find (EnterSingleFile)
 	sidebarWasHidden bool // last laid-out value of explorerHidden()
 	BlameOn          bool
 	lastGitRefresh   time.Time
@@ -305,11 +306,54 @@ func (m *MainScreen) OpenFile(path string) {
 	m.openFileRaw(path)
 }
 
+// EnterSingleFile turns the window into an editor for one file: no explorer,
+// Git or Find, just the file and the terminal. A .hit file still opens in the
+// runner, and its <<KEY>> tokens resolve against the nearest hittable/env.json
+// above it, so a request sent from here behaves as it does in the project.
+func (m *MainScreen) EnterSingleFile(path string) {
+	m.SingleFile = true
+	if env := findEnv(filepath.Dir(path)); env != "" {
+		m.EnvPath, m.HittableDir = env, filepath.Dir(env)
+		envPathGlobal = env
+		m.EnvData = map[string]string{}
+		if data, err := os.ReadFile(env); err == nil {
+			_ = json.Unmarshal(data, &m.EnvData)
+		}
+	}
+	m.openFileRaw(path)
+	m.SetSize(m.Width, m.Height)
+}
+
+// findEnv walks up from dir to the closest hittable/env.json: either dir is
+// inside a hittable/ folder, or a parent holds one.
+func findEnv(dir string) string {
+	for {
+		if filepath.Base(dir) == "hittable" {
+			if p := filepath.Join(dir, "env.json"); fileExists(p) {
+				return p
+			}
+		}
+		if p := filepath.Join(dir, "hittable", "env.json"); fileExists(p) {
+			return p
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
+}
+
 // explorerHidden reports whether the sidebar is off screen. The find palette
 // takes the full width while it is up, so the file tree gets out of the way
 // and comes back when it closes; ExplorerHidden itself stays the user's own
 // preference. The Git panel keeps the tree: clicking a file there feeds the
 // Blame tab.
 func (m *MainScreen) explorerHidden() bool {
-	return m.ExplorerHidden || m.Palette.Open
+	return m.SingleFile || m.ExplorerHidden || m.Palette.Open
 }

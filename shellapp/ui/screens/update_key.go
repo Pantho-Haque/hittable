@@ -288,15 +288,7 @@ func (m *MainScreen) toggleExplorerFocus() tea.Cmd {
 		if m.ActiveFile == "" {
 			return nil
 		}
-		m.setExplorerFocused(false)
-		m.Focus = m.LastFocus
-		if m.Focus == FocusExplorerPane || m.Focus == FocusMethodDropdown {
-			m.Focus = FocusURLBar
-			if m.ViewMode == ViewText {
-				m.Focus = FocusTextEditor
-			}
-		}
-		m.focusCurrent()
+		m.returnToFile()
 	} else {
 		m.LastFocus = m.Focus
 		m.blurAll()
@@ -308,8 +300,26 @@ func (m *MainScreen) toggleExplorerFocus() tea.Cmd {
 }
 
 func (m *MainScreen) setExplorerFocused(v bool) {
+	// Single-file mode has no explorer: every path that would hand it the
+	// keyboard (ctrl+b, leaving the terminal, tab) lands back on the file.
+	if v && m.SingleFile {
+		m.returnToFile()
+		return
+	}
 	m.ExplorerFocused = v
 	m.Explorer.Focused = v
+}
+
+// returnToFile gives the keyboard back to the open file, where it last was.
+func (m *MainScreen) returnToFile() {
+	m.Focus = m.LastFocus
+	if m.Focus == FocusExplorerPane || m.Focus == FocusMethodDropdown {
+		m.Focus = FocusURLBar
+		if m.ViewMode == ViewText {
+			m.Focus = FocusTextEditor
+		}
+	}
+	m.focusCurrent()
 }
 
 // focusCurrent focuses the component matching m.Focus.
@@ -600,6 +610,9 @@ func (m *MainScreen) closePanels() {
 
 // openPalette shows the find-file / live-grep overlay.
 func (m *MainScreen) openPalette(mode palette.Mode) {
+	if m.SingleFile {
+		return
+	}
 	m.closePanels()
 	m.blurAll()
 	m.setExplorerFocused(false)

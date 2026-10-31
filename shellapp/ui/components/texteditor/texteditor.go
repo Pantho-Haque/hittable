@@ -61,6 +61,7 @@ const (
 	promptNone promptKind = iota
 	promptFind
 	promptGoto
+	promptReplace // find bar with the replace field shown
 )
 
 // buffer is everything that belongs to one open file.
@@ -104,10 +105,13 @@ type TextEditor struct {
 	cur         *buffer
 	currentPath string
 
-	prompt      promptKind
-	promptValue string
-	comp        *completion // suggestion popup, nil when closed
-	status      string      // transient message shown in the status row
+	prompt       promptKind
+	promptValue  string      // go-to-line input; find text lives in buffer.findLast
+	replaceValue string      // the replace field
+	inReplace    bool        // typing goes to the replace field
+	mcache       matchCache  // find matches for the last (query, content)
+	comp         *completion // suggestion popup, nil when closed
+	status       string      // transient message shown in the status row
 	// Hint is a persistent note shown in the status row (e.g. JSON validity).
 	Hint string
 	// RowStyle, when set, tints whole rows (e.g. added lines while editing
@@ -680,15 +684,14 @@ func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	case "ctrl+f":
-		t.prompt = promptFind
-		t.promptValue = t.cur.findLast
+		t.openFind(false)
 		return nil
 	case "ctrl+g":
 		t.prompt = promptGoto
 		t.promptValue = ""
 		return nil
 	case "f3":
-		t.findNext(t.cur.findLast)
+		t.jumpMatch(t.cursorPos(), 1, false)
 		return nil
 	case "ctrl+a":
 		t.SelectAll()
@@ -818,6 +821,10 @@ func (t *TextEditor) changed() {
 }
 
 func (t *TextEditor) handlePromptKey(msg tea.KeyMsg) {
+	if t.prompt == promptFind || t.prompt == promptReplace {
+		t.handleFindKey(msg)
+		return
+	}
 	switch msg.String() {
 	case "esc":
 		t.prompt = promptNone
@@ -832,8 +839,6 @@ func (t *TextEditor) handlePromptKey(msg tea.KeyMsg) {
 			t.prompt = promptNone
 			return
 		}
-		t.cur.findLast = t.promptValue
-		t.findNext(t.promptValue)
 	case "backspace":
 		if r := []rune(t.promptValue); len(r) > 0 {
 			t.promptValue = string(r[:len(r)-1])
@@ -843,36 +848,6 @@ func (t *TextEditor) handlePromptKey(msg tea.KeyMsg) {
 			t.promptValue += string(msg.Runes)
 		}
 	}
-}
-
-// findNext moves the cursor to the next case-insensitive match after the
-// cursor, wrapping around.
-func (t *TextEditor) findNext(q string) {
-	if q == "" {
-		return
-	}
-	lines := strings.Split(t.TextArea.Value(), "\n")
-	lq := strings.ToLower(q)
-	row, col := t.TextArea.Line(), t.TextArea.LineInfo().ColumnOffset
-	for i := 0; i <= len(lines); i++ {
-		r := (row + i) % len(lines)
-		start := 0
-		if i == 0 {
-			start = col + 1
-		}
-		lr := []rune(strings.ToLower(lines[r]))
-		if start > len(lr) {
-			continue
-		}
-		if idx := strings.Index(string(lr[start:]), lq); idx >= 0 {
-			c := start + len([]rune(string(lr[start:])[:idx]))
-			moveTo(&t.TextArea, r, c)
-			t.writeBack()
-			t.followCursor()
-			return
-		}
-	}
-	t.status = "no match: " + q
 }
 
 // ---------- scrolling ----------
@@ -1018,6 +993,18 @@ func (t *TextEditor) View() string {
 	rows := t.contentRows()
 	t.clampScroll()
 	selS, selE, hasSel := t.Selection()
+	var found map[int][]match // find-bar matches by line, highlighted below
+	curMatch := match{row: -1}
+	if t.prompt == promptFind || t.prompt == promptReplace {
+		ms := t.findMatches()
+		found = make(map[int][]match, len(ms))
+		for _, m := range ms {
+			found[m.row] = append(found[m.row], m)
+		}
+		if i := t.currentMatch(ms); i >= 0 {
+			curMatch = ms[i]
+		}
+	}
 
 	vrows := t.layout(lines, avail)
 	numW := len(strconv.Itoa(t.TextArea.LineCount())) + 1
@@ -1076,6 +1063,15 @@ func (t *TextEditor) View() string {
 				full = ansi.Cut(full, 0, sc) + theme.SelectionStyle.Render(string(sr[sc:ec])) + ansi.Cut(full, ec, len(sr))
 			}
 		}
+		for _, m := range found[i] {
+			sc, ec := displayCol(raw, m.col), displayCol(raw, m.end)
+			st := theme.FindMatchStyle
+			if m == curMatch {
+				st = theme.SearchHighlightStyle
+			}
+			sr := []rune(shown)
+			full = ansi.Cut(full, 0, sc) + st.Render(string(sr[sc:ec])) + ansi.Cut(full, ec, len(sr))
+		}
 		// Visible window of this segment in display columns (never past the
 		// segment end, so a wrapped row does not bleed into the next one).
 		segStart := displayCol(raw, v.start) + b.scrollX
@@ -1132,8 +1128,9 @@ func (t *TextEditor) View() string {
 
 	var status string
 	switch t.prompt {
-	case promptFind:
-		status = theme.PromptStyle.Render(" find: "+t.promptValue+"▏") + theme.MutedStyle.Render("  ⏎ next · esc close")
+	case promptFind, promptReplace:
+		field, hint := t.findStatus()
+		status = theme.PromptStyle.Render(field) + theme.MutedStyle.Render(hint)
 	case promptGoto:
 		status = theme.PromptStyle.Render(" go to line: "+t.promptValue+"▏") + theme.MutedStyle.Render("  ⏎ go · esc close")
 	default:

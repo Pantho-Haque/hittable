@@ -55,7 +55,7 @@ It needs a PTY, which native Windows does not provide the way the app uses it. E
 Capture its output with `HITTABLE_PTYLOG=/tmp/pty.log hittable .` and attach the log to an issue.
 
 **`hittable update` installed something unexpected.**
-Releases of the terminal app are tagged `shellapp-v*`, and the repository's "latest" release may be a browser-extension tag. Pin with `hittable update --tag shellapp-vX.Y.Z` or `HITTABLE_VERSION=shellapp-vX.Y.Z` for the installer.
+Terminal-app releases are tagged `sh-v*` and browser-extension releases `ext-v*`, in the same repository; `hittable update` and the installer only ever pick `sh-v*` tags. To pin a version, use `hittable update --tag sh-vX.Y.Z` or `HITTABLE_VERSION=sh-vX.Y.Z` for the installer.
 
 **Does the Git panel send my code anywhere?**
 No. Without a model it drafts commit messages from the staged diff locally. With `hittable model enable` a model runs on your machine, on localhost, and files that look like secrets are never packed into a prompt. `HITTABLE_AI=0` turns the model off entirely.

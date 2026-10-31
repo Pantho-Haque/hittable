@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -284,7 +285,9 @@ func TestEndpointAdoptsALiveRunFile(t *testing.T) {
 		t.Error("an adopted server was marked owned; Close would kill somebody else's process")
 	}
 
-	// Closing must leave the adopted server, and its run file, alone.
+	// Another hittable window is still open (the parent process stands in for
+	// it), so closing must leave the shared server, and its run file, alone.
+	otherWindow(t)
 	s.Close()
 	if _, err := os.Stat(hithome.RunFile()); err != nil {
 		t.Errorf("Close removed the run file of a server it does not own: %v", err)
@@ -438,7 +441,82 @@ func TestEndpointReportsNothingInstalled(t *testing.T) {
 	}
 }
 
+// Two windows asking at the same moment must load the model once: the second
+// waits on the spawn lock and adopts what the first started.
+func TestConcurrentWindowsShareOneServer(t *testing.T) {
+	a := stubSupervisor(t, stubDelay+"=300ms")
+	b := NewSupervisor()
+	b.noAdopt = true
+	b.bin = filepath.Join(t.TempDir(), "does-not-exist") // b must never spawn
+	b.modelPath = a.modelPath
+	t.Cleanup(b.Close)
+
+	var wg sync.WaitGroup
+	got := make([]string, 2)
+	errs := make([]error, 2)
+	for i, s := range []*Supervisor{a, b} {
+		wg.Add(1)
+		go func(i int, s *Supervisor) {
+			defer wg.Done()
+			got[i], errs[i] = s.Endpoint(context.Background())
+		}(i, s)
+		time.Sleep(20 * time.Millisecond) // a takes the lock first
+	}
+	wg.Wait()
+	if errs[0] != nil || errs[1] != nil {
+		t.Fatalf("Endpoint errors: %v, %v", errs[0], errs[1])
+	}
+	if got[0] != got[1] {
+		t.Fatalf("two servers: %q and %q", got[0], got[1])
+	}
+}
+
+// The window that started the server quits while another still uses it: the
+// server stays, the other window keeps it, and the last one out stops it.
+func TestServerOutlivesItsStarterUntilTheLastWindowCloses(t *testing.T) {
+	a := stubSupervisor(t)
+	endpoint, err := a.Endpoint(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _, _ := a.Running()
+
+	other := otherWindow(t)
+	a.Close()
+	if !processAlive(pid) {
+		t.Fatal("the first window to quit stopped a server another window uses")
+	}
+
+	b := NewSupervisor()
+	b.noAdopt = true
+	b.bin = filepath.Join(t.TempDir(), "does-not-exist")
+	if got, err := b.Endpoint(context.Background()); err != nil || got != endpoint {
+		t.Fatalf("Endpoint = %q, %v; want the surviving %q", got, err, endpoint)
+	}
+
+	_ = os.Remove(other) // that other window quit too
+	b.Close()
+	waitGone(t, pid)
+	if _, err := os.Stat(hithome.RunFile()); err == nil {
+		t.Error("the run file outlived the last window")
+	}
+}
+
 // --- helpers ----------------------------------------------------------------
+
+// otherWindow registers a second live hittable process. The parent (go test)
+// is alive for the whole run, which is all the client check looks at.
+func otherWindow(t *testing.T) string {
+	t.Helper()
+	p := clientFile(os.Getppid())
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
 
 // healthyServer stands in for a llama-server another process is running.
 func healthyServer(t *testing.T) *httptest.Server {

@@ -44,13 +44,14 @@ var versionCmd = &cobra.Command{
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "hittable [path]",
+	Use:   "hittable [path | file]",
 	Short: "Terminal API client for .hit request files",
 	Long: `hittable.sh opens a project directory as an API workspace. Requests live in
 plain .hit files (shared with the Hittable web app), variables in hittable/env.json.
 
   hittable                     open the current directory
   hittable ~/code/api          open another directory
+  hittable api/login.hit       open one file on its own (editor + terminal, no explorer/Git/Find)
   hittable init                create the hittable/ template (test request, env.json, notes)
   hittable -i collection.json  import a Postman v2.1 or Insomnia export, then open
   hittable -e postman          export hittable/ as a Postman collection (<folder>.postman_collection.json)
@@ -75,6 +76,15 @@ plain .hit files (shared with the Hittable web app), variables in hittable/env.j
 			explorer.IconMode = "emoji"
 		}
 		args = exportFormatArg(args)
+		if len(args) == 1 && flagExport == "" && flagImport == "" {
+			if fi, err := os.Stat(args[0]); err == nil && !fi.IsDir() {
+				abs, err := filepath.Abs(args[0])
+				if err != nil {
+					return err
+				}
+				return runProgram(ui.NewFileApp(abs))
+			}
+		}
 		root, err := rootdir.Resolve(args)
 		if err != nil {
 			return fmt.Errorf("resolving root: %w", err)
@@ -171,8 +181,9 @@ func exportFormatArg(args []string) []string {
 	return args
 }
 
-func runTUI(root string) error {
-	app := ui.NewApp(root)
+func runTUI(root string) error { return runProgram(ui.NewApp(root)) }
+
+func runProgram(app *ui.App) error {
 	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseAllMotion(),
 		tea.WithInput(ui.MouseSafeInput(os.Stdin)))
 	screens.SetTeaProgram(p)

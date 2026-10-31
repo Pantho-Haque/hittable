@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,6 +16,13 @@ var Zones = zone.New()
 
 type App struct {
 	screen *screens.MainScreen
+}
+
+// NewFileApp opens one file on its own (`hittable <file>`).
+func NewFileApp(path string) *App {
+	a := NewApp(filepath.Dir(path))
+	a.screen.EnterSingleFile(path)
+	return a
 }
 
 func NewApp(rootDir string) *App {

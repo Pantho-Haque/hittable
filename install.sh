@@ -9,7 +9,7 @@
 # is sent anywhere.
 #
 # Environment:
-#   HITTABLE_VERSION      tag to install (default: the latest release)
+#   HITTABLE_VERSION      tag to install, e.g. sh-v1.2.0 (default: the newest sh-v* release)
 #   HITTABLE_INSTALL_DIR  where to put the binary (default: ~/.local/bin)
 #
 # Run it with `sh -x` to see every step.
@@ -82,16 +82,11 @@ fetch_stdout() {
 }
 
 latest_version() {
-	# The redirect on /releases/latest names the tag, which avoids depending on
-	# the API's rate limit or on jq being installed.
-	if command -v curl >/dev/null 2>&1; then
-		curl -fsSLI -o /dev/null -w '%{url_effective}' \
-			"https://github.com/$REPO/releases/latest" 2>/dev/null |
-			sed 's#.*/tag/##'
-	else
-		fetch_stdout "https://api.github.com/repos/$REPO/releases/latest" |
-			sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1
-	fi
+	# The newest sh-v* release. Not /releases/latest: that is repo-wide, and the
+	# browser extension (ext-v*) releases from this repo too. The API lists
+	# newest first; sed instead of jq so nothing extra needs installing.
+	fetch_stdout "https://api.github.com/repos/$REPO/releases?per_page=100" |
+		sed -n 's/.*"tag_name": *"\(sh-v[^"]*\)".*/\1/p' | head -1
 }
 
 sha256_of() {
@@ -124,7 +119,7 @@ VERSION="${HITTABLE_VERSION:-}"
 if [ -z "$VERSION" ]; then
 	VERSION="$(latest_version || true)"
 fi
-[ -n "$VERSION" ] || die "could not work out the latest version — set HITTABLE_VERSION=vX.Y.Z and try again"
+[ -n "$VERSION" ] || die "could not work out the latest version — set HITTABLE_VERSION=sh-vX.Y.Z and try again"
 
 INSTALL_DIR="${HITTABLE_INSTALL_DIR:-$HOME/.local/bin}"
 ASSET="${BIN}_${VERSION}_${OS}_${ARCH}.${EXT}"
