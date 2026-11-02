@@ -121,7 +121,7 @@ describe("content script", () => {
   it("answers a ping from the page with READY, to the page's own origin only", () => {
     const { win, deliver } = loadContent(() => {});
     deliver({ type: "HITTABLE_PING" });
-    expect(win.postMessage).toHaveBeenCalledWith({ type: "HITTABLE_EXTENSION_READY" }, "https://hittable.vercel.app");
+    expect(win.postMessage).toHaveBeenCalledWith({ type: "HITTABLE_EXTENSION_READY", capabilities: ["binary"] }, "https://hittable.vercel.app");
   });
 
   it("ignores messages from other windows or origins (iframes, other tabs)", () => {
@@ -325,5 +325,42 @@ describe("page ↔ content script ↔ worker, end to end", () => {
     ]);
     expect(a).toMatchObject({ success: true, data: { echoed: "http://localhost:3000/a" }, cookies: [{ name: "sid", value: "1" }] });
     expect(b).toMatchObject({ data: { echoed: "http://127.0.0.1:3000/b" } });
+  });
+});
+
+describe("file uploads to localhost (1.1.0)", () => {
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 255]);
+  const b64 = btoa(String.fromCharCode(...PNG));
+
+  it("the content script says it can carry binary bodies", () => {
+    const post = vi.spyOn(window, "postMessage");
+    new Function("chrome", "window", CONTENT)({ runtime: { sendMessage: vi.fn() } }, window);
+    window.dispatchEvent(new MessageEvent("message", { data: { type: "HITTABLE_PING" }, source: window, origin: window.location.origin }));
+    expect(post).toHaveBeenCalledWith({ type: "HITTABLE_EXTENSION_READY", capabilities: ["binary"] }, window.location.origin);
+    post.mockRestore();
+    expect(MANIFEST.version).toBe("1.1.0");
+  });
+
+  it("the worker decodes bodyBase64 into the exact bytes", async () => {
+    const { send, fetchMock } = loadBackground(async () => jsonResponse({ ok: true }));
+    await send(request({ url: "http://localhost:4000/up", method: "PUT", headers: { "Content-Type": "image/png" }, body: null, bodyBase64: b64 }));
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(init.body).toEqual(PNG);
+    expect(init.headers).toEqual({ "Content-Type": "image/png" });
+  });
+
+  it("the page sends files as base64 to an extension that can carry them, and asks an older one to update", async () => {
+    const readFile = vi.fn(async () => PNG);
+    const req = { method: "POST", url: "http://localhost:4000/up", headers: "{}", params: "{}", body: "@files/a.png" };
+    const ctx = { hitPath: ["hittable", "up.hit"], readFile };
+    await expect(hittableProxy(req, {}, undefined, true, undefined, ctx)).rejects.toThrow(/Update the Hittable extension/);
+    const post = vi.spyOn(window, "postMessage").mockImplementation(() => {});
+    void hittableProxy(req, {}, undefined, true, undefined, { ...ctx, extensionBinary: true });
+    await vi.waitFor(() => expect(post).toHaveBeenCalled());
+    expect((post.mock.calls[0][0] as { payload: unknown }).payload).toEqual({
+      url: "http://localhost:4000/up", method: "POST", headers: { "Content-Type": "image/png" }, body: null, bodyBase64: b64,
+    });
+    expect(readFile).toHaveBeenCalledWith(["hittable", "files", "a.png"]);
+    post.mockRestore();
   });
 });

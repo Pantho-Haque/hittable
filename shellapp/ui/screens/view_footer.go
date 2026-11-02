@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/hittable/shellapp/internal/document"
+	"github.com/hittable/shellapp/ui/components/requesteditor"
 	"github.com/hittable/shellapp/ui/theme"
 )
 
@@ -20,8 +21,14 @@ func (m *MainScreen) footerText() string {
 	if m.StatusBar != "" {
 		return m.StatusBar
 	}
+	if m.Palette.Open && m.attaching {
+		return "pick a file to attach · ↑↓ move · ⏎ attach · alt+a type a path instead · esc cancel"
+	}
 	if m.Palette.Open {
 		return "type to search · ↑↓ move · ⏎ open · tab find file ⇄ live grep · esc close"
+	}
+	if m.PathPrompt.Open {
+		return "type a path (relative to this .hit, absolute, or ~/) · ⇥ complete · ⏎ attach · ctrl+w up a folder · esc cancel"
 	}
 	if m.GitOpen {
 		if m.Git.Resolving {
@@ -61,6 +68,9 @@ func (m *MainScreen) footerText() string {
 					hints = []string{"←/→ or 1/2/3 tab", "⏎/↓ edit", "ctrl+r send", "tab next"}
 				case FocusBody:
 					hints = []string{"type to edit", "alt+1/2/3 tab", "ctrl+l format json", "ctrl+r send", "tab next"}
+					if m.ActiveTab == requesteditor.TabBody {
+						hints = []string{"alt+t body type", "alt+a attach file", "alt+1/2/3 tab", "ctrl+l format json", "ctrl+r send", "tab next"}
+					}
 				case FocusResponse:
 					hints = []string{"jk/↑↓ scroll", "g/G top/bottom", "h headers", "ctrl+f search", "ctrl+y copy body", "tab next"}
 				default:

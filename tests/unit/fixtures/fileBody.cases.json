@@ -1,0 +1,28 @@
+[
+  { "name": "plain JSON body has no file refs", "contentType": "application/json", "body": "{\"a\":1}", "expect": null },
+  { "name": "empty body", "contentType": "", "body": "", "expect": null },
+  { "name": "text body that merely contains @", "contentType": "text/plain", "body": "mail me @ home", "expect": null },
+  { "name": "multi-line body starting with @ is text", "contentType": "text/plain", "body": "@one\n@two", "expect": null },
+  { "name": "lone @ is text", "contentType": "", "body": "@", "expect": null },
+
+  { "name": "binary body", "contentType": "application/pdf", "body": "@files/report.pdf", "expect": { "kind": "binary", "file": { "path": "files/report.pdf" } } },
+  { "name": "binary body, surrounding whitespace ignored", "contentType": "", "body": "  @files/a.bin\n", "expect": { "kind": "binary", "file": { "path": "files/a.bin" } } },
+  { "name": "binary body with a JSON content type is still a file", "contentType": "application/json", "body": "@fixtures/user.json", "expect": { "kind": "binary", "file": { "path": "fixtures/user.json" } } },
+  { "name": "binary body with type and filename", "contentType": "", "body": "@files/a.png;type=image/png;filename=me.png", "expect": { "kind": "binary", "file": { "path": "files/a.png", "type": "image/png", "filename": "me.png" } } },
+  { "name": "binary body, options in either order", "contentType": "", "body": "@files/a.png;filename=me.png;type=image/png", "expect": { "kind": "binary", "file": { "path": "files/a.png", "type": "image/png", "filename": "me.png" } } },
+  { "name": "unknown ;option stays part of the path", "contentType": "", "body": "@files/a;b.txt", "expect": { "kind": "binary", "file": { "path": "files/a;b.txt" } } },
+  { "name": "binary body with a variable in the path", "contentType": "", "body": "@<<DIR>>/a.bin", "expect": { "kind": "binary", "file": { "path": "<<DIR>>/a.bin" } } },
+  { "name": "@@ escapes a literal @ body", "contentType": "text/plain", "body": "@@handle", "expect": { "kind": "raw", "body": "@handle" } },
+  { "name": "empty path after options is an error", "contentType": "", "body": "@;type=text/plain", "expect": { "error": true } },
+
+  { "name": "multipart with text and file fields, order kept", "contentType": "multipart/form-data", "body": "{\"name\":\"Tanvir\",\"avatar\":\"@files/avatar.png\",\"age\":\"30\"}", "expect": { "kind": "multipart", "parts": [ { "name": "name", "value": "Tanvir" }, { "name": "avatar", "file": { "path": "files/avatar.png" } }, { "name": "age", "value": "30" } ] } },
+  { "name": "multipart header with boundary and odd case", "contentType": "Multipart/Form-Data; boundary=xyz", "body": "{\"f\":\"@a.txt\"}", "expect": { "kind": "multipart", "parts": [ { "name": "f", "file": { "path": "a.txt" } } ] } },
+  { "name": "multipart file with type and filename", "contentType": "multipart/form-data", "body": "{\"f\":\"@files/a.png;type=image/png;filename=me.png\"}", "expect": { "kind": "multipart", "parts": [ { "name": "f", "file": { "path": "files/a.png", "type": "image/png", "filename": "me.png" } } ] } },
+  { "name": "multipart @@ escapes a literal @ value", "contentType": "multipart/form-data", "body": "{\"handle\":\"@@tanvir\"}", "expect": { "kind": "multipart", "parts": [ { "name": "handle", "value": "@tanvir" } ] } },
+  { "name": "multipart non-string values are sent as their JSON text", "contentType": "multipart/form-data", "body": "{\"n\":42,\"ok\":true,\"none\":null,\"obj\":{\"a\":1}}", "expect": { "kind": "multipart", "parts": [ { "name": "n", "value": "42" }, { "name": "ok", "value": "true" }, { "name": "none", "value": "" }, { "name": "obj", "value": "{\"a\":1}" } ] } },
+  { "name": "multipart empty body has no parts", "contentType": "multipart/form-data", "body": "  ", "expect": { "kind": "multipart", "parts": [] } },
+  { "name": "multipart lone @ value is an error", "contentType": "multipart/form-data", "body": "{\"f\":\"@\"}", "expect": { "error": true } },
+  { "name": "multipart body that is not a JSON object is an error", "contentType": "multipart/form-data", "body": "[1,2]", "expect": { "error": true } },
+  { "name": "multipart body that is not JSON is an error", "contentType": "multipart/form-data", "body": "name=x", "expect": { "error": true } },
+  { "name": "multipart file field with an empty path is an error", "contentType": "multipart/form-data", "body": "{\"f\":\"@;type=image/png\"}", "expect": { "error": true } }
+]

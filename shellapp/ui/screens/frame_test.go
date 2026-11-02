@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/hittable/shellapp/ui/components/requesteditor"
 	zone "github.com/lrstanley/bubblezone"
 )
 
@@ -47,6 +48,19 @@ func TestFrameNeverOutgrowsTheTerminal(t *testing.T) {
 			m.openFileRaw(filepath.Join(filepath.Dir(f), "req.hit"))
 		}},
 		{"sidebar hidden", func(m *MainScreen, f string) { m.openFileRaw(f); m.ExplorerHidden = true }},
+		// The type line and the file list share the editor box's rows.
+		{"body uploads", func(m *MainScreen, f string) {
+			m.openFileRaw(filepath.Join(filepath.Dir(f), "req.hit"))
+			m.focusBody()
+			m.setBodyType(requesteditor.BodyMultipart)
+			m.Body.SetValue(`{"a":"@notes.md","b":"@x/missing-file-with-a-long-name.png","c":"@c","d":"@d","e":"@e"}`)
+		}},
+		{"body path prompt", func(m *MainScreen, f string) {
+			m.openFileRaw(filepath.Join(filepath.Dir(f), "req.hit"))
+			m.focusBody()
+			m.PathPrompt.Show(filepath.Dir(f))
+			m.PathPrompt.Value = strings.Repeat("long/", 40)
+		}},
 	}
 
 	for _, st := range states {

@@ -573,3 +573,41 @@ func TestKeyPanelsAreExclusive(t *testing.T) {
 		t.Fatal("the terminal should replace help")
 	}
 }
+
+// Body type / attach: alt+t (⌥t sends †) cycles the body type and alt+a (⌥a
+// sends å) attaches a file, only on the Body tab; ctrl+t still toggles
+// Runner/Text there.
+func TestKeyBodyTypeAndAttach(t *testing.T) {
+	m, hd := newTestScreen(t)
+	m.openFileRaw(filepath.Join(hd, "a.hit"))
+	m.ActiveTab = requesteditor.TabHeaders
+	m.Focus = FocusBody
+	m.focusCurrent()
+	alt(m, "t")
+	if m.bodyType() != requesteditor.BodyJSON {
+		t.Fatal("alt+t on the Headers tab must not change the body type")
+	}
+	m.focusBody()
+	alt(m, "t")
+	runes(m, "†")
+	if m.bodyType() != requesteditor.BodyForm {
+		t.Fatalf("alt+t / † cycle: %v", m.bodyType())
+	}
+	m.Body.SetValue("")
+	runes(m, "å")
+	if !m.Palette.Open || !m.attaching {
+		t.Fatal("å opens the attach palette")
+	}
+	alt(m, "a")
+	if m.Palette.Open || !m.PathPrompt.Open {
+		t.Fatal("alt+a in the attach palette switches to the path prompt")
+	}
+	ctrl(m, tea.KeyEsc)
+	if m.PathPrompt.Open || m.ActiveFile == "" {
+		t.Fatal("esc closes the prompt and keeps the file")
+	}
+	ctrl(m, tea.KeyCtrlT)
+	if m.ViewMode != ViewText {
+		t.Error("ctrl+t still toggles Runner/Text from the Body tab")
+	}
+}

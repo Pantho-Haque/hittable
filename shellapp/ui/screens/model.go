@@ -17,6 +17,7 @@ import (
 	"github.com/hittable/shellapp/ui/components/gitpanel"
 	"github.com/hittable/shellapp/ui/components/mdpreview"
 	"github.com/hittable/shellapp/ui/components/palette"
+	"github.com/hittable/shellapp/ui/components/pathprompt"
 	"github.com/hittable/shellapp/ui/components/requesteditor"
 	"github.com/hittable/shellapp/ui/components/responseviewer"
 	"github.com/hittable/shellapp/ui/components/terminal"
@@ -75,7 +76,10 @@ type MainScreen struct {
 	AI       *ai
 	Palette  *palette.Palette
 	Preview  *mdpreview.Preview
-	MdMode   MdMode
+	// PathPrompt picks a file to attach by typing its path (attach.go).
+	PathPrompt pathprompt.Prompt
+	attaching  bool // the open palette picks a file to attach, not one to open
+	MdMode     MdMode
 
 	Focus            FocusArea
 	LastFocus        FocusArea
@@ -181,6 +185,10 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 	m.wireGit()
 	m.refreshGit(true)
 	pal.OnOpen = func(r palette.Result) {
+		if m.attaching {
+			m.attachFile(r.Path)
+			return
+		}
 		m.openFileRaw(r.Path)
 		if r.Line > 0 && m.ActiveFile == r.Path {
 			if doc := m.Store.Get(r.Path); doc != nil && doc.Kind == document.KindHit && m.ViewMode == ViewRunner {

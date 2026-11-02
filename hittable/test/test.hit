@@ -1,9 +1,11 @@
 {
   "method": "GET",
   "url": "https://jsonplaceholder.typicode.com/todos/122",
-  "headers": {},
+  "headers": {
+    "Content-Type": "multipart/form-data"
+  },
   "params": {},
-  "body": "",
+  "body": "{\n  \"profile\": \"@../files/punch.png\"\n}",
   "response": {
     "data": {
       "completed": true,

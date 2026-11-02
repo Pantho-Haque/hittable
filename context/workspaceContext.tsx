@@ -75,6 +75,10 @@ type WorkspaceContextType = {
   createEntry: (path: string[], kind: "file" | "directory", text?: string) => Promise<void>;
   renameEntry: (path: string[], newName: string) => Promise<void>;
   deleteEntry: (path: string[]) => Promise<void>;
+  /** Bytes of any file in the workspace (a request's upload). */
+  readWorkspaceFile: (path: string[]) => Promise<Uint8Array>;
+  /** Copy a file from the computer into hittable/files/ under a free name; returns its path. */
+  addUploadFile: (file: File) => Promise<string[]>;
 } | null;
 
 /**
@@ -97,6 +101,8 @@ export function connectingLabel(stage: TConnectingStage): string {
 const BLANK_HIT = serializeHitFile({ method: "GET", url: "", headers: {}, params: {}, body: "", response: null });
 
 const key = (path: string[]) => path.join("/");
+/** Where files picked from the computer for an upload are copied. */
+export const UPLOADS_DIR = ["hittable", "files"];
 const within = (path: string[], root: string[]) => key(path) === key(root) || key(path).startsWith(key(root) + "/");
 
 function writable(b: WorkspaceBackend | null) {
@@ -390,6 +396,25 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     await refreshTree();
   }, [refreshTree, setActiveFile]);
 
+  const readWorkspaceFile = useCallback(async (path: string[]) => {
+    const b = backendRef.current;
+    if (!b) throw new Error("No workspace is open");
+    return b.readFile(path);
+  }, []);
+
+  const addUploadFile = useCallback(async (file: File) => {
+    const b = writable(backendRef.current);
+    const tree = await b.listTree();
+    const dot = file.name.lastIndexOf(".");
+    const [stem, ext] = dot > 0 ? [file.name.slice(0, dot), file.name.slice(dot)] : [file.name, ""];
+    let path = [...UPLOADS_DIR, file.name];
+    for (let n = 1; findNode(tree, path); n++) path = [...UPLOADS_DIR, `${stem}-${n}${ext}`];
+    await b.writeBytes(path, new Uint8Array(await file.arrayBuffer()));
+    await refreshTree();
+    syncStatus(b);
+    return path;
+  }, [refreshTree, syncStatus]);
+
   // The Runner's "set it in Environment" link: open hittable/env.json,
   // creating it when it is missing and the workspace can be written.
   const openEnv = useCallback(async () => {
@@ -439,6 +464,8 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
         createEntry,
         renameEntry,
         deleteEntry,
+        readWorkspaceFile,
+        addUploadFile,
       }}
     >
       {children}

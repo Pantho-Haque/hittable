@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -67,7 +68,7 @@ func (m *MainScreen) sendRequestAsync() tea.Cmd {
 	m.StatusBar = "Sending… · esc cancels"
 
 	go func() {
-		result, err := hitfile.ExecuteAndCaptureContext(ctx, &req, envSnap)
+		result, err := hitfile.ExecuteAndCaptureContext(ctx, &req, envSnap, filepath.Dir(path))
 		send(responseMsg{path: path, result: result, err: err})
 	}()
 	return m.Spinner.Tick

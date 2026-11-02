@@ -1,4 +1,6 @@
 "use client";
+import { fileSpecsOf, parseFileRefs } from "@/utils/fileBody";
+import { getContentType } from "@/utils/bodyType";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { ModalActions, ModalShell } from "@/components/ui/SharedModal";
@@ -120,6 +122,13 @@ export default function SharePreview() {
   const { request, name } = shared;
   const headers = parseMap(request.headers);
   const params = parseMap(request.params);
+  const uploads = (() => {
+    try {
+      return fileSpecsOf(parseFileRefs(request.body ?? "", getContentType(request.headers ?? "")));
+    } catch {
+      return [];
+    }
+  })();
 
   const importFolder = async () => {
     const dir = [HITTABLE_DIR, "shared"];
@@ -176,6 +185,11 @@ export default function SharePreview() {
           </section>
         )}
       </div>
+      {uploads.length > 0 && (
+        <p className="text-xs text-(--warning)">
+          This request uploads {uploads.map((f) => f.path).join(", ")}. A link carries paths, never files: put the files at those paths next to the imported request (in hittable/shared/).
+        </p>
+      )}
       <p className="text-xs text-white/70">
         Nothing has been sent. Variables like {"<<TOKEN>>"} need values in your Environment.
       </p>

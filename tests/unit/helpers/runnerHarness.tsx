@@ -26,6 +26,9 @@ export type RunnerOptions = {
   extensionAvailable?: boolean;
   requestKey?: string;
   readOnly?: boolean;
+  /** Workspace files (path → bytes) for uploads; picked files are added here too. */
+  files?: Record<string, Uint8Array>;
+  extensionBinary?: boolean;
 };
 
 export type RunnerCtx = {
@@ -76,6 +79,21 @@ export function mountRunner(opts: RunnerOptions = {}) {
         setSaves((n) => n + 1);
       },
       readOnly: opts.readOnly,
+      ...(opts.files && {
+        hitPath: requestKey.split("/"),
+        extensionBinary: opts.extensionBinary,
+        workspaceFiles: Object.keys(opts.files).map((p) => p.split("/")),
+        readFile: async (p: string[]) => {
+          const f = opts.files![p.join("/")];
+          if (!f) throw new DOMException("gone", "NotFoundError");
+          return f;
+        },
+        addUploadFile: async (file: File) => {
+          const path = ["hittable", "files", file.name];
+          opts.files![path.join("/")] = new Uint8Array(await file.arrayBuffer());
+          return path;
+        },
+      }),
     };
     return (
       <>

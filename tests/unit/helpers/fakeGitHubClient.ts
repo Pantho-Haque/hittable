@@ -2,7 +2,8 @@
 import { GitHubError, type CommitInput, type TreeEntry } from "@/utils/github/api";
 import { gitBlobSha, type Client } from "@/services/github/githubBackend";
 
-type Files = Record<string, string>;
+/** Text, or bytes for a binary file. */
+type Files = Record<string, string | Uint8Array>;
 
 export function fakeGitHub(seed: Files, opts: { protectedBranches?: string[]; truncated?: boolean } = {}) {
   const blobs = new Map<string, Uint8Array>();
@@ -23,10 +24,11 @@ export function fakeGitHub(seed: Files, opts: { protectedBranches?: string[]; tr
   async function entries(files: Files): Promise<TreeEntry[]> {
     const out: TreeEntry[] = [];
     const dirs = new Set<string>();
-    for (const [path, text] of Object.entries(files)) {
-      const sha = await gitBlobSha(text);
-      blobs.set(sha, new TextEncoder().encode(text));
-      out.push({ path, type: "blob", sha, size: text.length });
+    for (const [path, data] of Object.entries(files)) {
+      const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+      const sha = await gitBlobSha(bytes);
+      blobs.set(sha, bytes);
+      out.push({ path, type: "blob", sha, size: bytes.length });
       const parts = path.split("/");
       for (let i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/"));
     }
@@ -74,7 +76,11 @@ export function fakeGitHub(seed: Files, opts: { protectedBranches?: string[]; tr
       committed.push(input);
       const files = { ...commits.get(input.expectedHeadOid)! };
       for (const d of input.deletions) delete files[d.path];
-      for (const a of input.additions) files[a.path] = Buffer.from(a.contents, "base64").toString("utf8");
+      for (const a of input.additions) {
+        const buf = Buffer.from(a.contents, "base64");
+        const t = buf.toString("utf8");
+        files[a.path] = !buf.includes(0) && Buffer.from(t, "utf8").equals(buf) ? t : new Uint8Array(buf);
+      }
       const sha = makeCommit(files);
       branches.set(input.branch, sha);
       return { sha, url: `https://github.com/o/r/commit/${sha}` };

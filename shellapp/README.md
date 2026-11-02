@@ -63,6 +63,12 @@ A request is one JSON file. Nothing else is stored about it.
 
 - `headers` and `params` are flat string→string objects, never arrays.
 - `body` is a raw string, which may itself contain escaped JSON.
+- To upload a file, the body is `@path/to/file` on one line (the file's bytes are the
+  body), or, with `Content-Type: multipart/form-data`, a JSON object of fields where a
+  `"@path"` value is a file: `{"name": "Tanvir", "avatar": "@files/avatar.png"}`. Add
+  `;type=image/png` or `;filename=me.png` after a path to override them, and write `@@`
+  for a literal `@`. Paths are relative to the `.hit` file's folder; absolute paths and
+  `~/` work too. The web app reads the same format (`docs/file-uploads.md`).
 - `response` is `null` until the request has been sent at least once from this file. After
   a send it holds `data`, `status`, `statusText`, `ok`, `headers`, `cookies`, `durationMs`
   and `sizeBytes`.
@@ -144,7 +150,10 @@ Drag the `│` separator to resize it.
 dropdown, a URL bar showing the interpolated URL, and Params / Headers / Body tabs. `ctrl+r`
 sends. The response panel shows status, duration and size, the body highlighted by Chroma,
 a headers view (`h`), and a search overlay (`ctrl+f`) with match highlighting and
-next/previous. `ctrl+y` copies the request as a `curl` command. `ctrl+t` flips to Text
+next/previous. On the Body tab, `alt+t` picks the body type (json · text · form ·
+multipart · file) and sets the matching `Content-Type`, `alt+a` attaches a file, and each
+referenced file is listed under the editor as found (`✓`, with its size) or missing (`✗`).
+`ctrl+y` copies the request as a `curl` command. `ctrl+t` flips to Text
 view, which is the same file as raw JSON — one copy of the content in memory, so switching
 is a transformation and never a reload.
 
@@ -394,6 +403,8 @@ Environment variables override both:
 | Switch tab            | `←/→`, `1/2/3`  | Tab bar focused      |
 | Switch tab            | `alt+1/2/3`     | Editor focused       |
 | Format body JSON      | `ctrl+l`        | Body tab focused     |
+| Body type             | `alt+t` (`⌥t`), click a name on the `type:` line | Body tab focused |
+| Attach file           | `alt+a` (`⌥a`); `alt+a` again in the palette types a path, `⇥` completes | Body tab focused |
 | Search Response       | `ctrl+f`        | Runner view          |
 | Search Next / Prev    | `enter`/`n`, `shift+enter`/`N` | Search |
 | Response headers      | `h`             | Response focused     |

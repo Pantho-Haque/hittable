@@ -9,6 +9,8 @@ declare global {
 export function useExtension() {
   const [available, setAvailable] = useState(false);
   const [checked, setChecked] = useState(false);
+  // What this extension version can do; "binary" carries file uploads (1.1.0+).
+  const [capabilities, setCapabilities] = useState<string[]>([]);
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
@@ -16,6 +18,7 @@ export function useExtension() {
         clearInterval(poll);
         window.__hittableExtension = true;
         setAvailable(true);
+        setCapabilities(Array.isArray(e.data.capabilities) ? e.data.capabilities.filter((c: unknown) => typeof c === "string") : []);
         setChecked(true);
       }
     };
@@ -38,5 +41,5 @@ export function useExtension() {
     };
   }, []);
 
-  return { available, checked };
+  return { available, checked, capabilities };
 }

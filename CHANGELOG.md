@@ -4,6 +4,15 @@ All notable changes to Hittable will be documented in this file.
 
 ## [Unreleased]
 
+### v3.3 — File uploads, web and terminal (see docs/file-uploads.md)
+- **`.hit` files can send files** with curl's `@` convention, no new keys: a `multipart/form-data` body is a JSON object whose `@path` values are files; a body that is exactly `@path` sends that file as the whole body. Paths are relative to the `.hit` file; `<<KEY>>`, `;type=` and `;filename=` work; `@@` escapes. Both apps test the parser against one shared table of cases.
+- **Web:** Body types **Multipart** (Text/File rows) and **File**. Choose a file from the computer (or drop it) and it is copied into `hittable/files/`; or pick any workspace file. Missing files are marked and block the send with their path.
+- **Web proxy:** uploads go to `/api/proxy` as a multipart envelope (no base64), guarded by `X-Hittable`; 4 MB limit (`PROXY_MAX_REQUEST_BYTES`), with a clear message over it.
+- **GitHub repositories:** binary files in the working copy (IndexedDB), shown as **binary** in Source Control with a size-only diff, sent before committing, kept on reload, committed as base64 on both the branch and pull-request paths, compared by SHA for remote changes, movable. Files up to 3 MB so they fit in one commit; oversized commits are refused before sending.
+- **Extension 1.1.0:** carries upload bodies to localhost (base64 over the JSON message channel) and announces `capabilities: ["binary"]`; older extensions get an update message.
+- **Copy as / curl import:** `curl -F` / `--form-string` / `--data-binary @file`, fetch `FormData` + `openAsBlob`, Python `files=`, HTTPie `--form`; pasting `-F`, `--form-string`, `--data-binary @file` or `-T file` imports the upload. Share links keep paths, never bytes, and say so.
+- **Terminal:** the Body tab has a type line (`alt+t` cycles json · text · form · multipart · file), `alt+a` attaches a file from the find palette or a path prompt with Tab completion, and referenced files are listed with ✓ or missing. Uploads stream from disk (no size limit, no overall timeout). The Postman/Insomnia importer and exporter carry form-data and file bodies both ways (paths, never bytes).
+
 ### v3.2 — Request form
 - **One-row URL bar**: method and URL are a single field with one focus ring; Send, Save and Copy as sit on the same row (they wrapped to a second line). No corner brackets or glow. <kbd>Enter</kbd> in the URL sends; the URL no longer takes line breaks. Save shows a dot when there are unsaved changes.
 - **Params / Body / Headers**: tabs show counts (and a dot for a body); JSON / Table is a labelled toggle and Beautify is a **Format** button; key/value rows are a table with column headings; the body type is a segmented control.

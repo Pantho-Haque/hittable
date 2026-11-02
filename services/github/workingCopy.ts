@@ -2,8 +2,11 @@
 // branch's base commit, kept in IndexedDB until you commit it. Blobs are
 // cached by SHA (immutable), so a file is downloaded once.
 
-/** Your version of one path. `dir` keeps an empty new folder visible (git has no empty folders). */
-export type OverlayEntry = { content: string } | { deleted: true } | { dir: true };
+/**
+ * Your version of one path: text, or `bytes` for a binary file (an upload).
+ * `dir` keeps an empty new folder visible (git has no empty folders).
+ */
+export type OverlayEntry = { content: string } | { bytes: Uint8Array } | { deleted: true } | { dir: true };
 
 export type WorkingCopy = {
   baseCommitSha: string;

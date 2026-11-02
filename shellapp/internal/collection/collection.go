@@ -229,11 +229,68 @@ func splitQuery(u string, params map[string]string) string {
 // ---------- Postman ----------
 
 type pmKV struct {
-	Key      string `json:"key"`
-	Value    string `json:"value"`
-	Disabled bool   `json:"disabled"`
-	Type     string `json:"type"`
-	Src      any    `json:"src"`
+	Key         string `json:"key"`
+	Value       string `json:"value"`
+	Disabled    bool   `json:"disabled"`
+	Type        string `json:"type"`
+	Src         any    `json:"src"`
+	ContentType string `json:"contentType"`
+}
+
+// pmSrc is a Postman file field's path; src is a string, or a list when
+// several files share a field (only the first fits a JSON-object body).
+func pmSrc(src any) string {
+	if l, ok := src.([]any); ok {
+		if len(l) == 0 {
+			return ""
+		}
+		src = l[0]
+	}
+	if s, ok := src.(string); ok {
+		return s
+	}
+	return ""
+}
+
+// formBody writes fields as a JSON object in their original order (multipart
+// parts are sent in body order) without HTML escaping, so <<KEY>> stays
+// resolvable.
+func formBody(keys, vals []string) string {
+	if len(keys) == 0 {
+		return "{}"
+	}
+	q := func(s string) string {
+		var b strings.Builder
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		enc.Encode(s)
+		return strings.TrimSuffix(b.String(), "\n")
+	}
+	var b strings.Builder
+	b.WriteString("{")
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString("\n  " + q(k) + ": " + q(vals[i]))
+	}
+	b.WriteString("\n}")
+	return b.String()
+}
+
+// textField escapes a leading @ so a text value is never read as a file.
+func textField(v string) string {
+	if strings.HasPrefix(v, "@") {
+		return "@" + v
+	}
+	return v
+}
+
+// setDefault sets a header unless the request already has it in any case.
+func setDefault(h map[string]string, k, v string) {
+	if hitfile.HeaderKey(h, k) == "" {
+		h[k] = v
+	}
 }
 
 type pmAuth struct {
@@ -255,6 +312,9 @@ type pmItem struct {
 			Raw        string `json:"raw"`
 			URLEncoded []pmKV `json:"urlencoded"`
 			FormData   []pmKV `json:"formdata"`
+			File       *struct {
+				Src any `json:"src"`
+			} `json:"file"`
 		} `json:"body"`
 		Auth *pmAuth `json:"auth"`
 	} `json:"request"`
@@ -403,25 +463,38 @@ func importPostman(data []byte, hittableDir string) (*Report, error) {
 					if b.Mode == "formdata" {
 						kvs = b.FormData
 					}
-					m := map[string]string{}
+					var keys, vals []string
 					for _, kv := range kvs {
 						if kv.Disabled {
 							continue
 						}
-						if kv.Type == "file" {
-							m[kv.Key] = "@" + fmt.Sprint(kv.Src)
-						} else {
-							m[kv.Key] = fromPostman(kv.Value)
+						v := fromPostman(kv.Value)
+						if b.Mode == "formdata" {
+							v = textField(v)
+							if kv.Type == "file" {
+								v = "@" + fromPostman(pmSrc(kv.Src))
+								if kv.ContentType != "" {
+									v += ";type=" + kv.ContentType
+								}
+							}
 						}
+						keys, vals = append(keys, kv.Key), append(vals, v)
 					}
-					bb, _ := json.MarshalIndent(m, "", "  ")
-					h.Body = string(bb)
+					h.Body = formBody(keys, vals)
 					if b.Mode == "urlencoded" {
-						if _, ok := h.Headers["Content-Type"]; !ok {
-							h.Headers["Content-Type"] = "application/x-www-form-urlencoded"
-						}
+						setDefault(h.Headers, "Content-Type", "application/x-www-form-urlencoded")
+					} else {
+						// Postman always sends formdata as multipart; without the
+						// header the body would go out as JSON text.
+						setDefault(h.Headers, "Content-Type", hitfile.Multipart)
 					}
-				case "graphql", "file":
+				case "file":
+					if b.File != nil && pmSrc(b.File.Src) != "" {
+						h.Body = "@" + fromPostman(pmSrc(b.File.Src))
+					} else {
+						rep.Dropped = append(rep.Dropped, "body:file (no file chosen)")
+					}
+				case "graphql":
 					rep.Dropped = append(rep.Dropped, "body:"+b.Mode)
 				}
 			}
@@ -484,6 +557,7 @@ type inResource struct {
 	Body *struct {
 		MimeType string `json:"mimeType"`
 		Text     string `json:"text"`
+		FileName string `json:"fileName"` // a binary file body
 		Params   []struct {
 			Name     string `json:"name"`
 			Value    string `json:"value"`
@@ -609,20 +683,31 @@ func importInsomnia(data []byte, hittableDir string) (*Report, error) {
 						h.Headers["Content-Type"] = b.MimeType
 					}
 				}
+			case b.FileName != "":
+				h.Body = "@" + fromInsomnia(b.FileName)
+				if b.MimeType != "" && b.MimeType != "application/octet-stream" {
+					setDefault(h.Headers, "Content-Type", b.MimeType)
+				}
 			case len(b.Params) > 0:
-				m := map[string]string{}
+				multi := hitfile.IsMultipart(b.MimeType)
+				var keys, vals []string
 				for _, p := range b.Params {
 					if p.Disabled {
 						continue
 					}
-					if p.FileName != "" {
-						m[p.Name] = "@" + p.FileName
-					} else {
-						m[p.Name] = fromInsomnia(p.Value)
+					v := fromInsomnia(p.Value)
+					if multi {
+						v = textField(v)
 					}
+					if p.FileName != "" {
+						v = "@" + fromInsomnia(p.FileName)
+					}
+					keys, vals = append(keys, p.Name), append(vals, v)
 				}
-				bb, _ := json.MarshalIndent(m, "", "  ")
-				h.Body = string(bb)
+				h.Body = formBody(keys, vals)
+				if b.MimeType != "" {
+					setDefault(h.Headers, "Content-Type", b.MimeType)
+				}
 			}
 		}
 		if err := writeHit(dirOf(r.ParentID, map[string]bool{}), r.Name, h); err != nil {
@@ -724,8 +809,12 @@ func ExportPostman(hittableDir, name string) ([]byte, int, error) {
 				}
 				raw += "?" + strings.Join(qs, "&")
 			}
+			refs := uploadRefs(h)
 			var headers []map[string]any
 			for _, k := range sortedKeys(h.Headers) {
+				if refs != nil && refs.Kind == "multipart" && strings.EqualFold(k, "Content-Type") {
+					continue // Postman writes its own, with the boundary
+				}
 				headers = append(headers, map[string]any{"key": k, "value": toPostman(h.Headers[k]), "type": "text"})
 			}
 			req := map[string]any{
@@ -733,7 +822,29 @@ func ExportPostman(hittableDir, name string) ([]byte, int, error) {
 				"header": headers,
 				"url":    map[string]any{"raw": raw, "query": query},
 			}
-			if h.Body != "" {
+			switch {
+			case refs != nil && refs.Kind == "multipart":
+				var rows []map[string]any
+				for _, p := range refs.Parts {
+					if p.File == nil {
+						rows = append(rows, map[string]any{"key": p.Name, "value": toPostman(p.Value), "type": "text"})
+						continue
+					}
+					row := map[string]any{"key": p.Name, "type": "file", "src": toPostman(p.File.Path)}
+					if p.File.Type != "" {
+						row["contentType"] = p.File.Type
+					}
+					rows = append(rows, row)
+				}
+				req["body"] = map[string]any{"mode": "formdata", "formdata": rows}
+			case refs != nil && refs.Kind == "binary":
+				req["body"] = map[string]any{"mode": "file", "file": map[string]any{"src": toPostman(refs.File.Path)}}
+				if refs.File.Type != "" && hitfile.ContentType(h.Headers) == "" {
+					// file mode has no type of its own; the header sends the same bytes.
+					headers = append(headers, map[string]any{"key": "Content-Type", "value": refs.File.Type, "type": "text"})
+					req["header"] = headers
+				}
+			case h.Body != "":
 				req["body"] = map[string]any{"mode": "raw", "raw": toPostman(h.Body), "options": map[string]any{"raw": map[string]any{"language": "json"}}}
 			}
 			out = append(out, map[string]any{"name": f.name, "request": req})
@@ -778,8 +889,12 @@ func ExportInsomnia(hittableDir, name string) ([]byte, int, error) {
 		}
 		for _, f := range n.files {
 			h := f.hit
+			refs := uploadRefs(h)
 			var headers []map[string]string
 			for _, k := range sortedKeys(h.Headers) {
+				if refs != nil && refs.Kind == "multipart" && strings.EqualFold(k, "Content-Type") {
+					continue // the body's mimeType says multipart
+				}
 				headers = append(headers, map[string]string{"name": k, "value": toInsomnia(h.Headers[k])})
 			}
 			var params []map[string]string
@@ -787,7 +902,22 @@ func ExportInsomnia(hittableDir, name string) ([]byte, int, error) {
 				params = append(params, map[string]string{"name": k, "value": toInsomnia(h.Params[k])})
 			}
 			body := map[string]any{}
-			if h.Body != "" {
+			switch {
+			case refs != nil && refs.Kind == "multipart":
+				var ps []map[string]any
+				for _, p := range refs.Parts {
+					if p.File == nil {
+						ps = append(ps, map[string]any{"name": p.Name, "value": toInsomnia(p.Value)})
+					} else {
+						ps = append(ps, map[string]any{"name": p.Name, "type": "file", "fileName": toInsomnia(p.File.Path)})
+					}
+				}
+				body = map[string]any{"mimeType": hitfile.Multipart, "params": ps}
+			case refs != nil && refs.Kind == "binary":
+				// octet-stream is Insomnia's "binary file" body; the headers
+				// carry the real Content-Type.
+				body = map[string]any{"mimeType": "application/octet-stream", "fileName": toInsomnia(refs.File.Path)}
+			case h.Body != "":
 				mime := h.Headers["Content-Type"]
 				if mime == "" {
 					mime = "application/json"
@@ -810,6 +940,15 @@ func ExportInsomnia(hittableDir, name string) ([]byte, int, error) {
 	out := map[string]any{"_type": "export", "__export_format": 4, "__export_source": "hittable.sh", "resources": resources}
 	b, err := json.MarshalIndent(out, "", "  ")
 	return append(b, '\n'), count, err
+}
+
+// uploadRefs is a request's multipart or binary file body, or nil.
+func uploadRefs(h *hitfile.HitFile) *hitfile.FileRefs {
+	refs, err := hitfile.ParseFileRefs(h.Body, hitfile.ContentType(h.Headers))
+	if err != nil || refs == nil || refs.Kind == "raw" || refs.Kind == "multipart" && len(refs.Parts) == 0 {
+		return nil
+	}
+	return refs
 }
 
 func sortedKeys(m map[string]string) []string {

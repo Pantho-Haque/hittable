@@ -57,6 +57,10 @@ export function createFolderBackend(root: FileSystemDirectoryHandle): WorkspaceB
       const dir = await dirAt(root, parentOf(path), true);
       await writeFileText(await dir.getFileHandle(nameOf(path), { create: true }), text);
     },
+    async writeBytes(path, bytes) {
+      const dir = await dirAt(root, parentOf(path), true);
+      await writeFileText(await dir.getFileHandle(nameOf(path), { create: true }), bytes as Uint8Array<ArrayBuffer>);
+    },
     async createFile(path, text = "") {
       const dir = await dirAt(root, parentOf(path), true);
       await refuseTaken(dir, nameOf(path));

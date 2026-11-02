@@ -150,6 +150,7 @@ export function parseSetCookies(lines: string[]): Record<string, string> {
   return cookies;
 }
 
+/** `body` is text, JSON, or bytes (a file upload, already encoded with its Content-Type). */
 export type ProxyRequest = { url: unknown; method: unknown; headers?: unknown; body?: unknown };
 
 export type ProxyResult = {
@@ -185,9 +186,9 @@ export async function forward(req: ProxyRequest, opts: { dispatcher?: Agent } = 
   }
   const headers = cleanHeaders(req.headers);
 
-  let body: string | undefined;
+  let body: string | Uint8Array<ArrayBuffer> | undefined;
   if (method !== "GET" && method !== "HEAD") {
-    if (typeof req.body === "string") body = req.body;
+    if (typeof req.body === "string" || req.body instanceof Uint8Array) body = req.body as string | Uint8Array<ArrayBuffer>;
     else if (req.body !== undefined && req.body !== null) body = JSON.stringify(req.body);
   }
 

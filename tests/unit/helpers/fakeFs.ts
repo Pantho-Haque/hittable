@@ -18,10 +18,10 @@ export class FakeFile {
     let buffer = "";
     let bytes: Uint8Array | undefined;
     return {
-      write: async (chunk: string | Blob) => {
+      write: async (chunk: string | Blob | Uint8Array) => {
         if (typeof chunk === "string") buffer += chunk;
         else {
-          bytes = new Uint8Array(await chunk.arrayBuffer());
+          bytes = chunk instanceof Uint8Array ? new Uint8Array(chunk) : new Uint8Array(await chunk.arrayBuffer());
           buffer += new TextDecoder().decode(bytes);
         }
       },

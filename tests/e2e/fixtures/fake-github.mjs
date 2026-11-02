@@ -37,7 +37,7 @@
 //        trees of that repo come back truncated (top level only).
 //   POST /__fake/advance {repo, branch?, path, contents?, delete?, message?}
 //        someone else pushes a commit (contents is UTF-8 text) → {sha}
-//   GET  /__fake/state?repo=o/r&branch=main   {head, files:{path: utf8}, branches,
+//   GET  /__fake/state?repo=o/r&branch=main   {head, files:{path: utf8}, sha256:{path: hex}, branches,
 //        pulls, revocations, refreshes, tokens}
 import http from "node:http";
 import { createHash, randomBytes } from "node:crypto";
@@ -414,6 +414,8 @@ const server = http.createServer(async (req, res) => {
         head: head ?? null,
         message: head ? commits.get(head).message : null,
         files: head ? textFiles(commits.get(head).files) : {},
+        // Byte-exact checks for binary files (uploads).
+        sha256: head ? Object.fromEntries([...commits.get(head).files].map(([p, sha]) => [p, createHash("sha256").update(blobs.get(sha)).digest("hex")])) : {},
         branches: repo ? Object.fromEntries(repo.branches) : {},
         pulls: repo?.pulls ?? [],
         revocations: counters.revocations,

@@ -1,6 +1,7 @@
 // A small stand-in for "the internet" that the e2e suite sends requests to.
 // Plain node:http, no dependencies. Usage: node api-server.mjs <port>
 import http from "node:http";
+import crypto from "node:crypto";
 
 const port = Number(process.argv[2] || 4100);
 
@@ -34,8 +35,10 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://fixture");
   const path = url.pathname;
   const method = req.method;
-  let raw = "";
-  for await (const chunk of req) raw += chunk;
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const bytes = Buffer.concat(chunks);
+  const raw = bytes.toString("utf8");
   let body = raw;
   try {
     body = raw ? JSON.parse(raw) : null;
@@ -65,6 +68,25 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(204, cors);
       return res.end();
     }
+  }
+
+  // File uploads: each part (or the whole body) by name, type, size and SHA-256 of the bytes received.
+  if (path === "/upload") {
+    const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
+    const contentType = req.headers["content-type"] ?? null;
+    if (!String(contentType).startsWith("multipart/form-data")) {
+      return send(res, 200, { method, contentType, size: bytes.length, sha256: sha(bytes) });
+    }
+    const form = await new Request("http://fixture/", { method: "POST", headers: { "content-type": contentType }, body: bytes }).formData();
+    const parts = [];
+    for (const [name, v] of form) {
+      if (typeof v === "string") parts.push({ name, value: v });
+      else {
+        const b = Buffer.from(await v.arrayBuffer());
+        parts.push({ name, filename: v.name, type: v.type, size: b.length, sha256: sha(b) });
+      }
+    }
+    return send(res, 200, { method, contentType, parts });
   }
 
   // Everything about the request, so tests can see what the proxy forwarded.

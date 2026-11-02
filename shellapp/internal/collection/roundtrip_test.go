@@ -26,9 +26,20 @@ var fixture = map[string]*hitfile.HitFile{
 		Headers: map[string]string{}, Params: map[string]string{}},
 	"Delete thing.hit": {Method: "DELETE", URL: "<<BASE>>/things/42",
 		Headers: map[string]string{"X-Reason": "cleanup"}, Params: map[string]string{"force": "true"}},
+	// File uploads: a multipart form (text, file, an escaped @, a variable in
+	// a path) and binary bodies with and without a Content-Type.
+	"Upload avatar.hit": {Method: "POST", URL: "<<BASE>>/avatar",
+		Headers: map[string]string{"Content-Type": "multipart/form-data", "X-Trace": "1"},
+		Params:  map[string]string{},
+		Body:    "{\n  \"name\": \"<<NAME>>\",\n  \"avatar\": \"@files/avatar.png\",\n  \"handle\": \"@@ann\",\n  \"doc\": \"@<<DIR>>/cv.pdf\"\n}"},
+	"Put report.hit": {Method: "PUT", URL: "<<BASE>>/report",
+		Headers: map[string]string{"Content-Type": "application/pdf"}, Params: map[string]string{},
+		Body: "@files/report.pdf"},
+	"Put blob.hit": {Method: "PUT", URL: "<<BASE>>/blob",
+		Headers: map[string]string{}, Params: map[string]string{}, Body: "@<<DIR>>/blob.bin"},
 }
 
-var fixtureEnv = map[string]string{"BASE": "https://api.example.test", "TOKEN": "t0k", "FILTER": "active", "NAME": "ann"}
+var fixtureEnv = map[string]string{"BASE": "https://api.example.test", "TOKEN": "t0k", "FILTER": "active", "NAME": "ann", "DIR": "out"}
 
 func writeFixture(t *testing.T, hd string) {
 	t.Helper()
@@ -438,5 +449,44 @@ func TestPostmanURLWithoutRaw(t *testing.T) {
 	}
 	if h := got["str.hit"]; h == nil || h.URL != "<<BASE>>/items/2" {
 		t.Errorf("str = %+v", h)
+	}
+}
+
+// Postman keeps a file field's ;type= (formdata contentType), exports the
+// upload shapes as formdata / file bodies, and drops the multipart header
+// Postman writes itself.
+func TestPostmanUploadShapes(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "hittable")
+	os.MkdirAll(src, 0o755)
+	want := map[string]*hitfile.HitFile{
+		"Form.hit": {Method: "POST", URL: "x.test", Headers: map[string]string{"Content-Type": "multipart/form-data"}, Params: map[string]string{},
+			Body: "{\n  \"a\": \"@files/a.png;type=image/png\"\n}"},
+	}
+	os.WriteFile(filepath.Join(src, "Form.hit"), hitfile.Marshal(want["Form.hit"]), 0o644)
+	os.WriteFile(filepath.Join(src, "Bin.hit"), hitfile.Marshal(&hitfile.HitFile{Method: "PUT", URL: "x.test", Body: "@r.bin;type=application/x-r"}), 0o644)
+	data, _, err := ExportPostman(src, "Up")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	for _, s := range []string{`"mode": "formdata"`, `"contentType": "image/png"`, `"src": "files/a.png"`, `"mode": "file"`, `"src": "r.bin"`} {
+		if !strings.Contains(out, s) {
+			t.Errorf("export lacks %s:\n%s", s, out)
+		}
+	}
+	if strings.Contains(out, "multipart/form-data") {
+		t.Errorf("the multipart header should be left to Postman:\n%s", out)
+	}
+	file := filepath.Join(t.TempDir(), "up.json")
+	os.WriteFile(file, data, 0o644)
+	rep, err := Import(file, filepath.Join(t.TempDir(), "hittable"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := loadTree(t, rep.Dir)
+	sameRequests(t, "postman uploads", map[string]*hitfile.HitFile{"Form.hit": got["Form.hit"]}, want)
+	// A binary body's ;type= has no file-mode field: it comes back as the header.
+	if b := got["Bin.hit"]; b == nil || b.Body != "@r.bin" || b.Headers["Content-Type"] != "application/x-r" {
+		t.Errorf("binary: %+v", b)
 	}
 }

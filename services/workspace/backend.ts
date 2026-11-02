@@ -15,6 +15,8 @@ export interface WorkspaceBackend {
   /** Raw bytes; callers decide text or binary with utils/workspace/fileKind.ts. */
   readFile(path: string[]): Promise<Uint8Array>;
   writeFile(path: string[], text: string): Promise<void>;
+  /** Raw bytes, e.g. a file picked for an upload. Creates missing folders; replaces a file that is there. */
+  writeBytes(path: string[], bytes: Uint8Array): Promise<void>;
   /** Fails when the path is taken. */
   createFile(path: string[], text?: string): Promise<void>;
   createDirectory(path: string[]): Promise<void>;

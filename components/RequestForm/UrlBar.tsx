@@ -25,6 +25,9 @@ export default function UrlBar({ error, dataSource }: { error: string | null; da
     isUnsaved,
     handleSaveCollection,
     readOnly,
+    hitPath,
+    readFile,
+    extensionBinary,
   } = dataSource;
   const { error: notifyError, success: notifySuccess } = useNotification();
 
@@ -111,7 +114,7 @@ export default function UrlBar({ error, dataSource }: { error: string | null; da
     setProxyLoading(true);
     const startTime = performance.now();
     try {
-      const res = await hittableProxy(formInput, envRef.current, undefined, extensionAvailable, controller.signal);
+      const res = await hittableProxy(formInput, envRef.current, undefined, extensionAvailable, controller.signal, { hitPath, readFile, extensionBinary });
       const durationMs = Math.round(performance.now() - startTime);
       // The proxy reports the bytes it received; the extension path does not,
       // so fall back to measuring the body here.
@@ -127,7 +130,7 @@ export default function UrlBar({ error, dataSource }: { error: string | null; da
       abortRef.current = null;
       setProxyLoading(false);
     }
-  }, [setProxyResponse, formInput, extensionAvailable]);
+  }, [setProxyResponse, formInput, extensionAvailable, hitPath, readFile, extensionBinary]);
 
   // FR-16: against a production environment, anything that changes state is
   // confirmed first. Every way of sending goes through here.

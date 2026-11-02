@@ -36,6 +36,16 @@ export type DataSource = {
   /** Identifies the open request (its path), e.g. to compare responses per request. */
   requestKey: string;
   extensionAvailable: boolean;
+  /** The extension can carry file uploads to localhost. */
+  extensionBinary?: boolean;
+  /** The open .hit file's path: upload paths are relative to its folder. */
+  hitPath?: string[];
+  /** Bytes of a workspace file, for uploads. */
+  readFile?: (path: string[]) => Promise<Uint8Array>;
+  /** Copy a file from the computer into the workspace (hittable/files/); returns its path. */
+  addUploadFile?: (file: File) => Promise<string[]>;
+  /** Every file in the workspace, for picking an upload. */
+  workspaceFiles?: string[][];
   isUnsaved: () => boolean;
   handleSaveCollection: () => void;
   /** No editing: a repository you cannot push to, or an archived one. */

@@ -305,3 +305,115 @@ describe("branches", () => {
     await expect(open()).rejects.toMatchObject({ code: "empty_repo" });
   });
 });
+
+describe("binary files (uploads)", () => {
+  // A PNG header with NUL bytes: not text.
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 1, 2, 3, 255]);
+  const AVATAR = "hittable/files/avatar.png";
+
+  it("an added binary file is A (binary), reads back byte for byte and survives a reload", async () => {
+    const b = await open();
+    await b.writeBytes(path(AVATAR), PNG);
+    expect(b.status()).toEqual({ [AVATAR]: "A" });
+    expect(b.changes()).toEqual([{ path: AVATAR, status: "A", conflict: false, binary: true }]);
+    expect(findNode(await b.listTree(), path(AVATAR))).not.toBeNull();
+    expect(await b.readFile(path(AVATAR))).toEqual(PNG);
+
+    const again = await open();
+    expect(again.status()).toEqual({ [AVATAR]: "A" });
+    expect(await again.readFile(path(AVATAR))).toEqual(PNG);
+  });
+
+  it("the diff shows sizes, not text", async () => {
+    const b = await open();
+    await b.writeBytes(path(AVATAR), PNG);
+    expect(await b.binarySides(AVATAR)).toEqual({ original: null, modified: PNG.length });
+    expect(await b.binarySides("README.md")).toBeNull();
+  });
+
+  it("discard removes it", async () => {
+    const b = await open();
+    await b.writeBytes(path(AVATAR), PNG);
+    await b.discard([AVATAR]);
+    expect(b.status()).toEqual({});
+    expect(findNode(await b.listTree(), path(AVATAR))).toBeNull();
+  });
+
+  it("commits as base64 of the exact bytes, then the working copy is clear", async () => {
+    const b = await open();
+    await b.writeBytes(path(AVATAR), PNG);
+    await b.writeFile(path("README.md"), "with avatar");
+    await b.commit("Add avatar");
+    const added = gh.committed[0].additions.find((a) => a.path === AVATAR)!;
+    expect(new Uint8Array(Buffer.from(added.contents, "base64"))).toEqual(PNG);
+    expect(gh.files()[AVATAR]).toEqual(PNG);
+    expect(b.changes()).toEqual([]);
+    expect(await b.readFile(path(AVATAR))).toEqual(PNG);
+  });
+
+  it("commits on the pull-request path too", async () => {
+    gh.branches.set("protected", gh.branches.get("main")!);
+    const b = await open({ branch: "protected" });
+    await b.writeBytes(path(AVATAR), PNG);
+    await b.commitToNewBranch({ branch: "hittable/avatar", message: "Add avatar", title: "Add avatar", body: "" });
+    expect(gh.files("hittable/avatar")[AVATAR]).toEqual(PNG);
+  });
+
+  it("writing the same bytes as the base is no change", async () => {
+    gh = fakeGitHub({ ...SEED, [AVATAR]: PNG });
+    const b = await open();
+    await b.writeBytes(path(AVATAR), PNG.slice());
+    expect(b.status()).toEqual({});
+    await b.writeBytes(path(AVATAR), PNG.slice(0, 8));
+    expect(b.status()).toEqual({ [AVATAR]: "M" });
+  });
+
+  it("someone else changes the same binary file: conflict by SHA; the same bytes on both sides are not", async () => {
+    const b = await open();
+    await b.writeBytes(path(AVATAR), PNG);
+    gh.push({ [AVATAR]: PNG.slice(0, 10) });
+    await b.checkRemote({ force: true });
+    expect(b.status()).toEqual({ [AVATAR]: "C" });
+    expect(await b.binarySides(AVATAR, true)).toEqual({ original: 10, modified: PNG.length });
+    await b.keepMine();
+    await b.commit("Mine");
+    expect(gh.files()[AVATAR]).toEqual(PNG);
+
+    const c = await open();
+    await c.writeBytes(path("hittable/files/same.bin"), PNG);
+    gh.push({ "hittable/files/same.bin": PNG.slice() });
+    await c.checkRemote({ force: true });
+    expect(c.sync().remote).toBeNull();
+    expect(c.status()).toEqual({});
+  });
+
+  it("binary files can be moved", async () => {
+    gh = fakeGitHub({ ...SEED, [AVATAR]: PNG });
+    const b = await open();
+    await b.rename(path(AVATAR), path("hittable/files/me.png"));
+    expect(b.status()).toEqual({ [AVATAR]: "D", "hittable/files/me.png": "A" });
+    expect(await b.readFile(path("hittable/files/me.png"))).toEqual(PNG);
+  });
+
+  it("refuses files too large to commit, and read-only repositories", async () => {
+    const b = await open();
+    await expect(b.writeBytes(path("hittable/files/big.bin"), new Uint8Array(3 * 1024 * 1024 + 1))).rejects.toThrow(/up to 3\.0 MB/);
+    const ro = await open({ meta: { canPush: false } });
+    await expect(ro.writeBytes(path(AVATAR), PNG)).rejects.toThrow(/read-only/);
+  });
+
+  it("a commit too large for one request says so before sending", async () => {
+    const b = await open();
+    for (const i of [1, 2]) await b.writeBytes(path(`hittable/files/${i}.bin`), new Uint8Array(2 * 1024 * 1024));
+    await expect(b.commit("Two big files")).rejects.toThrow(/Commit fewer files/);
+    expect(gh.committed).toHaveLength(0);
+  });
+
+  it("Git LFS files can't be moved", async () => {
+    gh = fakeGitHub({ ...SEED, "big.psd": "version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 99999999\n" });
+    const b = await open();
+    await b.readFile(["big.psd"]);
+    expect(b.readOnlyReason(["big.psd"])).toMatch(/LFS/);
+    await expect(b.rename(["big.psd"], ["moved.psd"])).rejects.toThrow(/LFS/);
+  });
+});

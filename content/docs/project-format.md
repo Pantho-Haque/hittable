@@ -42,8 +42,32 @@ Any folder under `hittable/` is a collection; collections nest. A request is a `
 | `url` | string | may contain `<<KEY>>` templates; a URL without `://` gets `http://` |
 | `headers` | object | flat string → string, never an array |
 | `params` | object | flat string → string; appended to the URL, URL-encoded, at send time |
-| `body` | string | raw text, which may itself be escaped JSON, or empty |
+| `body` | string | raw text, which may itself be escaped JSON, or empty; `@path` sends a file (below) |
 | `response` | object or `null` | `null` until the request has been sent at least once from this file |
+
+### File uploads
+
+Files are referenced from `body` with curl's `@` convention; no other keys are involved, so older versions of either app keep the file as it is.
+
+- **Multipart.** With `Content-Type: multipart/form-data`, `body` is a JSON object of fields. A value starting with `@` is a file: `{"name": "Ada", "avatar": "@files/avatar.png"}`. The boundary is added when sending.
+- **A file as the whole body.** `body` is exactly `@path` on one line, e.g. `"@files/report.pdf"` with `PUT`. The `Content-Type` header wins; without one it is guessed from the file name.
+- Paths are relative to the `.hit` file's folder, and `<<KEY>>` works inside them. Optional `;type=image/png` and `;filename=me.png` follow the path, as in `curl -F`. `@@` at the start is a literal `@`.
+- The web app copies files you pick from your computer into `hittable/files/`. It can't reach outside the workspace (no absolute paths); the terminal app can.
+
+Example:
+
+```json
+{
+  "method": "POST",
+  "url": "<<BASE_URL>>/users/1/avatar",
+  "headers": { "Content-Type": "multipart/form-data" },
+  "params": {},
+  "body": "{\"caption\": \"me\", \"avatar\": \"@../files/avatar.png;type=image/png\"}",
+  "response": null
+}
+```
+
+The full rules, shared by both apps, are in `docs/file-uploads.md` in the repository.
 
 After a send, `response` holds the last result so it travels with the request:
 

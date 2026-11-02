@@ -46,6 +46,14 @@ describe("folder backend", () => {
     expect((root.at("hittable/new/x.hit") as FakeFile).content).toBe("{}");
   });
 
+  it("writes bytes for an upload, creating folders and replacing a file", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0, 255]);
+    await backend().writeBytes(["hittable", "files", "a.png"], png);
+    expect((root.at("hittable/files/a.png") as FakeFile).bytes).toEqual(png);
+    await backend().writeBytes(["hittable", "files", "a.png"], png.slice(0, 2));
+    expect([...(await backend().readFile(["hittable", "files", "a.png"]))]).toEqual([0x89, 0x50]);
+  });
+
   it("creates files and folders, refusing a name in use", async () => {
     const b = backend();
     await b.createFile(["hittable", "shared", "a.hit"], "A");

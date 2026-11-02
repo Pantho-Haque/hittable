@@ -64,8 +64,10 @@
 |------|---------|------------------|
 | `raw` | Freeform string (JSON, XML, etc.) | Direct to body field |
 | `urlencoded` | `[{key, value, disabled}]` | JSON object body |
-| `formdata` | `[{key, value/type/src, disabled}]` | File rows with `@filename` |
-| `file` | `{src, content}` | Skipped (no file bytes in exports) |
+| `formdata` | `[{key, value/type/src, disabled}]` | Multipart body: `Content-Type: multipart/form-data`, file fields as `@src` (`;type=` from `contentType`) |
+| `file` | `{src, content}` | File body `@src` (the bytes aren't in exports; put the file at that path) |
+
+Export writes the same shapes back: a multipart body becomes `formdata` (file rows: `type: "file"`, `src`, `contentType`) and a `@path` body becomes mode `file`; Insomnia gets multipart `params` with `fileName`, or a binary body with `fileName`. `;filename=` has no field in either tool and is dropped.
 | `graphql` | `{query, variables}` | Skipped (no GraphQL support) |
 
 ### Variable Syntax
@@ -185,7 +187,7 @@ The web importers mirror the terminal app's (`shellapp/internal/collection`).
 
 2. **Disabled headers/params** — Postman marks disabled items with `disabled: true`. These are skipped on import (not sent, not imported).
 
-3. **File references in formdata** — Postman's `formdata` with `type: "file"` references files by path or filename. Since actual file bytes are never in exports, these become `@filename` references in Hittable's curl string. Users must re-attach files after import.
+3. **File references in formdata** — Postman's `formdata` with `type: "file"` references files by path or filename. File bytes are never in exports, so they become `@path` references in a multipart body (see `docs/file-uploads.md`); put the files at those paths, relative to the imported `.hit` file, or re-pick them in the web app. Text values starting with `@` are escaped as `@@`.
 
 4. **Empty bodies** — GET/HEAD/DELETE requests with no body are handled correctly (no `-d` flag in curl generation).
 

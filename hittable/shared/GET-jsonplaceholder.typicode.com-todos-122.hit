@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "url": "https://jsonplaceholder.typicode.com/todos/122",
+  "headers": {
+    "Content-Type": "multipart/form-data"
+  },
+  "params": {},
+  "body": "{\n  \"profile\": \"@../files/punch.png\"\n}",
+  "response": null
+}

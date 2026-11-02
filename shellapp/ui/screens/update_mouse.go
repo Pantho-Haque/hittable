@@ -16,6 +16,9 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// bubbletea reports a drag as a left-button event with a motion action.
 	press := msg.Type == tea.MouseLeft && msg.Action == tea.MouseActionPress
 	drag := msg.Action == tea.MouseActionMotion && msg.Button == tea.MouseButtonLeft
+	if press {
+		m.PathPrompt.Open = false // a click anywhere cancels typing a path
+	}
 
 	// Hover feedback: one lookup for every clickable zone in the app, so the
 	// branches below only have to deal with clicks.
@@ -322,7 +325,17 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch zoneID := m.findZoneAt(msg); zoneID {
+	zoneID := m.findZoneAt(msg)
+	if name, ok := strings.CutPrefix(zoneID, "btype_"); ok {
+		for i, n := range requesteditor.BodyTypeNames {
+			if n == name {
+				m.focusBody()
+				m.setBodyType(requesteditor.BodyType(i))
+			}
+		}
+		return m, nil
+	}
+	switch zoneID {
 	case "tab_Params":
 		return m, func() tea.Msg { return tabClickMsg{tab: requesteditor.TabParams} }
 	case "tab_Headers":
@@ -460,6 +473,9 @@ func (m *MainScreen) findZoneAt(msg tea.MouseMsg) string {
 			ids = append(ids, fmt.Sprintf("git_tab_%d", i))
 		}
 	default:
+		for _, n := range requesteditor.BodyTypeNames {
+			ids = append(ids, "btype_"+n)
+		}
 		ids = append(ids, "tab_Params", "tab_Headers", "tab_Body", "toggle_runner", "toggle_text",
 			"search_icon", "resp_mode", "method_badge", "send_btn")
 		if m.URLBar.DropdownOpen {

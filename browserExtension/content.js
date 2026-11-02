@@ -4,7 +4,8 @@ window.addEventListener("message", (event) => {
   if (event.source !== window || event.origin !== window.location.origin) return;
 
   if (event.data?.type === "HITTABLE_PING") {
-    window.postMessage({ type: "HITTABLE_EXTENSION_READY" }, window.location.origin);
+    // "binary": file uploads (a base64 body), since 1.1.0.
+    window.postMessage({ type: "HITTABLE_EXTENSION_READY", capabilities: ["binary"] }, window.location.origin);
   }
 
   if (event.data?.type === "HITTABLE_REQUEST") {

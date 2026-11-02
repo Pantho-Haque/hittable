@@ -1,5 +1,6 @@
 import http from "node:http";
 import zlib from "node:zlib";
+import crypto from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
@@ -24,7 +25,11 @@ let lastRequest: { method?: string; headers: http.IncomingHttpHeaders; body: str
 beforeAll(async () => {
   server = http.createServer((req, res) => {
     let body = "";
-    req.on("data", (c) => (body += c));
+    const chunks: Buffer[] = [];
+    req.on("data", (c) => {
+      body += c;
+      chunks.push(c);
+    });
     req.on("end", () => {
       lastRequest = { method: req.method, headers: req.headers, body };
       const url = new URL(req.url!, "http://x");
@@ -50,6 +55,17 @@ beforeAll(async () => {
         case "/not-found":
           res.writeHead(404, { "content-type": "application/json" });
           return res.end('{"error":"nope"}');
+        case "/hash": {
+          // Bytes as received, for uploads: text decoding would mangle them.
+          const all = Buffer.concat(chunks);
+          res.writeHead(200, { "content-type": "application/json" });
+          return res.end(JSON.stringify({
+            sha256: crypto.createHash("sha256").update(all).digest("hex"),
+            length: all.length,
+            contentType: req.headers["content-type"] ?? null,
+            contentLength: req.headers["content-length"] ?? null,
+          }));
+        }
         case "/echo":
           res.writeHead(200, { "content-type": "application/json" });
           return res.end(JSON.stringify({ method: req.method, headers: req.headers, body }));
@@ -431,5 +447,48 @@ describe("POST /api/proxy", () => {
     const res = await call(JSON.stringify({ url: `${base}/slow`, method: "GET" }));
     expect(res.status).toBe(504);
     expect(await res.json()).toMatchObject({ status: 0, ok: false, statusText: "Timeout" });
+  });
+});
+
+describe("file uploads through the proxy", () => {
+  const BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 255, 0xc3, 0x28]); // NULs and invalid UTF-8
+  const sha = (b: Uint8Array) => crypto.createHash("sha256").update(b).digest("hex");
+  const upload = (meta: unknown, body: Blob | string | null, headers: Record<string, string> = { "x-hittable": "1" }) => {
+    const form = new FormData();
+    form.append("request", typeof meta === "string" ? meta : JSON.stringify(meta));
+    if (body !== null) form.append("body", body);
+    return POST(new NextRequest("http://app.test/api/proxy", { method: "POST", body: form, headers }));
+  };
+
+  it("forward sends a byte body exactly, with its Content-Type", async () => {
+    allowLocal();
+    const r = await forward({ url: `${base}/hash`, method: "POST", headers: { "Content-Type": "image/png" }, body: BYTES });
+    expect(r.data).toMatchObject({ sha256: sha(BYTES), length: BYTES.length, contentType: "image/png", contentLength: String(BYTES.length) });
+  });
+
+  it("the route takes a multipart envelope: request JSON plus body bytes", async () => {
+    allowLocal();
+    const res = await upload({ url: `${base}/hash`, method: "PUT", headers: '{"Content-Type":"application/octet-stream"}' }, new Blob([BYTES]));
+    expect(res.status).toBe(200);
+    expect((await res.json()).data).toMatchObject({ sha256: sha(BYTES), length: BYTES.length, contentType: "application/octet-stream" });
+  });
+
+  it("needs the X-Hittable header, so a cross-site form can't use it", async () => {
+    const res = await upload({ url: `${base}/hash`, method: "POST" }, new Blob([BYTES]), {});
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects a malformed envelope with a 400", async () => {
+    for (const [meta, body] of [["not json", new Blob([BYTES])], [{ url: "x", method: "POST" }, null], ["[1]", new Blob([BYTES])]] as const) {
+      const res = await upload(meta, body);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/Invalid upload/);
+    }
+  });
+
+  it("refuses a body over the limit with a 413", async () => {
+    process.env.PROXY_MAX_REQUEST_BYTES = "100";
+    const res = await upload({ url: `${base}/hash`, method: "POST" }, new Blob([new Uint8Array(500)]));
+    expect(res.status).toBe(413);
   });
 });

@@ -1,4 +1,5 @@
-import { test, expect, urlInput } from "./fixtures/test";
+import crypto from "node:crypto";
+import { test, expect, urlInput, API, methodSelect, send, response, statusBadge } from "./fixtures/test";
 import type { APIRequestContext, Page } from "@playwright/test";
 
 // FR-G2..G8 through the UI, against the fake GitHub (tests/e2e/fixtures/fake-github.mjs).
@@ -11,7 +12,7 @@ const GET_HIT = "hittable/users/get.hit";
 test.describe.configure({ mode: "serial" });
 test.skip(({ browserName, isMobile }) => browserName !== "chromium" || isMobile, "One shared fake GitHub: runs on one project");
 
-type FakeState = { head: string; message: string; files: Record<string, string>; branches: Record<string, string>; pulls: { head: string; base: string; title: string }[]; revocations: number };
+type FakeState = { head: string; message: string; files: Record<string, string>; sha256: Record<string, string>; branches: Record<string, string>; pulls: { head: string; base: string; title: string }[]; revocations: number };
 const fakeState = async (request: APIRequestContext, repo = REPO, branch = "main"): Promise<FakeState> =>
   (await request.get(`${FAKE}/__fake/state?repo=${repo}&branch=${encodeURIComponent(branch)}`)).json();
 
@@ -220,4 +221,67 @@ test("sign out with uncommitted changes asks first", async ({ page, request }) =
   await expect(page).toHaveURL(/\/$/);
   expect(await (await page.request.get("/api/github/session")).json()).toEqual({ user: null });
   expect((await fakeState(request)).revocations).toBe(1);
+});
+
+test("upload a file in a repo: binary working copy, sent before committing, kept on reload, committed byte for byte", async ({ page, request }) => {
+  const png = Buffer.from("89504e470d0a1a0a00000000ff00fe01", "hex");
+  const hash = crypto.createHash("sha256").update(png).digest("hex");
+  await openRepo(page);
+  await openFile(page, GET_HIT);
+  await urlInput(page).fill(`${API}/upload`);
+  await methodSelect(page).selectOption("POST");
+  await page.getByRole("tab", { name: "Body", exact: true }).click();
+  await page.getByRole("radio", { name: "Multipart" }).click();
+  await page.getByRole("button", { name: "Add file" }).click();
+  await page.getByLabel("Field 1", { exact: true }).fill("avatar");
+  await page.locator('input[type="file"]').setInputFiles({ name: "avatar.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByLabel("Field 1 file")).toHaveValue("../files/avatar.png");
+
+  // Sent from the working copy, before any commit.
+  await send(page);
+  await expect(statusBadge(page)).toHaveText("200 OK");
+  await response(page).getByRole("button", { name: "Raw text view" }).click();
+  await expect(response(page)).toContainText(hash);
+
+  await openChanges(page);
+  await expect(panel(page).getByRole("button", { name: "hittable/files/avatar.png, Added, binary" })).toBeVisible();
+  await panel(page).getByRole("button", { name: "hittable/files/avatar.png, Added, binary" }).click();
+  const diff = page.getByRole("dialog", { name: "hittable/files/avatar.png" });
+  await expect(diff.getByText("Binary file: there is no text to compare.")).toBeVisible();
+  await diff.getByRole("button", { name: "Close" }).click();
+
+  await page.reload();
+  await expect(changesButton(page)).toHaveAccessibleName("Source control, 2 changes");
+
+  await openChanges(page);
+  await panel(page).getByRole("button", { name: /Commit to main/ }).click();
+  await expect(page.getByText(/^Committed [0-9a-f]{7} to main$/)).toBeVisible();
+  const state = await fakeState(request);
+  expect(state.sha256["hittable/files/avatar.png"]).toBe(hash);
+  expect(JSON.parse(JSON.parse(state.files[GET_HIT]).body)).toEqual({ avatar: "@../files/avatar.png" });
+});
+
+test("an uploaded file can be discarded, and goes to a pull request on a protected branch", async ({ page, request }) => {
+  const bytes = Buffer.from([0, 1, 2, 3, 255, 254]);
+  await openRepo(page, REPO, "protected");
+  await openFile(page, GET_HIT);
+  await page.getByRole("tab", { name: "Body", exact: true }).click();
+  await page.getByRole("radio", { name: "File" }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: "a.bin", mimeType: "application/octet-stream", buffer: bytes });
+  await page.locator('input[type="file"]').setInputFiles({ name: "b.bin", mimeType: "application/octet-stream", buffer: bytes });
+  await expect(page.getByLabel("Body file")).toHaveValue("../files/b.bin");
+
+  await openChanges(page);
+  await panel(page).getByRole("button", { name: "Discard changes to hittable/files/a.bin" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Discard" }).click();
+  await expect(panel(page).getByRole("button", { name: /hittable\/files\/a\.bin/ })).toHaveCount(0);
+
+  await panel(page).getByRole("button", { name: /Commit to protected/ }).click();
+  const dialog = page.getByRole("dialog", { name: /new branch & open a pull request/ });
+  await dialog.getByRole("button", { name: /Commit & open pull request/ }).click();
+  await expect(page.getByText(/^Opened pull request #\d+$/)).toBeVisible();
+  const branch = (await fakeState(request)).pulls[0].head;
+  const state = await fakeState(request, REPO, branch);
+  expect(state.sha256["hittable/files/b.bin"]).toBe(crypto.createHash("sha256").update(bytes).digest("hex"));
+  expect(state.files["hittable/files/a.bin"]).toBeUndefined();
 });

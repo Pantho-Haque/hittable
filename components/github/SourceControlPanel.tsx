@@ -261,7 +261,7 @@ export default function SourceControlPanel({
                     onClick={() => onOpenDiff(c.path)}
                     // An explicit name: the browser separates the flex items
                     // with a space, which read as "get.hit , Modified".
-                    aria-label={`${c.path}, ${s.label}`}
+                    aria-label={`${c.path}, ${s.label}${c.binary ? ", binary" : ""}`}
                     title={`${c.path} (${s.label}) — open the diff`}
                     className="flex min-h-8 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs text-(--text)"
                   >
@@ -269,6 +269,7 @@ export default function SourceControlPanel({
                       {c.conflict ? "C" : c.status}
                     </span>
                     <span className={`truncate ${c.status === "D" ? "line-through" : ""}`}>{c.path}</span>
+                    {c.binary && <span className="shrink-0 rounded bg-(--surface-2) px-1 text-[11px] text-(--muted)">binary</span>}
                   </button>
                   {!backend.readOnly && (
                     <button

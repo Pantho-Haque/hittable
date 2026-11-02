@@ -152,3 +152,59 @@ func TestDetectUnknown(t *testing.T) {
 		t.Error("expected an error for an unknown format")
 	}
 }
+
+// Formdata imports as a live multipart body: fields in order, files as @src,
+// a text value starting with @ escaped, and the multipart header set. A
+// Postman file body and an Insomnia binary body become `@path`.
+func TestImportFileBodies(t *testing.T) {
+	root := t.TempDir()
+	pm := `{"info": {"name": "Up", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+	  "item": [
+	    {"name": "Form", "request": {"method": "POST", "url": "x.test", "body": {"mode": "formdata", "formdata": [
+	      {"key": "zname", "value": "{{WHO}}"},
+	      {"key": "avatar", "type": "file", "src": "/tmp/a.png", "contentType": "image/png"},
+	      {"key": "handle", "value": "@me"},
+	      {"key": "many", "type": "file", "src": ["files/1.txt", "files/2.txt"]},
+	      {"key": "off", "value": "x", "disabled": true}]}}},
+	    {"name": "Bin", "request": {"method": "PUT", "url": "x.test", "body": {"mode": "file", "file": {"src": "files/r.pdf"}}}}
+	  ]}`
+	src := filepath.Join(root, "up.postman_collection.json")
+	os.WriteFile(src, []byte(pm), 0o644)
+	hd := filepath.Join(root, "hittable")
+	if _, err := Import(src, hd); err != nil {
+		t.Fatal(err)
+	}
+	form := readHit(t, filepath.Join(hd, "Up", "Form.hit"))
+	want := "{\n  \"zname\": \"<<WHO>>\",\n  \"avatar\": \"@/tmp/a.png;type=image/png\",\n  \"handle\": \"@@me\",\n  \"many\": \"@files/1.txt\"\n}"
+	if form.Body != want || form.Headers["Content-Type"] != "multipart/form-data" {
+		t.Errorf("form: %q %v", form.Body, form.Headers)
+	}
+	refs, err := hitfile.ParseFileRefs(form.Body, form.Headers["Content-Type"])
+	if err != nil || len(refs.Files()) != 2 || refs.Parts[2].Value != "@me" {
+		t.Errorf("imported form does not parse as intended: %v %+v", err, refs)
+	}
+	if bin := readHit(t, filepath.Join(hd, "Up", "Bin.hit")); bin.Body != "@files/r.pdf" {
+		t.Errorf("file body: %q", bin.Body)
+	}
+
+	in := `{"_type": "export", "__export_format": 4, "resources": [
+	  {"_type": "workspace", "_id": "wrk_1", "name": "Ins"},
+	  {"_type": "request", "_id": "r1", "parentId": "wrk_1", "name": "Multi", "method": "POST", "url": "x.test",
+	   "body": {"mimeType": "multipart/form-data", "params": [{"name": "b", "value": "@x"}, {"name": "a", "type": "file", "fileName": "/tmp/a.png"}]}},
+	  {"_type": "request", "_id": "r2", "parentId": "wrk_1", "name": "Bin", "method": "PUT", "url": "x.test",
+	   "body": {"mimeType": "application/pdf", "fileName": "/tmp/r.pdf"}}]}`
+	src = filepath.Join(root, "ins.json")
+	os.WriteFile(src, []byte(in), 0o644)
+	hd = filepath.Join(root, "hittable2")
+	if _, err := Import(src, hd); err != nil {
+		t.Fatal(err)
+	}
+	multi := readHit(t, filepath.Join(hd, "Ins", "Multi.hit"))
+	if multi.Body != "{\n  \"b\": \"@@x\",\n  \"a\": \"@/tmp/a.png\"\n}" || multi.Headers["Content-Type"] != "multipart/form-data" {
+		t.Errorf("insomnia multipart: %q %v", multi.Body, multi.Headers)
+	}
+	bin := readHit(t, filepath.Join(hd, "Ins", "Bin.hit"))
+	if bin.Body != "@/tmp/r.pdf" || bin.Headers["Content-Type"] != "application/pdf" {
+		t.Errorf("insomnia binary: %q %v", bin.Body, bin.Headers)
+	}
+}

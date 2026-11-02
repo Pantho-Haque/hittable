@@ -123,17 +123,25 @@ func (m *MainScreen) renderRunnerView() string {
 	tabs := m.renderTabs()
 	sections = append(sections, tabs)
 
-	var editorView string
 	switch m.ActiveTab {
 	case requesteditor.TabParams:
-		editorView = m.Params.View()
+		sections = append(sections, m.Zones.Mark("editor", m.Params.View()))
 	case requesteditor.TabHeaders:
-		editorView = m.Headers.View()
+		sections = append(sections, m.Zones.Mark("editor", m.Headers.View()))
 	case requesteditor.TabBody:
-		editorView = m.Body.View()
+		// The type line above and the file list below share the editor box's
+		// rows, keeping at least two (one text row and the status row).
+		inner, w := m.EditorHeight-2, m.MainWidth-4
+		var top []string
+		if inner > 2 {
+			top = []string{m.renderBodyType(w)}
+		}
+		files := m.bodyFileLines(w, min(3, inner-2-len(top)))
+		m.Body.SetSize(w, inner-len(top)-len(files))
+		sections = append(sections, top...)
+		sections = append(sections, m.Zones.Mark("editor", m.Body.View()))
+		sections = append(sections, files...)
 	}
-
-	sections = append(sections, m.Zones.Mark("editor", editorView))
 
 	sections = append(sections, m.Zones.Mark("response", m.Response.View(m.Zones, m.Focus == FocusResponse)))
 
@@ -436,6 +444,8 @@ var helpSections = []struct {
 		{"ctrl+←/→", "cycle method"},
 		{"alt+1/2/3", "params / headers / body"},
 		{"ctrl+l", "format body JSON"},
+		{"alt+t  ⌥t  click", "body type: json · text · form · multipart · file"},
+		{"alt+a  ⌥a", "attach a file (palette · alt+a again: type a path)"},
 		{"ctrl+f", "search response"},
 		{"h", "response headers"},
 	}},

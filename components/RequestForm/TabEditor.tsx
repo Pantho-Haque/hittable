@@ -5,6 +5,7 @@ import { Dispatch, SetStateAction, useState, useCallback, useEffect, useMemo, us
 import { modifyUrlForNewParams } from "@/utils/responsePanelUtils";
 import { Braces, Table2, Plus, Trash2, Sparkles } from "lucide-react";
 import type { DataSource } from "@/types/workspace";
+import { FileBodyEditor, MultipartEditor, rowsFromBody, rowsToBody } from "./UploadFields";
 import {
   BODY_TYPES,
   BodyType,
@@ -175,6 +176,23 @@ function KeyValueTable({
   );
 }
 
+/**
+ * The body after switching type: fields carry over between Form and Multipart;
+ * a file reference doesn't survive leaving File (it would read as a file again).
+ */
+function bodyForType(body: string, from: BodyType, to: BodyType): string {
+  if (to === "none" || from === "file") return "";
+  if (to === "file") return "";
+  if (to === "multipart" && from === "form") {
+    return rowsToBody(formToEntries(body).filter(([k]) => k).map(([name, value]) => ({ name, file: false, value })));
+  }
+  if (to === "multipart") return rowsFromBody(body) ? body : "";
+  if (to === "form" && from === "multipart") {
+    return entriesToForm((rowsFromBody(body) ?? []).filter((r) => !r.file).map((r) => [r.name, r.value]));
+  }
+  return body;
+}
+
 /** Entries in a JSON object, for the tab badge; null when it is not one. */
 function countKeys(json: string | undefined): number | null {
   try {
@@ -198,10 +216,14 @@ export default function TabEditor({
   const [viewMode, setViewMode] = useState<ViewMode>("json");
 
   // The body type is read from the body and its Content-Type, never stored.
-  // "None" cannot be inferred (an empty body opens as JSON), so picking it is
-  // remembered here until something is typed into the body again.
-  const [noneChosen, setNoneChosen] = useState(false);
-  const bodyType: BodyType = noneChosen && !formInput.body ? "none" : inferBodyType(formInput.body ?? "", formInput.headers ?? "");
+  // "None" and an empty "File" cannot be inferred (an empty body opens as
+  // JSON), so picking one is remembered here until the body says otherwise.
+  const [chosen, setChosen] = useState<"none" | "file" | null>(null);
+  const emptyBody = !formInput.body?.trim();
+  const bodyType: BodyType =
+    chosen === "none" && emptyBody ? "none"
+      : chosen === "file" && emptyBody ? "file"
+        : inferBodyType(formInput.body ?? "", formInput.headers ?? "");
   // Only a JSON body has to be valid JSON; a text or form body is sent as is.
   const isJsonTab = (t: Tab) => t !== "body" || bodyType === "json";
 
@@ -357,14 +379,14 @@ export default function TabEditor({
   };
 
   const changeBodyType = useCallback((type: BodyType) => {
-    setNoneChosen(type === "none");
+    setChosen(type === "none" || type === "file" ? type : null);
     setFormInput((prev) => ({
       ...prev,
-      body: type === "none" ? "" : prev.body,
+      body: bodyForType(prev.body ?? "", bodyType, type),
       headers: headersForBodyType(prev.headers, type),
     }));
     if (type !== "json") setViewMode("json"); // the table toggle is JSON-only
-  }, [setFormInput]);
+  }, [setFormInput, bodyType]);
 
   // Arrow keys move between tabs (WAI-ARIA tabs pattern).
   const onTabKeyDown = (e: React.KeyboardEvent, tab: Tab) => {
@@ -486,6 +508,10 @@ export default function TabEditor({
         <p className="flex-1 flex items-center justify-center p-6 text-xs text-(--muted)">
           This request has no body. Pick JSON, Text or Form to add one.
         </p>
+      ) : activeTab === "body" && bodyType === "multipart" ? (
+        <MultipartEditor ds={dataSource} />
+      ) : activeTab === "body" && bodyType === "file" ? (
+        <FileBodyEditor ds={dataSource} />
       ) : activeTab === "body" && bodyType === "form" ? (
         <KeyValueTable
           entries={form.rows}

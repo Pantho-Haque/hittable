@@ -31,7 +31,7 @@ export async function readFileText(
 
 export async function writeFileText(
   handle: FileSystemFileHandle,
-  content: string
+  content: string | Uint8Array<ArrayBuffer>
 ): Promise<void> {
   const writable = await handle.createWritable();
   await writable.write(content);

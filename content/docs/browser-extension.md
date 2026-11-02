@@ -34,10 +34,12 @@ Three messages, all through `window.postMessage`:
 | Message | Direction | Meaning |
 | :--- | :--- | :--- |
 | `HITTABLE_PING` | app → extension | is anyone there? |
-| `HITTABLE_EXTENSION_READY` | extension → app | yes |
-| `HITTABLE_REQUEST` / `HITTABLE_RESPONSE` | app → extension → app | `{ id, payload: { url, method, headers, body } }` in; `{ id, success, data, status, statusText, ok, headers, cookies }` or `{ id, success: false, error }` out |
+| `HITTABLE_EXTENSION_READY` | extension → app | yes, with `capabilities: ["binary"]` from 1.1.0 |
+| `HITTABLE_REQUEST` / `HITTABLE_RESPONSE` | app → extension → app | `{ id, payload: { url, method, headers, body } }` in, or `bodyBase64` instead of `body` for a file upload (1.1.0); `{ id, success, data, status, statusText, ok, headers, cookies }` or `{ id, success: false, error }` out |
 
 The content script relays `HITTABLE_REQUEST` to the service worker, which performs the `fetch` (omitting the body for `GET` and `HEAD`), parses JSON when the content type says so, flattens the headers, reads the origin's cookies and replies. The `id` pairs each reply with its request, so requests sent at the same time cannot swap responses. Messages are posted to the page's own origin, never `*`, and the service worker refuses any URL that is not `localhost`, `127.0.0.1` or `0.0.0.0`. The app gives up after 30 seconds with **Extension request timed out**.
+
+File uploads to localhost need extension **1.1.0** or later: messages to the service worker are JSON only, so the file's bytes travel base64-encoded and the worker turns them back into bytes before the `fetch`. An older extension doesn't announce `binary`, and the app says to update it instead of sending a broken body.
 
 ## Self-hosted instances
 

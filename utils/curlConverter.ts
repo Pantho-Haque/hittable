@@ -59,7 +59,7 @@ const HEADER_FLAGS: Record<string, string> = {
 // Flags whose argument must be skipped so it is not taken for the URL.
 const IGNORED_WITH_ARG = new Set([
   "-o", "--output", "-m", "--max-time", "--connect-timeout", "-w", "--write-out", "-x", "--proxy",
-  "--retry", "-T", "--upload-file", "-r", "--range", "--cacert", "--cert", "-E", "--key", "--resolve",
+  "--retry", "-r", "--range", "--cacert", "--cert", "-E", "--key", "--resolve",
   "--limit-rate", "-c", "--cookie-jar", "-K", "--config", "--max-redirs",
 ]);
 
@@ -112,6 +112,7 @@ export function curlConverter(curlString: string): THittableCurlJson {
   const headers: Record<string, string> = {};
   const data: string[] = [];
   const form: Record<string, string> = {};
+  let upload = "";
 
   for (let i = 0; i < tokens.length; i++) {
     let flag = tokens[i];
@@ -137,8 +138,15 @@ export function curlConverter(curlString: string): THittableCurlJson {
       headers["Content-Type"] ??= "application/json";
       headers["Accept"] ??= "application/json";
     } else if (flag === "-F" || flag === "--form") {
+      // `k=@path;type=…` is a file field, the same syntax .hit files use.
       const [k, ...v] = next().split("=");
       if (k) form[k] = v.join("=");
+    } else if (flag === "--form-string") {
+      const [k, ...v] = next().split("=");
+      const value = v.join("=");
+      if (k) form[k] = value.startsWith("@") ? `@${value}` : value; // literal text: @@ escapes it
+    } else if (flag === "-T" || flag === "--upload-file") {
+      upload = next();
     } else if (flag === "-u" || flag === "--user") headers["Authorization"] = `Basic ${base64Utf8(next())}`;
     else if (flag in HEADER_FLAGS) headers[HEADER_FLAGS[flag]] = next();
     else if (flag === "-I" || flag === "--head") method = "HEAD";
@@ -148,13 +156,18 @@ export function curlConverter(curlString: string): THittableCurlJson {
   }
 
   const rawBody = data.join("&");
-  const hasBody = data.length > 0 || Object.keys(form).length > 0;
+  const isForm = Object.keys(form).length > 0;
+  // curl sends -F as multipart/form-data; the .hit says so with its Content-Type.
+  if (isForm && !Object.keys(headers).some((k) => k.toLowerCase() === "content-type")) headers["Content-Type"] = "multipart/form-data";
+  const hasBody = data.length > 0 || isForm || !!upload;
   return {
-    method: method || (hasBody ? "POST" : "GET"),
+    // curl -T uploads with PUT.
+    method: method || (upload ? "PUT" : hasBody ? "POST" : "GET"),
     url,
     params: formatJson(paramsFromUrl(url)).output,
     headers: formatJson(headers).output,
-    body: data.length ? bodyFromData(rawBody, headers) : Object.keys(form).length ? formatJson(form).output : "{}",
+    // `--data-binary @path` arrives as "@path" (bodyFromData keeps it): a file body.
+    body: upload ? `@${upload}` : data.length ? bodyFromData(rawBody, headers) : isForm ? formatJson(form).output : "{}",
   };
 }
 

@@ -138,6 +138,13 @@ Rules:
   against `env.json`. `env.json` is global: any `.hit` file anywhere under `hittable/`,
   in any nested folder, can reference any key in it.
 - `env.json` itself is just a flat `map[string]string` — no schema beyond that.
+- **File uploads** reuse `body` and the `Content-Type` header; there are no new keys.
+  A body that is one line `@path[;type=T][;filename=F]` sends that file's bytes; with
+  `Content-Type: multipart/form-data` the body is a JSON object of fields, where a
+  `"@path"` value is a file part and anything else a text field. `@@` escapes a
+  literal `@`. Paths are relative to the `.hit` file's folder (absolute and `~/` work
+  in the terminal app only). `docs/file-uploads.md` at the repo root is the contract
+  shared with the web app, pinned by `internal/hitfile/testdata/filebody_cases.json`.
 
 ---
 
@@ -277,7 +284,8 @@ internal/
 │   ├── schema.go                # Go struct for .hit, json tags matching §3 exactly
 │   ├── schema_test.go           # round-trip marshal/unmarshal test
 │   ├── interpolate.go           # <<KEY>> resolution against env.json
-│   └── request.go               # .hit -> net/http request, ExecuteAndCapture, AsCurl
+│   ├── request.go               # .hit -> net/http request, ExecuteAndCapture, AsCurl
+│   └── filebody.go              # @file references in a body (docs/file-uploads.md)
 ├── document/
 │   ├── model.go                  # DocumentModel + generation counter + ViewMode
 │   ├── store.go                  # in-memory Map[path]*DocumentModel + Delete
@@ -302,6 +310,7 @@ ui/
 │   │   ├── paramstab.go           # JSON params editor with validation
 │   │   ├── headerstab.go          # JSON headers editor with validation
 │   │   ├── bodytab.go             # raw body textarea
+│   │   ├── bodytype.go            # body type inference / Content-Type (mirrors web utils/bodyType.ts)
 │   │   └── tabs_test.go           # JSON round-trip, invalid indicator, pretty-print tests
 │   ├── responseviewer/
 │   │   ├── model.go               # ResponseViewer struct, New, SetSize
@@ -408,6 +417,8 @@ send binding.
 | Switch tab            | `←/→`, `1/2/3`  | Tab bar focused      |
 | Switch tab            | `alt+1/2/3`     | Editor focused       |
 | Format body JSON      | `ctrl+l`        | Body tab focused     |
+| Body type             | `alt+t` (`⌥t` sends `†`), click a name on the `type:` line | Body tab focused (json · text · form · multipart · file; sets Content-Type unless it is a custom one) |
+| Attach file           | `alt+a` (`⌥a` sends `å`); in the palette `alt+a` again types a path; `⇥` completes | Body tab focused (find palette in a project, path prompt in single-file mode) |
 | Search Response       | `ctrl+f`        | Runner view          |
 | Search Next / Prev    | `enter`/`n`, `shift+enter`/`N` | Search |
 | Response headers      | `h`             | Response focused     |
@@ -456,6 +467,42 @@ send binding.
 | Resize markdown split | drag the seam between editor and preview | Markdown split view |
 
 ## 10. Changelog
+
+### v3.4 — File uploads
+- A `.hit` body can send files, with the web app's format (`docs/file-uploads.md`):
+  `@path` alone is a binary body, and a `multipart/form-data` body is a JSON object
+  whose `"@path"` values are file parts. `hitfile.ParseFileRefs` passes the shared
+  golden table; members come out in `Object.entries` order (first slot, last value,
+  array-index keys first) so both apps send the same parts.
+- Sending (`request.go`): variables resolve first, so `@<<DIR>>/a.png` works. Every
+  file is opened before the request starts — a missing one fails with its path and
+  nothing reaches the server. Multipart streams through `io.Pipe`, binary bodies send
+  with a `Content-Length`. Uploads drop the 30 s whole-request timeout (a big file
+  takes as long as it takes) and keep a 30 s response-header timeout; esc cancels.
+  `ExecuteAndCaptureContext` takes the `.hit` folder as `baseDir`.
+- Copy as curl emits `-F 'f=@path;type=…'` (`--form-string` for text that curl would
+  misread), `--data-binary @path` with the Content-Type the send would use, and
+  `--data-raw` for a body starting with `@`.
+- Body tab: a `type:` line above the editor (`alt+t` / click) mirrors the web's
+  `inferBodyType` / `headersForBodyType`. `alt+a` attaches a file through the find
+  palette (a flag on the screen routes its `OnOpen`, reset whenever the palette opens
+  normally), or a one-line path prompt with Tab completion
+  (`ui/components/pathprompt`). Files under the `.hit` folder or the project are
+  stored relative, others absolute. Under the editor each referenced file shows
+  `✓ path size` or `✗ path missing`. Not `ctrl+t` / `ctrl+o`: those are Runner/Text
+  and fold.
+- Import: Postman formdata gets `Content-Type: multipart/form-data` (Postman always
+  sends it multipart), keeps field order, maps `contentType` to `;type=` and escapes
+  text values starting with `@`; Postman `file` mode and Insomnia binary bodies become
+  `@path`; Insomnia multipart params set their mime type. Form bodies are written
+  without HTML escaping, so imported `<<KEY>>` values resolve.
+- Export: a multipart body becomes Postman `formdata` (text rows, `type: "file"` rows
+  with `src` and `contentType`) or Insomnia multipart `params` (`type: "file"`,
+  `fileName`), without the multipart header the tool writes itself; a binary body
+  becomes Postman `file` mode or an Insomnia `fileName` body (`application/octet-stream`,
+  which import reads as the binary marker, not a header). Round-trip tested. Neither
+  tool has a filename field, Insomnia has no per-file type, and Postman `file` mode has
+  no type, so a binary `;type=` exports as the Content-Type header.
 
 ### v3.3 — Parity with the web app's request upgrade
 - **Esc cancels a request in flight** (`hitfile.ExecuteAndCaptureContext`); the

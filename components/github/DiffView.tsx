@@ -16,7 +16,16 @@ const diffTheme = EditorView.theme({
   ".cm-collapsedLines": { color: "var(--muted)", background: "var(--surface-2)" },
 });
 
-export type DiffSides = { original: string | null; modified: string | null; originalLabel: string; modifiedLabel: string };
+export type DiffSides = {
+  original: string | null;
+  modified: string | null;
+  originalLabel: string;
+  modifiedLabel: string;
+  /** Byte sizes when either side is binary: no text diff then. */
+  binary?: { original: number | null; modified: number | null } | null;
+};
+
+const size = (n: number | null) => (n === null ? "no file" : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} bytes`);
 
 /** Read-only diff of two texts: inline by default, side by side on request. */
 export function DiffEditor({ path, original, modified }: { path: string; original: string; modified: string }) {
@@ -95,6 +104,16 @@ export default function DiffDialog({ path, sides, error, onClose }: { path: stri
         <p role="alert" className="text-sm text-(--danger)">{error}</p>
       ) : !sides ? (
         <p role="status" className="text-sm text-(--muted)">Loading the diff…</p>
+      ) : sides.binary ? (
+        <div className="rounded-md border border-(--border) p-4 text-sm text-(--text)">
+          <p className="mb-2 text-(--muted)">Binary file: there is no text to compare.</p>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+            <dt className="text-(--git-deleted)">− {sides.originalLabel}</dt>
+            <dd>{size(sides.binary.original)}</dd>
+            <dt className="text-(--git-added)">+ {sides.modifiedLabel}</dt>
+            <dd>{sides.binary.modified === null ? "deleted" : size(sides.binary.modified)}</dd>
+          </dl>
+        </div>
       ) : (
         <>
           <p className="text-xs text-(--muted)">

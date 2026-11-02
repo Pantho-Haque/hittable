@@ -9,6 +9,7 @@ import UrlBar from "@/components/RequestForm/UrlBar";
 import TabEditor from "@/components/RequestForm/TabEditor";
 import ResponsePanel from "@/components/RequestForm/ResponsePanel";
 import { DataSource } from "@/types/workspace";
+import type { WsNode } from "@/services/workspace/backend";
 import { parseHitFile, serializeHitFile } from "@/utils/workspace/hitFileParser";
 import SourceEditor from "./SourceEditor";
 import Split from "@/components/ui/Split";
@@ -17,7 +18,7 @@ import { useStoredFlag } from "@/utils/prefs";
 import { Columns2, Rows2 } from "lucide-react";
 
 export default function HitFileEditor() {
-  const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile, envContent, readOnly: workspaceReadOnly, fileNotice, backendKind } = useWorkspace();
+  const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile, envContent, readOnly: workspaceReadOnly, fileNotice, backendKind, tree, readWorkspaceFile, addUploadFile } = useWorkspace();
   // In a GitHub repository a send does not write its response into the file:
   // that would mark the request changed after every run and put response data
   // (tokens, personal data) into the next commit. The response still shows;
@@ -26,7 +27,8 @@ export default function HitFileEditor() {
   const keepResponseOutOfFile = backendKind === "github";
   const storedResponseRef = useRef<TResponseJson>(null);
   const readOnly = workspaceReadOnly || !!fileNotice;
-  const { available: extensionAvailable, checked: extensionChecked } = useExtension();
+  const { available: extensionAvailable, checked: extensionChecked, capabilities } = useExtension();
+  const workspaceFiles = useMemo(() => filePaths(tree), [tree]);
   const [viewMode, setViewMode] = useState<"runner" | "text">("text");
   // Response below the request (default) or beside it; a phone always stacks.
   const [responseBeside, setResponseBeside] = useStoredFlag("hittable:response-beside", false);
@@ -155,6 +157,11 @@ export default function HitFileEditor() {
     env: envContent as THittableEnv,
     requestKey: activeFile?.path.join("/") ?? "",
     extensionAvailable,
+    extensionBinary: capabilities.includes("binary"),
+    hitPath: activeFile?.path,
+    readFile: readWorkspaceFile,
+    addUploadFile,
+    workspaceFiles,
     isUnsaved,
     handleSaveCollection,
     readOnly,
@@ -245,4 +252,9 @@ function sameJson(stored: unknown, formText: string): boolean {
   } catch {
     return false; // half-typed JSON differs from anything saved
   }
+}
+
+/** Every file path in a tree (directories the backend left unloaded are skipped). */
+function filePaths(nodes: WsNode[]): string[][] {
+  return nodes.flatMap((n) => (n.kind === "file" ? [n.path] : filePaths(n.children ?? [])));
 }

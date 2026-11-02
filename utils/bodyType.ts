@@ -2,13 +2,18 @@
 // and its Content-Type header, so .hit files, local collections and curl
 // exports stay exactly as they were (and the terminal app reads them as-is).
 
-export type BodyType = "none" | "json" | "text" | "form";
+import { MULTIPART, parseFileRefs } from "./fileBody";
+
+export type BodyType = "none" | "json" | "text" | "form" | "multipart" | "file";
 
 export const BODY_TYPES: { id: BodyType; label: string; contentType?: string }[] = [
   { id: "none", label: "None" },
   { id: "json", label: "JSON", contentType: "application/json" },
   { id: "text", label: "Text", contentType: "text/plain" },
   { id: "form", label: "Form", contentType: "application/x-www-form-urlencoded" },
+  { id: "multipart", label: "Multipart", contentType: MULTIPART },
+  // A file body keeps the user's Content-Type, or is sent with one guessed from the file name.
+  { id: "file", label: "File" },
 ];
 
 // Content types this UI sets itself; only these are replaced when the user
@@ -35,9 +40,20 @@ export function getContentType(headers: string): string {
   return k ? String(h![k]) : "";
 }
 
+function isFileBody(body: string): boolean {
+  try {
+    return parseFileRefs(body, "")?.kind === "binary";
+  } catch {
+    return true; // `@` with no path: a file body still being typed
+  }
+}
+
 export function inferBodyType(body: string, headers: string): BodyType {
   const ct = getContentType(headers).toLowerCase();
   if (ct.includes("x-www-form-urlencoded")) return "form";
+  if (ct.startsWith(MULTIPART)) return "multipart";
+  // `@path` on one line is a file, whatever the content type (a JSON file can be the body).
+  if (isFileBody(body)) return "file";
   if (/[/+]json\b/.test(ct)) return "json";
   if (ct.startsWith("text/")) return "text";
   const t = body.trim();

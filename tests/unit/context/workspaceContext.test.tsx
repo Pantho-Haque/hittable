@@ -5,7 +5,7 @@ import { act, render, renderHook, waitFor } from "@testing-library/react";
 import { WorkspaceProvider, useWorkspace, connectingLabel } from "@/context/workspaceContext";
 import { NotificationContext } from "@/context/notifyContext";
 import { createFolderBackend } from "@/services/workspace/folderBackend";
-import type { WorkspaceBackend } from "@/services/workspace/backend";
+import { findNode, type WorkspaceBackend } from "@/services/workspace/backend";
 import { openTool } from "@/utils/uiEvents";
 import { FakeDir, FakeFile, asDir } from "../helpers/fakeFs";
 
@@ -188,6 +188,20 @@ describe("WorkspaceProvider", () => {
       expect(notify).toHaveBeenCalledWith(expect.objectContaining({ mode: "error", title: "Couldn't open the folder" }));
       expect(err).not.toHaveBeenCalled();
     });
+  });
+
+  it("a file picked for an upload is copied into hittable/files under a free name", async () => {
+    const ctx = await openedWorkspace();
+    const png = new Uint8Array([0x89, 0x50, 0, 255]);
+    let first: string[] = [];
+    let second: string[] = [];
+    await act(async () => { first = await ctx().addUploadFile(new File([png], "avatar.png")); });
+    await act(async () => { second = await ctx().addUploadFile(new File([png], "avatar.png")); });
+    expect(first).toEqual(["hittable", "files", "avatar.png"]);
+    expect(second).toEqual(["hittable", "files", "avatar-1.png"]);
+    expect((root.at("hittable/files/avatar-1.png") as FakeFile).bytes).toEqual(png);
+    expect(await ctx().readWorkspaceFile(first)).toEqual(png);
+    expect(findNode(ctx().tree, second)).not.toBeNull();
   });
 
   it("closing the workspace forgets the folder", async () => {

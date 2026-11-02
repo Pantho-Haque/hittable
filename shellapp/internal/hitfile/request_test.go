@@ -92,7 +92,7 @@ func TestExecuteAndCaptureContextCancels(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := ExecuteAndCaptureContext(ctx, &HitFile{Method: "GET", URL: srv.URL}, nil)
+		_, err := ExecuteAndCaptureContext(ctx, &HitFile{Method: "GET", URL: srv.URL}, nil, "")
 		done <- err
 	}()
 	cancel()

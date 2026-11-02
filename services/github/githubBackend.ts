@@ -7,17 +7,24 @@
 
 import { LOCAL_ENV_PATH, type FileStatus, type WorkspaceBackend, type WsNode } from "@/services/workspace/backend";
 import { api, GitHubError, isGitHubError, type CommitInput, type RepoMeta, type TreeEntry } from "@/utils/github/api";
+import { bytesToBase64 } from "@/utils/uploadBody";
 import { copyKey, defaultStore, type KVStore, type OverlayEntry, type WorkingCopy } from "./workingCopy";
 
 export type Client = Pick<typeof api, "head" | "tree" | "blob" | "commit" | "compare" | "createBranch" | "pull" | "branches">;
 
-export type Change = { path: string; status: Exclude<FileStatus, "C">; conflict: boolean };
+export type Change = { path: string; status: Exclude<FileStatus, "C">; conflict: boolean; binary?: boolean };
+/** Sizes for a diff that can't be shown as text; null on a side where the file doesn't exist. */
+export type BinarySides = { original: number | null; modified: number | null };
 export type RemoteMoved = { newHead: string; conflicts: string[] };
 export type SyncState = { checking: boolean; error: GitHubError | null; remote: RemoteMoved | null };
 
 export const LOCAL_ENV = LOCAL_ENV_PATH.join("/");
 /** Larger blobs are refused by /blob (413), so they never load. */
 const MAX_BLOB_BYTES = 4 * 1024 * 1024;
+/** A commit request carries every file base64-encoded; the route refuses more (utils/server/github/commit.ts). */
+export const MAX_COMMIT_BYTES = 4 * 1024 * 1024;
+/** Base64 grows a file by a third, so this is the largest file one commit can carry. */
+export const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
 const POLL_MS = 60_000;
 
 export const isLocalOnly = (path: string) => path === LOCAL_ENV;
@@ -28,9 +35,9 @@ export const WORKFLOW_MESSAGE =
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-/** The git blob SHA-1 of some text, to tell "edited back to the original" from a real change. */
-export async function gitBlobSha(text: string): Promise<string> {
-  const body = enc.encode(text);
+/** The git blob SHA-1 of some text or bytes, to tell "edited back to the original" from a real change. */
+export async function gitBlobSha(data: string | Uint8Array): Promise<string> {
+  const body = typeof data === "string" ? enc.encode(data) : data;
   const head = enc.encode(`blob ${body.byteLength}\0`);
   const buf = new Uint8Array(head.byteLength + body.byteLength);
   buf.set(head);
@@ -40,11 +47,10 @@ export async function gitBlobSha(text: string): Promise<string> {
 }
 
 export function utf8ToBase64(text: string): string {
-  const bytes = enc.encode(text);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
+  return bytesToBase64(enc.encode(text));
 }
+
+
 
 /** The commit for an overlay: additions (base64 UTF-8) and deletions, never env.local.json. */
 export function buildCommit(
@@ -57,12 +63,24 @@ export function buildCommit(
   for (const [path, e] of Object.entries(overlay).sort(([a], [b]) => a.localeCompare(b))) {
     if (isLocalOnly(path)) continue;
     if ("content" in e) additions.push({ path, contents: utf8ToBase64(e.content) });
+    else if ("bytes" in e) additions.push({ path, contents: bytesToBase64(e.bytes) });
     else if ("deleted" in e && inBase(path)) deletions.push({ path });
   }
   return { ...opts, additions, deletions };
 }
 
 const VERB = { M: "Update", A: "Add", D: "Delete" } as const;
+
+const mb = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`);
+
+function sameEntry(a: OverlayEntry | undefined, b: OverlayEntry): boolean {
+  if (!a) return false;
+  if ("bytes" in a || "bytes" in b) {
+    if (!("bytes" in a && "bytes" in b) || a.bytes.length !== b.bytes.length) return false;
+    return a.bytes.every((x, i) => x === b.bytes[i]);
+  }
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 /** "Update hittable/users/get.hit" for one change; "Update 3 files" plus a list for more. */
 export function prefillMessage(changes: Pick<Change, "path" | "status">[]): string {
@@ -147,6 +165,8 @@ export type GitHubBackend = WorkspaceBackend & {
   readWorking(path: string): Promise<string | null>;
   /** Their text at the moved head, null when they deleted it. */
   readTheirs(path: string): Promise<string | null>;
+  /** Byte sizes when either side is binary (no text diff), else null. */
+  binarySides(path: string, theirs?: boolean): Promise<BinarySides | null>;
   discard(paths: string[]): Promise<void>;
   discardAll(): Promise<void>;
   /** Poll the branch head (throttled to once a minute unless forced). */
@@ -264,15 +284,21 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
     const e = overlay[p];
     return e && "content" in e ? e.content : undefined;
   };
+  /** Your text or bytes for a path, undefined when unchanged or deleted. */
+  const working = (p: string): string | Uint8Array | undefined => {
+    const e = overlay[p];
+    return !e ? undefined : "content" in e ? e.content : "bytes" in e ? e.bytes : undefined;
+  };
+  const hasData = (e: OverlayEntry) => "content" in e || "bytes" in e;
   const isDeleted = (p: string) => !!overlay[p] && "deleted" in overlay[p];
   const visibleFiles = () => {
     const files = new Set(base.files.keys());
-    for (const [p, e] of Object.entries(overlay)) if ("content" in e) files.add(p);
+    for (const [p, e] of Object.entries(overlay)) if (hasData(e)) files.add(p);
     return files;
   };
   const isDir = (p: string) =>
     base.dirs.has(p) || (overlay[p] && "dir" in overlay[p]) || [...visibleFiles()].some((f) => f.startsWith(p + "/"));
-  const exists = (p: string) => content(p) !== undefined || (base.files.has(p) && !isDeleted(p)) || isDir(p);
+  const exists = (p: string) => working(p) !== undefined || (base.files.has(p) && !isDeleted(p)) || isDir(p);
   const filesUnder = (p: string) => [...visibleFiles()].filter((f) => under(f, p));
 
   function guard(paths: string[]) {
@@ -290,8 +316,8 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
   }
   /** Your bytes for a path, or with `from` that commit's bytes. */
   async function readBytes(p: string, from?: Base): Promise<Uint8Array> {
-    const text = from ? undefined : content(p);
-    if (text !== undefined) return enc.encode(text);
+    const mine = from ? undefined : working(p);
+    if (mine !== undefined) return typeof mine === "string" ? enc.encode(mine) : mine;
     const entry = (from ?? base).files.get(p);
     if (!entry) throw new GitHubError("not_found", 404, `${p} does not exist`);
     const bytes = await blob(entry.sha, entry.size);
@@ -300,11 +326,11 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
   }
   const isText = (bytes: Uint8Array) => bytes.length <= 1024 * 1024 && !bytes.subarray(0, 8192).includes(0);
 
-  /** Record your text for a path; text equal to the base drops the change. */
-  async function setContent(p: string, text: string) {
+  /** Record your text or bytes for a path; equal to the base drops the change. */
+  async function setContent(p: string, data: string | Uint8Array) {
     const b = base.files.get(p);
-    if (b && (await gitBlobSha(text)) === b.sha) delete overlay[p];
-    else overlay[p] = { content: text };
+    if (b && (await gitBlobSha(data)) === b.sha) delete overlay[p];
+    else overlay[p] = typeof data === "string" ? { content: data } : { bytes: data };
   }
   function markRemoved(p: string) {
     if (base.files.has(p)) overlay[p] = { deleted: true };
@@ -313,7 +339,7 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
   /** Drop entries the base now matches (after the base moved). */
   async function normalize() {
     for (const [p, e] of Object.entries(overlay)) {
-      if ("content" in e) await setContent(p, e.content);
+      if (hasData(e)) await setContent(p, working(p)!);
       else if ("deleted" in e && !base.files.has(p)) delete overlay[p];
       else if ("dir" in e && (base.dirs.has(p) || filesUnder(p).length > 0)) delete overlay[p];
     }
@@ -336,7 +362,7 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
       if (!cmp.truncated && !changed.has(p)) continue;
       // Both sides made the same change: not a conflict.
       const theirs = next.files.get(p);
-      const mine = content(p);
+      const mine = working(p);
       const same = mine === undefined ? !theirs : !!theirs && (await gitBlobSha(mine)) === theirs.sha;
       if (!same) conflicts.push(p);
     }
@@ -373,13 +399,19 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
 
   function clearCommitted(snapshot: Record<string, OverlayEntry>) {
     // Text typed while the commit was in flight stays a change.
-    for (const [p, e] of Object.entries(snapshot)) if (JSON.stringify(overlay[p]) === JSON.stringify(e)) delete overlay[p];
+    for (const [p, e] of Object.entries(snapshot)) if (sameEntry(overlay[p], e)) delete overlay[p];
   }
   function commitInput(targetBranch: string, message: string) {
     if (readOnly) throw new Error("This repository is read-only");
     if (remote) throw new Error("Resolve the conflicts with the remote changes first");
     const input = buildCommit(overlay, (p) => base.files.has(p), { branch: targetBranch, expectedHeadOid: base.commit, message });
     if (input.additions.length + input.deletions.length === 0) throw new Error("There is nothing to commit");
+    const size = input.additions.reduce((n, a) => n + a.contents.length + a.path.length, 0);
+    if (size > MAX_COMMIT_BYTES) {
+      throw new Error(
+        `These changes are ${mb(size)} encoded; one commit from the web can carry ${mb(MAX_COMMIT_BYTES)}. Commit fewer files at a time (discard some, commit, then add them back), or commit large files with git.`,
+      );
+    }
     const snapshot = Object.fromEntries(committable().map((p) => [p, structuredClone(overlay[p])]));
     return { input, snapshot };
   }
@@ -418,6 +450,17 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
       await save();
       emit(!known);
     },
+    async writeBytes(path, bytes) {
+      const p = k(path);
+      guard([p]);
+      if (bytes.length > MAX_UPLOAD_BYTES) {
+        throw new Error(`${path.at(-1)} is ${mb(bytes.length)}. Files added from the web can be up to ${mb(MAX_UPLOAD_BYTES)}, so they fit in a commit. Add larger files with git.`);
+      }
+      const known = exists(p);
+      await setContent(p, new Uint8Array(bytes));
+      await save();
+      emit(!known);
+    },
     async createFile(path, text = "") {
       const p = k(path);
       guard([p]);
@@ -440,11 +483,11 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
       await loadAllUnder(f);
       const moves = filesUnder(f).filter((p) => !isDeleted(p));
       guard([f, t, ...moves, ...moves.map((p) => t + p.slice(f.length))]);
-      const texts = await Promise.all(moves.map((p) => readBytes(p)));
-      if (texts.some((b) => !isText(b))) throw new Error("Binary and very large files can't be moved here. Move them on GitHub.");
+      const datas = await Promise.all(moves.map((p) => readBytes(p)));
+      if (moves.some((p) => lfs.has(p))) throw new Error("Files stored with Git LFS can't be moved here. Move them with git.");
       for (const [i, p] of moves.entries()) {
         markRemoved(p);
-        await setContent(t + p.slice(f.length), dec.decode(texts[i]));
+        await setContent(t + p.slice(f.length), isText(datas[i]) ? dec.decode(datas[i]) : datas[i]);
       }
       for (const p of Object.keys(overlay)) if ("dir" in overlay[p] && under(p, f)) {
         delete overlay[p];
@@ -466,7 +509,7 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
 
     status() {
       const out: Record<string, FileStatus> = {};
-      for (const p of committable()) out[p] = "content" in overlay[p] ? (base.files.has(p) ? "M" : "A") : "D";
+      for (const p of committable()) out[p] = hasData(overlay[p]) ? (base.files.has(p) ? "M" : "A") : "D";
       for (const p of remote?.conflicts ?? []) out[p] = "C";
       const json = JSON.stringify(out);
       if (statusCache?.json !== json) statusCache = { json, value: out };
@@ -478,8 +521,9 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
         .sort()
         .map((path) => ({
           path,
-          status: "content" in overlay[path] ? (base.files.has(path) ? "M" : "A") : "D",
+          status: hasData(overlay[path]) ? (base.files.has(path) ? "M" : "A") : "D",
           conflict: conflicts.has(path),
+          ...("bytes" in overlay[path] && { binary: true }),
         }));
     },
     hasLocalEnv: () => content(LOCAL_ENV) !== undefined,
@@ -512,6 +556,14 @@ export async function createGitHubBackend({ owner, repo, branch, meta, client = 
       if (!from.files.has(p)) return null;
       const bytes = await readBytes(p, from);
       return isText(bytes) ? dec.decode(bytes) : null;
+    },
+
+    async binarySides(p, theirs = false) {
+      const from = theirs ? (remote?.base ?? base) : base;
+      const original = from.files.has(p) ? await readBytes(p, from) : null;
+      const modified = isDeleted(p) ? null : working(p) !== undefined || base.files.has(p) ? await readBytes(p) : null;
+      if ((!original || isText(original)) && (!modified || isText(modified))) return null;
+      return { original: original?.length ?? null, modified: modified?.length ?? null };
     },
 
     async discard(paths) {

@@ -1,8 +1,15 @@
 // background.js
+function fromBase64(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
   if (message.type !== "HITTABLE_REQUEST") return;
 
-  const { url, method, headers, body } = message.payload ?? {};
+  const { url, method, headers, body, bodyBase64 } = message.payload ?? {};
   // The extension exists for localhost only; refuse anything else.
   let host;
   try {
@@ -20,7 +27,8 @@ chrome.runtime.onMessage.addListener((message, _, sendResponse) => {
   fetch(url, {
     method: upperMethod,
     headers: headers || {},
-    body: ["GET", "HEAD"].includes(upperMethod) ? undefined : body ?? null,
+    // A file upload arrives base64-encoded: messages to the worker are JSON only.
+    body: ["GET", "HEAD"].includes(upperMethod) ? undefined : typeof bodyBase64 === "string" ? fromBase64(bodyBase64) : body ?? null,
   })
     .then(async (res) => {
       // ─── Data ────────────────────────────────────────────────────────────

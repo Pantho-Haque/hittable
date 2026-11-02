@@ -397,6 +397,20 @@ func (t *TextEditor) cursorPos() pos {
 	return pos{t.TextArea.Line(), t.TextArea.LineInfo().ColumnOffset}
 }
 
+// Cursor is the cursor's line and rune column.
+func (t *TextEditor) Cursor() (row, col int) {
+	p := t.cursorPos()
+	return p.row, p.col
+}
+
+// MoveCursor puts the cursor at a line and rune column (clamped).
+func (t *TextEditor) MoveCursor(row, col int) {
+	moveTo(&t.TextArea, row, col)
+	t.clearSelection()
+	t.writeBack()
+	t.followCursor()
+}
+
 // Selection returns the ordered selection range and whether one exists.
 func (t *TextEditor) Selection() (start, end pos, ok bool) {
 	b := t.cur

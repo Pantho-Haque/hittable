@@ -3,6 +3,7 @@ package screens
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hittable/shellapp/ui/components/explorer"
@@ -58,12 +59,31 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.Palette.Open {
-		switch key {
-		case "ctrl+c":
+		switch {
+		case key == "ctrl+c":
 			m.saveAndEnqueue()
 			return m, tea.Quit
+		case m.attaching && isAttachKey(key): // a file outside the project: type its path
+			m.Palette.Close()
+			m.attaching = false
+			m.focusBody()
+			m.PathPrompt.Show(filepath.Dir(m.ActiveFile))
 		default:
 			m.Palette.HandleKey(msg)
+			if m.attaching && !m.Palette.Open { // cancelled
+				m.attaching = false
+				m.focusBody()
+			}
+		}
+		return m, nil
+	}
+	if m.PathPrompt.Open {
+		if key == "ctrl+c" {
+			m.saveAndEnqueue()
+			return m, tea.Quit
+		}
+		if p, ok := m.PathPrompt.HandleKey(msg); ok {
+			m.attachFile(p)
 		}
 		return m, nil
 	}
@@ -451,6 +471,16 @@ func (m *MainScreen) handleTabBarKey(msg tea.KeyMsg) {
 }
 
 func (m *MainScreen) handleBodyKey(msg tea.KeyMsg) tea.Cmd {
+	if m.ActiveTab == requesteditor.TabBody {
+		switch k := msg.String(); {
+		case isTypeKey(k):
+			m.cycleBodyType()
+			return nil
+		case isAttachKey(k):
+			m.beginAttach()
+			return nil
+		}
+	}
 	if msg.String() == "ctrl+l" && m.ActiveTab == requesteditor.TabBody {
 		if m.Body.FormatJSON() {
 			m.StatusBar = "Body formatted"
@@ -608,11 +638,20 @@ func (m *MainScreen) closePanels() {
 	}
 }
 
+// focusBody gives the keyboard to the Body tab's editor.
+func (m *MainScreen) focusBody() {
+	m.ActiveTab = requesteditor.TabBody
+	m.Focus = FocusBody
+	m.focusCurrent()
+}
+
 // openPalette shows the find-file / live-grep overlay.
 func (m *MainScreen) openPalette(mode palette.Mode) {
 	if m.SingleFile {
 		return
 	}
+	m.attaching = false
+	m.PathPrompt.Open = false
 	m.closePanels()
 	m.blurAll()
 	m.setExplorerFocused(false)

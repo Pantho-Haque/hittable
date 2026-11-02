@@ -138,10 +138,15 @@ function useDiff(backend: GitHubBackend | null) {
       if (!backend) return;
       setDiff({ path, theirs, sides: null });
       try {
-        const [original, modified] = await Promise.all([theirs ? backend.readTheirs(path) : backend.readBase(path), backend.readWorking(path)]);
+        const [original, modified, binary] = await Promise.all([
+          theirs ? backend.readTheirs(path) : backend.readBase(path),
+          backend.readWorking(path),
+          backend.binarySides(path, theirs),
+        ]);
         const sides = {
           original,
           modified,
+          binary,
           originalLabel: theirs ? `Theirs (latest on ${backend.branch})` : `Last commit (${backend.baseSha().slice(0, 7)})`,
           modifiedLabel: "Yours",
         };
