@@ -1,38 +1,19 @@
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import {
-  test,
-  expect,
-  API,
-  blankRequest,
-  collection,
-  dialog,
-  fillTab,
-  openRoute,
-  response,
-  route,
-  send,
-  sidebar,
-  sidebarItem,
-  statusBadge,
-  urlInput,
-  methodSelect,
-} from "./fixtures/test";
-
-/** Creating a collection opens it: the URL names it. */
-async function expectOpened(page: import("@playwright/test").Page, name: string) {
-  await expect.poll(() => new URL(page.url()).searchParams.get("c")).toBe(name);
-}
+import { test, expect, API, dialog, fillTab, openRequest, openLauncher, response, send, statusBadge, urlInput, methodSelect, FOLDER_ONLY } from "./fixtures/test";
+import { seedPrivateFolder, openWorkspace, openFile, expand, node, tree } from "./fixtures/directory";
 
 // People at the edges: blocked storage, no network, other scripts, keyboard
-// only, the smallest phones, huge collections, screen readers.
+// only, the smallest phones, huge folders, screen readers.
+
+const folderOnly = (browserName: string) => test.skip(browserName !== "chromium", FOLDER_ONLY);
 
 test.describe("browsers with storage blocked", () => {
   // "Block all cookies", some private modes and locked-down profiles make every
   // localStorage access throw. The app must still open and send requests.
   for (const mode of ["throws on access", "throws on write"] as const) {
-    test(`the app works when localStorage ${mode}`, async ({ page }) => {
-      await page.addInitScript((m) => {
+    const block = (page: Page) =>
+      page.addInitScript((m) => {
         const err = () => {
           throw new DOMException("The operation is insecure.", "SecurityError");
         };
@@ -44,19 +25,32 @@ test.describe("browsers with storage blocked", () => {
           };
         }
       }, mode);
-      await page.goto("/hittable");
-      await sidebar(page).getByRole("button", { name: "New Collection" }).click();
-      await dialog(page, "Create collection").getByRole("textbox").fill("Private");
-      await page.keyboard.press("Enter");
-      await expectOpened(page, "Private");
-      await expect(sidebar(page).getByRole("button", { name: "Private" })).toBeVisible();
+
+    test(`the launcher and the palette work when localStorage ${mode}`, async ({ page }) => {
+      await block(page);
+      await openLauncher(page);
+      await expect(page.getByRole("heading", { level: 1, name: "Open a workspace" })).toBeVisible();
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.keyboard.type("keyboard shortcuts");
+      await page.keyboard.press("Enter"); // the palette remembers recent picks in localStorage
+      await expect(dialog(page, "Keyboard shortcuts")).toBeVisible();
+    });
+
+    test(`a folder request can be sent when localStorage ${mode}`, async ({ page, browserName }) => {
+      folderOnly(browserName);
+      await block(page);
+      await openRequest(page, { url: `${API}/users/1` });
+      await send(page);
+      await expect(statusBadge(page)).toHaveText("200 OK");
     });
   }
 });
 
 test.describe("unreliable networks", () => {
-  test("going offline mid-session shows an error, and the next send works again", async ({ page, seed, context }) => {
-    await blankRequest(page, seed, `${API}/users`);
+  test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
+
+  test("going offline mid-session shows an error, and the next send works again", async ({ page, context }) => {
+    await openRequest(page, { url: `${API}/users` });
     await context.setOffline(true);
     await send(page);
     await expect(response(page).getByText(/fail|network|offline|load/i).first()).toBeVisible();
@@ -65,8 +59,8 @@ test.describe("unreliable networks", () => {
     await expect(statusBadge(page)).toContainText("200");
   });
 
-  test("double-clicking Send does not break the response", async ({ page, seed }) => {
-    await blankRequest(page, seed, `${API}/slow`);
+  test("double-clicking Send does not break the response", async ({ page }) => {
+    await openRequest(page, { url: `${API}/slow` });
     await urlInput(page).click();
     const sendBtn = page.getByRole("button", { name: /^(Send|Sending…)( \(|$)/ });
     await sendBtn.dblclick();
@@ -75,27 +69,39 @@ test.describe("unreliable networks", () => {
 });
 
 test.describe("any language, any text", () => {
-  const names = ["Café ☕ API", "مرحبا بالعالم", "日本語のコレクション", "👩🏽‍💻 emoji team"];
+  test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
 
-  test("collections and routes named in any script survive a reload", async ({ page }) => {
-    for (const name of names) {
-      await page.goto("/hittable"); // creating a collection opens it; start from the list
-      await sidebar(page).getByRole("button", { name: "New Collection" }).click();
-      await dialog(page, "Create collection").getByRole("textbox").fill(name);
-      await page.keyboard.press("Enter");
-      await expectOpened(page, name);
+  const names = ["Café ☕ API", "مرحبا بالعالم", "日本語のリクエスト", "👩🏽‍💻 emoji team"];
+
+  test("files named in any script are listed, open in the Runner, and survive a reload", async ({ page }) => {
+    const files = Object.fromEntries(
+      names.map((n, i) => [`hittable/${n}/${n}.hit`, JSON.stringify({ method: "GET", url: `${API}/users/${i + 1}`, headers: {}, params: {}, body: "", response: null })]),
+    );
+    await seedPrivateFolder(page, files);
+    await openWorkspace(page);
+    for (const [i, n] of names.entries()) {
+      await openFile(page, `hittable/${n}/${n}.hit`);
+      await expect(urlInput(page)).toHaveValue(`${API}/users/${i + 1}`);
     }
-    await page.goto("/hittable");
-    for (const name of names) await expect(sidebarItem(page, name)).toBeVisible();
-    // and each opens by its own name, through the URL
-    for (const name of names) {
-      await page.goto(`/hittable?c=${encodeURIComponent(name)}`);
-      await expect(sidebar(page).getByRole("button", { name })).toBeVisible(); // its header, with a way back
+    await page.reload();
+    await expect(tree(page)).toBeVisible();
+    for (const n of names) {
+      await expand(page, `hittable/${n}`);
+      await expect(node(page, `hittable/${n}/${n}.hit`)).toBeVisible();
     }
   });
 
-  test("unicode in the URL, headers and body reaches the server intact", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("a new file can be named in any script", async ({ page }) => {
+    await seedPrivateFolder(page);
+    await openWorkspace(page);
+    await page.getByRole("button", { name: "New File" }).click();
+    await page.getByPlaceholder("File name").fill("طلب ☕.hit");
+    await page.getByPlaceholder("File name").press("Enter");
+    await expect(node(page, "طلب ☕.hit")).toBeVisible();
+  });
+
+  test("unicode in the URL, headers and body reaches the server intact", async ({ page }) => {
+    await openRequest(page);
     await methodSelect(page).selectOption("POST");
     await urlInput(page).fill(`${API}/echo?q=${encodeURIComponent("naïve 東京")}`);
     await fillTab(page, "body", JSON.stringify({ greeting: "مرحبا", city: "東京", mood: "😀" }));
@@ -107,30 +113,25 @@ test.describe("any language, any text", () => {
 });
 
 test.describe("keyboard-only users", () => {
-  test("create a collection, open a request and send it without a mouse", async ({ page, seed }) => {
-    await seed({ collections: [collection("Keys", [route("list", `curl -X GET ${API}/users`)])] });
-    await page.goto("/hittable");
-    const newCollection = sidebar(page).getByRole("button", { name: "New Collection" });
-    await newCollection.focus();
+  test("open a request from the palette and send it without a mouse", async ({ page, browserName }) => {
+    folderOnly(browserName);
+    await openRequest(page, { files: { "hittable/users/list.hit": JSON.stringify({ method: "GET", url: `${API}/users`, headers: {}, params: {}, body: "", response: null }) } });
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.type("list.hit");
     await page.keyboard.press("Enter");
-    await page.keyboard.type("Typed");
-    await page.keyboard.press("Enter");
-    await expectOpened(page, "Typed");
-
-    await openRoute(page, "Keys", "list");
-    await urlInput(page).focus();
+    await expect(urlInput(page)).toHaveValue(`${API}/users`);
     await page.keyboard.press("ControlOrMeta+Enter");
     await expect(statusBadge(page)).toContainText("200");
   });
 
-  test("every dialog closes with Escape and gives focus back", async ({ page }) => {
-    await page.goto("/hittable");
-    const opener = sidebar(page).getByRole("button", { name: "New Collection" });
+  test("a dialog closes with Escape and gives focus back", async ({ page }) => {
+    await openLauncher(page);
+    const opener = page.getByRole("button", { name: "Search and commands" });
     await opener.focus();
     await page.keyboard.press("Enter");
-    await expect(dialog(page, "Create collection")).toBeVisible();
+    await expect(dialog(page, "Command palette")).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(dialog(page, "Create collection")).toBeHidden();
+    await expect(dialog(page, "Command palette")).toBeHidden();
     await expect(opener).toBeFocused();
   });
 });
@@ -146,46 +147,57 @@ test.describe("the smallest screens", () => {
     });
   }
 
-  test("a request can be sent on a 320px screen", async ({ page, seed }) => {
-    await blankRequest(page, seed, `${API}/users`);
+  test("a request can be sent on a 320px screen", async ({ page, browserName }) => {
+    folderOnly(browserName);
+    await openRequest(page, { url: `${API}/users` });
     await send(page);
     await expect(statusBadge(page)).toContainText("200");
   });
 });
 
 test.describe("power users", () => {
-  test("a collection with 1,000 routes opens, filters and stays responsive", async ({ page, seed }) => {
-    const items = Array.from({ length: 1000 }, (_, i) => route(`route-${String(i).padStart(4, "0")}`, `curl -X GET ${API}/users/${i}`));
-    await seed({ collections: [collection("Huge", items)] });
+  test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
+
+  test("a folder with 1,000 requests opens, and the palette finds one quickly", async ({ page }) => {
+    const files = Object.fromEntries(
+      Array.from({ length: 1000 }, (_, i) => [
+        `hittable/many/route-${String(i).padStart(4, "0")}.hit`,
+        JSON.stringify({ method: "GET", url: `${API}/users/${i}`, headers: {}, params: {}, body: "", response: null }),
+      ]),
+    );
+    await seedPrivateFolder(page, files);
+    await openLauncher(page);
     const start = Date.now();
-    await page.goto("/hittable?c=Huge");
-    await expect(sidebarItem(page, "route-0000")).toBeVisible();
-    expect(Date.now() - start).toBeLessThan(10_000);
-    await sidebar(page).getByRole("textbox").fill("route-0999");
-    await expect(sidebarItem(page, "route-0999")).toBeVisible();
-    await expect(sidebarItem(page, "route-0001")).toBeHidden();
+    await page.getByRole("button", { name: "Open a local folder" }).click(); // writes the 1,000 files, then opens
+    await expand(page, "hittable");
+    await expand(page, "hittable/many");
+    await expect(node(page, "hittable/many/route-0000.hit")).toBeVisible();
+    expect(Date.now() - start).toBeLessThan(15_000);
+
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.type("route-0999");
+    await expect(dialog(page, "Command palette").getByRole("option").first()).toContainText("route-0999.hit");
+    await page.keyboard.press("Enter");
+    await expect(urlInput(page)).toHaveValue(`${API}/users/999`);
   });
 });
 
 test.describe("reduced motion", () => {
-  test("with reduce motion on, transitions are instant", async ({ page }) => {
+  test("with reduce motion on, animations are off and transitions are instant", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/hittable");
-    const duration = await sidebar(page).evaluate((el) => {
-      const panel = el.querySelector<HTMLElement>("[class*=transition]") ?? el;
-      return getComputedStyle(panel).transitionDuration;
-    });
+    await page.goto("/");
+    // The hero's request → commit sequence is simply shown.
+    await expect(page.locator(".hit-reveal").first()).toHaveCSS("animation-name", "none");
+    const duration = await page.locator("[class*=transition]").first().evaluate((el) => getComputedStyle(el).transitionDuration);
     expect(parseFloat(duration)).toBeLessThan(0.01);
   });
 });
 
 test.describe("screen-reader users", () => {
   // Serious and critical WCAG A/AA problems block someone using a screen reader
-  // or keyboard. Colour contrast is checked too (NFR-1): it used to be switched
-  // off because most labels were 8–10px at 15–30% white.
+  // or keyboard. Colour contrast is checked too (NFR-1).
   // Checked with motion reduced (set before the page loads), so a fade-in
-  // caught half way, like the landing page's terminal demo, is not reported
-  // as low contrast.
+  // caught half way, like the landing page's hero, is not reported as low contrast.
   test.beforeEach(({ page }) => page.emulateMedia({ reducedMotion: "reduce" }));
 
   const blockingViolations = async (page: Page) => {
@@ -203,11 +215,19 @@ test.describe("screen-reader users", () => {
     });
   }
 
-  test("a request with its response has no serious accessibility violations", async ({ page, seed }) => {
-    await blankRequest(page, seed);
-    await urlInput(page).fill(`${API}/users`);
+  test("the launcher with the old-collections banner and a sign-in error has no serious accessibility violations", async ({ page, seed }) => {
+    await seed({ hittable: JSON.stringify([{ collectionName: "Old", items: [] }]) });
+    await page.goto("/hittable?auth_error=denied");
+    await expect(page.getByRole("region", { name: /Your old browser collections/ })).toBeVisible();
+    expect(await blockingViolations(page)).toEqual([]);
+  });
+
+  test("a folder request with its response has no serious accessibility violations", async ({ page, browserName }) => {
+    folderOnly(browserName);
+    await openRequest(page, { url: `${API}/users` });
     await send(page);
     await expect(statusBadge(page)).toBeVisible();
+    await expect(response(page).getByText('"Ada Lovelace"')).toBeVisible();
     expect(await blockingViolations(page)).toEqual([]);
   });
 });

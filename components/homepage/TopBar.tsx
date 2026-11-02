@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useSelectedLayoutSegment } from "next/navigation";
-import WorkspaceSwitcher from "@/components/workspace/WorkspaceSwitcher";
 import { useSyncExternalStore } from "react";
 import { Search } from "lucide-react";
 import { openTool } from "@/utils/uiEvents";
+import AccountMenu from "@/components/auth/AccountMenu";
 
 const noSubscribe = () => () => {};
 const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform);
@@ -25,24 +25,40 @@ function PaletteButton() {
       aria-label="Search and commands"
       aria-keyshortcuts="Control+K Meta+K"
       title={`Search and commands (${mac ? "⌘K" : "Ctrl+K"})`}
-      className="flex min-h-8 items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-2.5 py-1.5 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-(--brand)"
+      className="flex min-h-8 items-center gap-2 rounded-md border border-(--border-strong) bg-(--ink-800) px-2.5 text-xs text-(--muted) transition-colors hover:bg-(--ink-600) hover:text-(--text)"
     >
       <Search size={14} aria-hidden="true" />
       <span className="hidden sm:inline">Search…</span>
-      <kbd className="hidden rounded border border-white/15 px-1.5 font-mono text-[11px] text-white/70 sm:inline">
+      <kbd className="hidden rounded border border-(--border-strong) px-1.5 font-mono text-[11px] sm:inline">
         {mac ? "⌘K" : "Ctrl K"}
       </kbd>
     </button>
   );
 }
 
+// The mark: the slanted "H" on a rounded tile. `size` is the glyph; the tile is twice that.
+export function BrandMark({ size = 16 }: { size?: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{ width: size * 2, height: size * 2 }}
+      className="relative flex shrink-0 items-center justify-center rounded-xl border border-white/10 bg-linear-to-b from-(--ink-500) to-(--ink-800) transition-all duration-300 group-hover:border-white/20 group-hover:shadow-[0_4px_16px_rgba(255,255,255,0.1)]"
+    >
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-100 transition-transform duration-300 group-hover:scale-110">
+        <path d="M10 3L6 21M18 3l-4 18M4 12h16" />
+      </svg>
+    </span>
+  );
+}
+
 type NavLink = { label: string; href: string; external?: boolean };
 const GITHUB: NavLink = { label: "GitHub", href: "https://github.com/Pantho-Haque/hittable", external: true };
 
-// Landing page: sections of the page. Docs: the three places a reader goes.
 const HOME_NAV_LINKS: NavLink[] = [
+  { label: "How it works", href: "/#how" },
   { label: "Features", href: "/#features" },
-  { label: "Shortcuts", href: "/#shortcuts" },
+  { label: "Privacy", href: "/#privacy" },
+  { label: "Terminal", href: "/#terminal" },
   { label: "Docs", href: "/docs" },
   GITHUB,
 ];
@@ -61,87 +77,59 @@ export default function Topbar() {
   const segment = useSelectedLayoutSegment();
   const isApp = segment === "hittable";
   const isDocs = segment === "docs";
+  const links = isDocs ? DOCS_NAV_LINKS : HOME_NAV_LINKS;
 
   return (
-    <header className="relative z-50 flex items-center justify-between px-6 h-11 border-b border-white/5 bg-(--ink-950)/90 backdrop-blur-md shrink-0">
-      {/* Left — logo + breadcrumb */}
-      <div className="flex items-center gap-3">
-        <Link href="/" className="flex items-center gap-3 group outline-none">
-          <div className="relative flex items-center justify-center w-8 h-8 rounded-xl bg-linear-to-b from-(--ink-500) to-(--ink-800) border border-white/10 transition-all duration-300 group-hover:shadow-[0_4px_16px_rgba(255,255,255,0.1)] group-hover:border-white/20">
-            <div className="absolute inset-0 rounded-xl bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-100 transition-transform duration-300 group-hover:scale-110">
-              <path d="M10 3L6 21M18 3l-4 18M4 12h16" />
-            </svg>
-          </div>
-          <span className="text-[11px] font-bold tracking-[0.18em] uppercase text-white/50 group-hover:text-white/80 transition-colors">
-            Hittable
-          </span>
+    <header className="relative z-50 flex h-11 shrink-0 items-center justify-between gap-3 border-b border-(--border) bg-(--ink-950) px-4 sm:px-6">
+      <div className="flex min-w-0 items-center gap-3">
+        <Link href="/" className="group flex items-center gap-2 rounded-sm text-sm font-semibold tracking-tight text-(--text)">
+          <BrandMark />
+          Hittable
         </Link>
 
         {(isApp || isDocs) && (
-          <>
-            <span className="text-white/50 text-xs">/</span>
-            <span className="text-[11px] tracking-[0.15em] uppercase text-cyan-400/70">
-              {isApp ? "App" : "Docs"}
-            </span>
-          </>
+          <span className="font-mono text-xs text-(--muted)">
+            <span aria-hidden="true">/ </span>
+            {isApp ? "app" : "docs"}
+          </span>
+        )}
+
+        {!isApp && (
+          <nav aria-label="Site" className={`${isDocs ? "md:flex" : "lg:flex"} ml-6 hidden items-center gap-5`}>
+            {links.map((item) => {
+              const current =
+                (item.href === "/docs" && pathname === "/docs") ||
+                (item.href !== "/docs" && !item.external && !item.href.includes("#") && pathname.startsWith(item.href));
+              return (
+                <a
+                  key={item.label}
+                  href={item.href}
+                  target={item.external ? "_blank" : undefined}
+                  rel={item.external ? "noopener noreferrer" : undefined}
+                  aria-current={current ? "page" : undefined}
+                  className={`text-[13px] transition-colors hover:text-(--text) ${current ? "text-(--text)" : "text-(--muted)"}`}
+                >
+                  {item.label}
+                </a>
+              );
+            })}
+          </nav>
         )}
       </div>
 
-      {/* Center — nav links (hidden on app page to save space) */}
-      {!isApp && (
-        <nav className="hidden sm:flex items-center gap-6 absolute left-1/2 -translate-x-1/2">
-          {(isDocs ? DOCS_NAV_LINKS : HOME_NAV_LINKS).map((item) => (
-            <a
-              key={item.label}
-              href={item.href}
-              target={item.external ? "_blank" : undefined}
-              rel={item.external ? "noopener noreferrer" : undefined}
-              className={`text-[11px] tracking-[0.2em] uppercase transition-colors hover:text-cyan-400 ${
-                (item.href === "/docs" && pathname === "/docs") || (item.href !== "/docs" && !item.external && pathname.startsWith(item.href))
-                  ? "text-cyan-400"
-                  : "text-white/50"
-              }`}
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      )}
-
-      {/* Right — CTA */}
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2">
         {isApp ? (
-          <>
-            <PaletteButton />
-            <WorkspaceSwitcher />
-          </>
+          <PaletteButton />
         ) : (
           <Link
             href="/hittable"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-[0.15em] uppercase rounded text-black transition-all hover:scale-105 active:scale-95"
-            style={{
-              background: "var(--brand)",
-              boxShadow: "0 0 12px rgba(0,229,204,0.3)",
-            }}
+            className="hidden min-h-8 items-center rounded-md px-2.5 text-[13px] font-medium text-(--brand) transition-colors hover:bg-(--accent-soft) sm:flex"
           >
-            Open App
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
+            Open app
           </Link>
         )}
+        <AccountMenu />
       </div>
-
-      {/* Bottom glow line */}
-      <div className="absolute bottom-0 left-0 right-0 h-px bg-linear-to-r from-transparent via-cyan-500/20 to-transparent" />
     </header>
   );
 }

@@ -1,13 +1,4 @@
-import { THittableCurlJson, TResponseJson, THittableEnv, THittableCollections, THistory } from "./hittable";
-
-export type TWorkspaceMode = "local" | "directory";
-
-export type TDirectoryNode = {
-  name: string;
-  kind: "file" | "directory";
-  handle: FileSystemFileHandle | FileSystemDirectoryHandle;
-  children?: TDirectoryNode[];
-};
+import { THittableCurlJson, TResponseJson, THittableEnv } from "./hittable";
 
 export type THitFileContent = {
   method: string;
@@ -25,41 +16,28 @@ export type THitFileContent = {
     cookies?: unknown;
     durationMs?: number;
     sizeBytes?: number;
+    url?: string;
   } | null;
 };
 
 export type TEnvFile = Record<string, string>;
 
+/**
+ * What the request Runner (URL bar, tabs, response panel) works on: one open
+ * .hit file, from a local folder or a GitHub repository.
+ */
 export type DataSource = {
   formInput: THittableCurlJson;
   setFormInput: React.Dispatch<React.SetStateAction<THittableCurlJson>>;
   proxyResponse: TResponseJson;
   setProxyResponse: React.Dispatch<React.SetStateAction<TResponseJson>>;
-  selectorResponse: {
-    collectionName: string;
-    folderPath: string[];
-    curlName: string;
-    env?: THittableEnv;
-    secrets?: THittableEnv;
-    curlJson: THittableCurlJson;
-    responseJson?: TResponseJson;
-  } | null;
-  setSelectorResponse: React.Dispatch<React.SetStateAction<{
-    collectionName: string;
-    folderPath: string[];
-    curlName: string;
-    env?: THittableEnv;
-    secrets?: THittableEnv;
-    curlJson: THittableCurlJson;
-    responseJson?: TResponseJson;
-  } | null>>;
+  /** Variables for <<KEY>>: env.json with env.local.json layered on top. */
+  env: THittableEnv;
+  /** Identifies the open request (its path), e.g. to compare responses per request. */
+  requestKey: string;
   extensionAvailable: boolean;
-  extensionChecked: boolean;
   isUnsaved: () => boolean;
   handleSaveCollection: () => void;
-  handleRevert: () => void;
-  collections: THittableCollections;
-  setCollections: React.Dispatch<React.SetStateAction<THittableCollections>>;
-  history: THistory;
-  setHistory: React.Dispatch<React.SetStateAction<THistory>>;
+  /** No editing: a repository you cannot push to, or an archived one. */
+  readOnly?: boolean;
 };

@@ -5,12 +5,12 @@ import {
   createDirectory,
   readFileText,
 } from "@/utils/workspace/fsHelpers";
+import { HITTABLE_DIR } from "./backend";
 
-const HITTABLE_DIR = "hittable";
+// Folder-only setup: a GitHub repo is initialised through its own staged changes.
 const ENV_FILE = "env.json";
-// FR-17: values that must not reach git. Same flat map as env.json, layered
-// on top of it, and listed in hittable/.gitignore so it is never committed.
-export const LOCAL_ENV_FILE = "env.local.json";
+// FR-17: listed in hittable/.gitignore so it is never committed.
+const LOCAL_ENV_FILE = "env.local.json";
 const GITIGNORE = ".gitignore";
 const NOTES_DIR = "notes";
 const EMPTY_ENV = "{}";
@@ -71,14 +71,6 @@ export async function scaffoldHittable(
   return hittableDir;
 }
 
-export async function validateHittable(
-  root: FileSystemDirectoryHandle
-): Promise<FileSystemDirectoryHandle> {
-  const hittableDir = await root.getDirectoryHandle(HITTABLE_DIR);
-  await scaffoldHittable(root);
-  return hittableDir;
-}
-
 /**
  * Adds env.local.json to hittable/.gitignore unless a line already names it.
  * Appends; never rewrites what the user has there.
@@ -97,21 +89,4 @@ export async function ensureLocalEnvIgnored(hittableDir: FileSystemDirectoryHand
     // A read-only folder still opens; it just cannot be protected.
     console.error("Could not update hittable/.gitignore:", err);
   }
-}
-
-async function readFlatMap(dir: FileSystemDirectoryHandle, name: string): Promise<Record<string, string>> {
-  try {
-    const parsed = JSON.parse(await readFileText(await dir.getFileHandle(name)));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)]));
-  } catch {
-    return {};
-  }
-}
-
-/** env.json with env.local.json layered on top (the local value wins). */
-export async function readEnvFile(
-  hittableDir: FileSystemDirectoryHandle
-): Promise<Record<string, string>> {
-  return { ...(await readFlatMap(hittableDir, ENV_FILE)), ...(await readFlatMap(hittableDir, LOCAL_ENV_FILE)) };
 }

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { test, expect, API, blankRequest, urlInput, send, response, statusBadge } from "./fixtures/test";
+import { test, expect, API, openRequest, FOLDER_ONLY, urlInput, send, response, statusBadge } from "./fixtures/test";
 
 // FR-13 JSONPath filter and FR-14 Compare with the previous response.
 
@@ -27,11 +27,12 @@ async function sendTo(page: Page, path: string) {
   await expect(statusBadge(page)).toHaveText("200 OK");
 }
 
+test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
 test.beforeEach(({ page }) => page.emulateMedia({ reducedMotion: "reduce" }));
 
 test.describe("JSONPath filter", () => {
-  test("filters the tree to the matches, with feedback for bad paths and no results", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("filters the tree to the matches, with feedback for bad paths and no results", async ({ page }) => {
+    await openRequest(page);
     await sendTo(page, "/users");
     const r = response(page);
     await filterButton(page).click();
@@ -64,8 +65,8 @@ test.describe("JSONPath filter", () => {
 });
 
 test.describe("Compare with the previous response", () => {
-  test("is disabled before there is an earlier response, then lists what changed", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("is disabled before there is an earlier response, then lists what changed", async ({ page }) => {
+    await openRequest(page);
     await sendTo(page, "/users/1");
     await expect(compareButton(page)).toHaveAttribute("aria-disabled", "true");
     await expect(compareButton(page)).toHaveAttribute("title", "No earlier response for this request yet");
@@ -100,8 +101,8 @@ test.describe("Compare with the previous response", () => {
     await expect(compareButton(page)).toBeFocused();
   });
 
-  test("two identical responses show no differences", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("two identical responses show no differences", async ({ page }) => {
+    await openRequest(page);
     await sendTo(page, "/users/3");
     await send(page);
     await expect(compareButton(page)).toHaveAttribute("aria-disabled", "false");
@@ -111,9 +112,9 @@ test.describe("Compare with the previous response", () => {
     await expect(compareView(page).getByText("No differences", { exact: true })).toBeVisible();
   });
 
-  test("fits a phone screen", async ({ page, seed }) => {
+  test("fits a phone screen", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await blankRequest(page, seed);
+    await openRequest(page);
     await sendTo(page, "/users/1");
     await urlInput(page).fill(`${API}/users/2`);
     await send(page);

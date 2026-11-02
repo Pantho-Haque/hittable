@@ -1,209 +1,248 @@
-import { ElementType } from "react";
-
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { Github, ArrowRight } from "lucide-react";
-import { TerminalDemo } from "../components/homepage/TerminalDemo";
-import { LANDING_PAGE_DATA } from "../constants/landing";
-import { GetResume } from "@/services";
-import { PortfolioSection } from "@/components";
+import { Github } from "lucide-react";
+import { RequestCommitDemo } from "@/components/homepage/RequestCommitDemo";
+import { CopyCommand } from "@/components/homepage/CopyCommand";
+import { BrandMark } from "@/components/homepage/TopBar";
 import { SHORTCUTS } from "@/constants/shortcuts";
+import {
+  AUTHOR_URL,
+  FEATURES,
+  GITHUB_REPO_URL,
+  INSTALL_COMMAND,
+  NOT_REQUESTED,
+  PRIVACY_FACTS,
+  SCOPES,
+  SIGN_IN_URL,
+  STEPS,
+} from "@/constants/landing";
 
-function FeatureCard({
-  icon: Icon,
-  title,
-  desc,
-}: {
-  icon: ElementType;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <div className="flex flex-col gap-4 p-6 rounded-2xl border border-white/5 bg-white/2 hover:bg-white/4 transition-colors">
-      <div className="w-10 h-10 rounded-lg bg-(--ink-600)/70 border border-white/5 flex items-center justify-center text-slate-300">
-        <Icon size={20} />
-      </div>
-      <div>
-        <h3 className="text-base font-semibold text-slate-100 mb-1.5">
-          {title}
-        </h3>
-        <p className="text-sm text-slate-400 leading-relaxed">{desc}</p>
-      </div>
-    </div>
-  );
-}
+const external = { target: "_blank", rel: "noopener noreferrer" } as const;
+const LINK = "text-(--brand) underline decoration-(--border-strong) underline-offset-4 hover:decoration-(--brand)";
 
-function KbdBadge({ keys, label }: { keys: string[]; label: string }) {
+// The page is a git log: every section is a commit on one branch line (the
+// left rail), and its node sits next to the short SHA above the heading.
+function Section({ id, sha, title, lede, children }: { id: string; sha: string; title: string; lede?: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-3 border-b border-white/5 last:border-0">
-      <span className="text-sm text-slate-400">{label}</span>
-      <div className="flex items-center gap-1.5">
-        {keys.map((k, i) => (
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-14 py-16 sm:py-20">
+      <header className="mb-10 max-w-2xl">
+        <p className="relative font-mono text-xs text-(--muted)">
           <span
-            key={i}
-            className="px-2 py-1 rounded bg-(--ink-600) border border-(--ink-400) text-xs font-mono text-slate-300 min-w-[28px] text-center shadow-sm"
-          >
-            {k}
-          </span>
-        ))}
-      </div>
-    </div>
+            aria-hidden="true"
+            className="absolute -left-[30px] top-[2.5px] h-[11px] w-[11px] rounded-full border-2 border-(--brand) bg-(--ink-900) sm:-left-[46px]"
+          />
+          {sha}
+        </p>
+        <h2 id={`${id}-title`} className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-(--text) sm:text-[32px] sm:leading-tight">
+          {title}
+        </h2>
+        {lede && <p className="mt-3 text-base leading-relaxed text-(--muted)">{lede}</p>}
+      </header>
+      {children}
+    </section>
   );
 }
 
-export default async function HomePage() {
-  // const { hero, skills } = PORTFOLIO_DATA;
-  const { appInfo, features } = LANDING_PAGE_DATA;
-  const res = await GetResume();
-  const hero = res.hero;
-  const skills = res.experience[0].stack;
-
+function Keys({ keys }: { keys: string[] }) {
   return (
-    <main className="min-h-full bg-(--ink-900) text-slate-100 overflow-x-hidden font-sans selection:bg-(--ink-500)">
-      {/* Subtle Background Pattern */}
-      <div
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.15]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 2px 2px, rgba(0,229,204,0.18) 1px, transparent 0)",
-          backgroundSize: "32px 32px",
-        }}
-      />
-      <div className="pointer-events-none fixed inset-0 z-0 bg-linear-to-b from-transparent via-(--ink-900)/80 to-(--ink-900)" />
+    <span className="flex shrink-0 items-center gap-1">
+      {keys.map((k) => (
+        <kbd
+          key={k}
+          className="min-w-7 rounded border border-(--border-strong) border-b-2 bg-(--ink-800) px-1.5 py-0.5 text-center font-mono text-xs text-(--text)"
+        >
+          {k}
+        </kbd>
+      ))}
+    </span>
+  );
+}
 
-      <div className="relative z-10">
+export default function HomePage() {
+  return (
+    <main className="overflow-x-hidden bg-(--ink-900) text-(--text)">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
         {/* ── Hero ── */}
-        <section className="max-w-6xl mx-auto px-6 pt-24 pb-20 flex flex-col lg:flex-row items-center gap-16">
-          <div className="flex-1 flex flex-col">
-            <a
-              href={appInfo.githubUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 transition-colors w-fit text-xs font-medium text-slate-400 tracking-wide uppercase"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Open Source
-            </a>
-            <h1 className="text-5xl lg:text-7xl font-bold tracking-tight text-white leading-[1.1]">
-              <span className="text-slate-300 text-2xl mt-0 -ml-7">
-                {" "}
-                ✨ Introducing
-              </span>{" "}
-              <br />
-              <span className="text-yellow-200">
-                {appInfo.introducing}
-              </span>{" "}
-              <br />
-              <span className="text-slate-300">{appInfo.title}</span> <br />
-              <span className="text-slate-400">{appInfo.subtitle}</span>
+        <section className="grid items-start gap-12 pb-16 pt-14 sm:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-16 lg:pb-24 lg:pt-24">
+          <div className="min-w-0 max-w-xl">
+            <h1 className="text-[40px] font-semibold leading-[1.05] tracking-[-0.035em] text-(--text) sm:text-5xl lg:text-[56px]">
+              API requests that live in your repo.
             </h1>
-            <p className="text-lg text-slate-400 leading-relaxed max-w-lg font-light my-8">
-              {appInfo.description}
+            <p className="mt-6 text-lg leading-relaxed text-(--muted)">
+              Hittable is an open-source API client. Sign in with GitHub, open a repository, and your requests are plain{" "}
+              <code className="font-mono text-base text-(--text)">.hit</code> files in its{" "}
+              <code className="font-mono text-base text-(--text)">hittable/</code> folder. Send them, edit them, and commit the change straight
+              back. No database, no cloud workspace, no account beyond GitHub.
             </p>
-            <div className="flex items-center gap-4">
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <a
+                href={SIGN_IN_URL}
+                className="flex min-h-11 items-center gap-2 rounded-md bg-(--brand) px-5 text-[15px] font-semibold text-(--accent-ink) transition-[filter] hover:brightness-110"
+              >
+                <Github size={18} aria-hidden="true" />
+                Sign in with GitHub
+              </a>
               <Link
                 href="/hittable"
-                className="flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-full bg-(--brand) text-(--ink-950) hover:brightness-110 transition-all shadow-[0_0_20px_rgba(0,229,204,0.3)]"
+                className="flex min-h-11 items-center rounded-md border border-(--border-strong) px-5 text-[15px] font-medium text-(--text) transition-colors hover:bg-(--ink-800)"
               >
-                Launch App
-                <ArrowRight size={16} />
+                Open a local folder
               </Link>
-              <a
-                href={appInfo.githubUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-6 py-3 text-sm font-medium rounded-full border border-(--ink-400) bg-(--ink-800) text-white hover:bg-(--ink-600) transition-colors"
-              >
-                <Github size={16} />
-                GitHub
-              </a>
             </div>
-          </div>
-          <div className="flex-1 w-full flex justify-center lg:justify-end">
-            <TerminalDemo />
-          </div>
-        </section>
-
-        {/* ── Features ── */}
-        <section
-          id="features"
-          className="max-w-6xl mx-auto px-6 py-20 border-t border-white/5"
-        >
-          <div className="mb-12">
-            <h2 className="text-3xl font-bold text-white tracking-tight">
-              Built for developers who move fast.
-            </h2>
-            <p className="text-slate-400 mt-3 text-lg font-light">
-              A refined toolset focusing on speed and simplicity.
+            <p className="mt-4 text-sm text-(--muted)">
+              Local folders work in Chrome and Edge, with no account. <a href="#privacy" className={LINK}>What sign-in can access</a>
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {features.map((feature, idx) => (
-              <FeatureCard
-                key={idx}
-                icon={feature.icon}
-                title={feature.title}
-                desc={feature.desc}
-              />
-            ))}
+          <div className="flex min-w-0 justify-center lg:justify-end">
+            <RequestCommitDemo />
           </div>
         </section>
 
-        {/* ── Keyboard shortcuts ── */}
-        <section
-          id="shortcuts"
-          className="max-w-6xl mx-auto px-6 py-20 border-t border-white/5"
-        >
-          <div className="flex flex-col lg:flex-row gap-12 items-start">
-            <div className="flex-1">
-              <h2 className="text-3xl font-bold text-white tracking-tight mb-4">
-                Stay in the flow.
-              </h2>
-              <p className="text-lg text-slate-400 leading-relaxed font-light">
-                Every action is a keystroke away. No clicking through menus —
-                just code and send.
+        {/* ── The log ── */}
+        <div className="ml-[5px] border-l border-(--border) pl-6 sm:pl-10">
+          <Section
+            id="how"
+            sha="e81d4b6"
+            title="From sign-in to commit"
+            lede="Your requests are files in your repository, so they are reviewed, branched and versioned like the code they call."
+          >
+            <ol className="relative grid gap-10 sm:grid-cols-3 sm:gap-8">
+              <span aria-hidden="true" className="absolute left-0 right-0 top-[5px] hidden h-px bg-(--border-strong) sm:block" />
+              {STEPS.map((s) => (
+                <li key={s.sha} className="relative min-w-0 sm:pt-8">
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-0 top-0 hidden h-[11px] w-[11px] rounded-full border-2 border-(--muted) bg-(--ink-900) sm:block"
+                  />
+                  <p className="font-mono text-xs text-(--muted)">{s.sha}</p>
+                  <h3 className="mt-1 text-base font-semibold text-(--text)">{s.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-(--muted)">{s.desc}</p>
+                  <p className="mt-4 inline-block max-w-full truncate rounded border border-(--border) bg-(--ink-800) px-2 py-1 font-mono text-xs text-(--text)">
+                    {s.artifact}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </Section>
+
+          <Section id="features" sha="b20f7c3" title="A full client, in plain files" lede="Everything below works on a GitHub repository and on a local folder.">
+            <dl className="grid border-t border-(--border) md:grid-cols-2 md:gap-x-12">
+              {FEATURES.map((f) => (
+                <div key={f.title} className="min-w-0 border-b border-(--border) py-5">
+                  <dt className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                    <span className="font-medium text-(--text)">{f.title}</span>
+                    <code className="max-w-full truncate rounded border border-(--border) bg-(--ink-800) px-1.5 py-0.5 font-mono text-xs text-(--text)">
+                      {f.token}
+                    </code>
+                  </dt>
+                  <dd className="mt-1.5 text-sm leading-relaxed text-(--muted)">{f.desc}</dd>
+                </div>
+              ))}
+            </dl>
+          </Section>
+
+          <Section
+            id="privacy"
+            sha="7a4e19d"
+            title="Permissions and privacy"
+            lede="Sign-in uses a GitHub OAuth App. This is everything it asks for, and where the token goes."
+          >
+            <div className="grid gap-12 lg:grid-cols-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-medium text-(--muted)">Requested</h3>
+                <ul className="mt-3 border-t border-(--border)">
+                  {SCOPES.map((s) => (
+                    <li key={s.name} className="grid grid-cols-[88px_minmax(0,1fr)] gap-4 border-b border-(--border) py-4">
+                      <code className="font-mono text-sm text-(--brand)">{s.name}</code>
+                      <span className="text-sm leading-relaxed text-(--text)">{s.why}</span>
+                    </li>
+                  ))}
+                </ul>
+                <h3 className="mt-8 text-sm font-medium text-(--muted)">Not requested</h3>
+                <ul className="mt-3 flex flex-wrap gap-2" aria-label="Scopes not requested">
+                  {NOT_REQUESTED.map((n) => (
+                    <li key={n} className="rounded border border-(--border) px-2 py-1 font-mono text-xs text-(--muted) line-through">
+                      {n}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 text-sm leading-relaxed text-(--muted)">No organisation admin, workflow, webhook or delete access.</p>
+              </div>
+              <dl className="min-w-0 border-t border-(--border)">
+                {PRIVACY_FACTS.map((p) => (
+                  <div key={p.term} className="grid gap-1 border-b border-(--border) py-4 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-4">
+                    <dt className="text-sm font-medium text-(--text)">{p.term}</dt>
+                    <dd className="text-sm leading-relaxed text-(--muted)">{p.detail}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="pt-4 text-sm">
+                <a href="https://github.com/settings/applications" {...external} className={LINK}>
+                  Review authorised apps on GitHub
+                </a>
               </p>
             </div>
-            <div className="flex-1 w-full flex flex-col gap-2 bg-(--ink-800)/50 p-6 rounded-2xl border border-white/5">
-              {SHORTCUTS.map((s) => (
-                <KbdBadge key={s.id} keys={s.keys} label={s.description} />
-              ))}
-            </div>
-          </div>
-        </section>
+          </Section>
 
-        {/* ── Professional Profile / Built By ── */}
-        <PortfolioSection hero={hero} skills={skills} />
+          <Section
+            id="terminal"
+            sha="0c95e2a"
+            title="The same files in your terminal"
+            lede={
+              <>
+                <code className="font-mono text-[15px] text-(--text)">hittable</code> is a terminal app that reads the same{" "}
+                <code className="font-mono text-[15px] text-(--text)">hittable/</code> folder: browse, send and edit requests, with git and an
+                editor built in. Open source, like the web app.
+              </>
+            }
+          >
+            <div className="max-w-3xl">
+              <CopyCommand command={INSTALL_COMMAND} />
+              <p className="mt-4 text-sm leading-relaxed text-(--muted)">
+                <Link href="/docs/shellapp" className={LINK}>
+                  Terminal app docs
+                </Link>
+                <span aria-hidden="true"> · </span>
+                Calling <code className="font-mono text-(--text)">localhost</code> from the web app?{" "}
+                <Link href="/docs/browser-extension" className={LINK}>
+                  Add the browser extension
+                </Link>
+              </p>
+            </div>
+          </Section>
+
+          <Section id="shortcuts" sha="4d1b8f0" title="Keyboard first" lede="Every action has a key. Press ? in the app for the full list.">
+            <dl className="grid border-t border-(--border) md:grid-cols-2 md:gap-x-12">
+              {SHORTCUTS.map((s) => (
+                <div key={s.id} className="flex min-h-12 items-center justify-between gap-4 border-b border-(--border) py-2">
+                  <dt className="text-sm text-(--muted)">{s.description}</dt>
+                  <dd>
+                    <Keys keys={s.keys} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </Section>
+        </div>
 
         {/* ── Footer ── */}
-        <footer className="max-w-6xl mx-auto px-6 py-8 border-t border-white/5 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded flex items-center justify-center border border-white/20 bg-white/10 text-white text-[11px] font-bold">
-              H
-            </div>
-            <span className="text-xs text-slate-400 font-medium">
-              Hittable · MIT License
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-6">
-            <a
-              href={
-                res.hero.contactLinks?.find(
-                  (link: { icon: string }) => link.icon === "github",
-                )?.href ?? "#"
-              }
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-slate-400 hover:text-slate-300 transition-colors font-medium"
-            >
-              Pantho Haque
-            </a>
-            <Link
-              href="/hittable"
-              className="text-xs text-slate-400 hover:text-slate-300 transition-colors font-medium"
-            >
-              Launch App
+        <footer className="flex flex-col gap-4 border-t border-(--border) py-8 text-[13px] text-(--muted) sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-center gap-2 text-(--text)">
+            <BrandMark size={12} />
+            Hittable
+            <span className="text-(--muted)">· open source</span>
+          </span>
+          <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <Link href="/docs" className="hover:text-(--text)">
+              Docs
             </Link>
-          </div>
+            <a href={GITHUB_REPO_URL} {...external} className="hover:text-(--text)">
+              GitHub
+            </a>
+            <a href={AUTHOR_URL} {...external} className="hover:text-(--text)">
+              Made by Pantho Haque
+            </a>
+          </nav>
         </footer>
       </div>
     </main>

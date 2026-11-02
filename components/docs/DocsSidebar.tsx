@@ -40,7 +40,7 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search docs…"
-          className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-[13px] text-slate-100 placeholder:text-white/30 focus:border-cyan-500/40 focus:bg-white/8 outline-none transition-colors"
+          className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-[13px] text-(--text) placeholder:text-white/50 focus:border-(--brand) focus:bg-white/8 outline-none transition-colors"
         />
       </label>
 
@@ -54,7 +54,7 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
                 onClick={() => setOpen(false)}
                 className="block rounded-md px-3 py-2 hover:bg-white/5 transition-colors"
               >
-                <div className="text-slate-100">{r.title}</div>
+                <div className="text-(--text)">{r.title}</div>
                 {r.hint && <div className="text-[12px] text-white/60 truncate">§ {r.hint}</div>}
               </Link>
             </li>
@@ -76,8 +76,8 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
                       className={cn(
                         "-ml-px block border-l py-1.5 pl-3 pr-2 text-[13px] transition-colors",
                         isActive
-                          ? "border-cyan-400 text-cyan-300"
-                          : "border-transparent text-white/55 hover:border-white/20 hover:text-slate-100",
+                          ? "border-(--brand) text-(--brand)"
+                          : "border-transparent text-white/55 hover:border-white/20 hover:text-(--text)",
                       )}
                     >
                       {d.title}
@@ -100,7 +100,7 @@ export default function DocsSidebar({ nav, index }: { nav: NavGroup[]; index: In
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-white/60 hover:text-cyan-300 transition-colors"
+          className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-white/60 hover:text-(--brand) transition-colors"
         >
           {open ? <X size={14} /> : <Menu size={14} />}
           Docs menu

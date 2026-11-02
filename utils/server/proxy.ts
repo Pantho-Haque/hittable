@@ -158,6 +158,7 @@ export type ProxyResult = {
   status: number;
   statusText: string;
   ok: boolean;
+  url: string; // after redirects
   headers: Record<string, string>;
   cookies: Record<string, string>;
   error?: string;
@@ -237,6 +238,9 @@ export async function forward(req: ProxyRequest, opts: { dispatcher?: Agent } = 
     status: upstream.status,
     statusText: upstream.statusText,
     ok: upstream.ok,
+    // Where the response came from after redirects: the HTML preview resolves
+    // the page's relative links (CSS, images, scripts) against it.
+    url: upstream.url,
     headers: responseHeaders,
     cookies: parseSetCookies(setCookies),
   };

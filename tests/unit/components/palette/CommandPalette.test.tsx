@@ -1,65 +1,55 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CommandPalette from "@/components/palette/CommandPalette";
-import { DataProvider } from "@/context/dataContext";
-import { NotificationProvider } from "@/context/notifyContext";
 import { ShortcutProvider } from "@/context/ShortcutKeypressProvider";
-import { sampleCollections } from "../../helpers/dataHarness";
 import { openTool } from "@/utils/uiEvents";
+import type { WsNode } from "@/services/workspace/backend";
 
-const nav = vi.hoisted(() => {
-  let url = "/hittable";
-  const subs = new Set<() => void>();
-  return {
-    get: () => url,
-    push: (u: string) => { url = u; subs.forEach((f) => f()); },
-    reset: (u = "/hittable") => { url = u; },
-    subscribe: (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; },
-  };
-});
-vi.mock("next/navigation", async () => {
-  const React = await import("react");
-  return {
-    useRouter: () => ({ push: nav.push }),
-    useSearchParams: () => {
-      const url = React.useSyncExternalStore(nav.subscribe, nav.get);
-      return React.useMemo(() => new URLSearchParams(url.split("?")[1] ?? ""), [url]);
-    },
-  };
-});
+const push = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
-// Local mode; the folder workspace is not under test here.
-vi.mock("@/context/workspaceContext", () => ({
-  useWorkspace: () => ({
-    mode: "local", tree: [], activeFile: null,
-    setActiveFile: () => {}, openFolder: async () => {}, disconnectFolder: () => {},
-  }),
-}));
+const file = (...path: string[]): WsNode => ({ name: path[path.length - 1], path, kind: "file" });
+const dir = (children: WsNode[], ...path: string[]): WsNode => ({ name: path[path.length - 1], path, kind: "directory", children });
+const tree: WsNode[] = [
+  dir([
+    file("hittable", "env.json"),
+    dir([file("hittable", "users", "list.hit"), file("hittable", "users", "create.hit")], "hittable", "users"),
+  ], "hittable"),
+  file("README.md"),
+];
 
-function mount(url = "/hittable?c=Users&r=List%20users") {
-  nav.reset(url);
-  localStorage.setItem("hittable", JSON.stringify(sampleCollections()));
+const ws = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
+vi.mock("@/context/workspaceContext", () => ({ useWorkspace: () => ws.current }));
+
+function mount() {
   render(
-    <NotificationProvider>
-      <DataProvider>
-        <ShortcutProvider>
-          <input aria-label="Request URL" />
-          <CommandPalette />
-        </ShortcutProvider>
-      </DataProvider>
-    </NotificationProvider>,
+    <ShortcutProvider>
+      <input aria-label="Request URL" />
+      <CommandPalette />
+    </ShortcutProvider>,
   );
   return userEvent.setup();
 }
 
 const palette = () => screen.findByRole("dialog", { name: "Command palette" });
 const options = (d: HTMLElement) => within(d).getAllByRole("option").map((o) => o.textContent ?? "");
+const fn = (name: string) => ws.current[name] as ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  localStorage.clear();
+  push.mockReset();
+  ws.current = {
+    backendKind: "folder", tree, activeFile: null,
+    setActiveFile: vi.fn(), openFolder: vi.fn(async () => true), closeWorkspace: vi.fn(),
+  };
+});
+afterEach(() => {
+  delete (window as Partial<Window>).showDirectoryPicker;
+});
 
 describe("CommandPalette", () => {
-  beforeEach(() => localStorage.clear());
-
   it("opens on Ctrl+K even while an input has focus, and Esc closes it and gives focus back", async () => {
     const user = mount();
     const input = screen.getByRole("textbox", { name: "Request URL" });
@@ -78,12 +68,10 @@ describe("CommandPalette", () => {
   });
 
   // The dialog is loaded lazily; keys typed between Ctrl+K and its input
-  // appearing used to land in whatever had focus (the URL bar), so a quick
-  // "Ctrl+K env Enter" searched for nothing.
+  // appearing used to land in whatever had focus (the URL bar).
   it("keeps what is typed while it is still loading", async () => {
     mount();
     const input = screen.getByRole("textbox", { name: "Request URL" });
-    const before = (input as HTMLTextAreaElement).value;
     input.focus();
     act(() => {
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }));
@@ -93,7 +81,7 @@ describe("CommandPalette", () => {
     });
     const d = await palette();
     expect(within(d).getByRole("combobox")).toHaveValue("env");
-    expect(input).toHaveValue(before); // nothing leaked into the URL bar
+    expect(input).toHaveValue(""); // nothing leaked into the URL bar
   });
 
   it("an Enter pressed while it loads runs the top result", async () => {
@@ -106,7 +94,7 @@ describe("CommandPalette", () => {
         input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
       }
     });
-    expect(await screen.findByRole("dialog", { name: /Environment: Users/ })).toBeInTheDocument();
+    await vi.waitFor(() => expect(fn("setActiveFile")).toHaveBeenCalledWith(["hittable", "env.json"]));
   });
 
   it("also opens with Meta+K (Mac) and from openTool('palette')", async () => {
@@ -119,35 +107,34 @@ describe("CommandPalette", () => {
     expect(await palette()).toBeInTheDocument();
   });
 
-  it("filters requests across collections and folders, showing method and path", async () => {
+  it("finds files anywhere in the tree, showing the folder they are in", async () => {
     const user = mount();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const d = await palette();
-    await user.keyboard("create us");
+    await user.keyboard("create");
     const found = options(d);
-    expect(found[0]).toContain("Create user");
-    expect(found[0]).toContain("POST");
-    expect(found[0]).toContain("Users / Admin");
-    expect(found.join("|")).not.toContain("List users");
+    expect(found[0]).toContain("create.hit");
+    expect(found[0]).toContain("hittable / users");
+    expect(found.join("|")).not.toContain("README.md");
   });
 
-  it("Enter runs the selected request, navigating like the sidebar does", async () => {
-    const user = mount("/hittable");
+  it("Enter opens the selected file by its path", async () => {
+    const user = mount();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const d = await palette();
-    await user.keyboard("create user");
+    await user.keyboard("list.hit");
     const box = within(d).getByRole("combobox");
     expect(box.getAttribute("aria-activedescendant")).toBe(within(d).getAllByRole("option")[0].id);
     await user.keyboard("{Enter}");
     expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
-    await vi.waitFor(() => expect(nav.get()).toBe("/hittable?c=Users&r=Create%20user&p=Admin"));
+    await vi.waitFor(() => expect(fn("setActiveFile")).toHaveBeenCalledWith(["hittable", "users", "list.hit"]));
   });
 
   it("arrow keys move the selection and the run item is remembered as recent", async () => {
-    const user = mount("/hittable");
+    const user = mount();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     let d = await palette();
-    await user.keyboard("user");
+    await user.keyboard(".hit");
     const box = within(d).getByRole("combobox");
     const opts = within(d).getAllByRole("option");
     await user.keyboard("{ArrowDown}");
@@ -161,33 +148,60 @@ describe("CommandPalette", () => {
     expect(options(d)[0]).toBe(second); // empty query: recent first
   });
 
-  it('typing "env" and Enter opens the Environment dialog of the open collection', async () => {
+  it("Close folder closes the workspace and returns to the launcher", async () => {
+    const user = mount();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    await palette();
+    await user.keyboard("close folder{Enter}");
+    await vi.waitFor(() => expect(fn("closeWorkspace")).toHaveBeenCalled());
+    expect(push).toHaveBeenCalledWith("/hittable");
+  });
+
+  it("Open a local folder is offered where the browser supports it, and opens the folder workspace", async () => {
+    window.showDirectoryPicker = vi.fn() as unknown as typeof window.showDirectoryPicker;
+    ws.current = { ...ws.current, backendKind: null, tree: [] };
     const user = mount();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const d = await palette();
-    await user.keyboard("env");
-    expect(options(d)[0]).toContain("Environment variables");
-    await user.keyboard("{Enter}");
-    expect(await screen.findByRole("dialog", { name: "Environment: Users" })).toBeInTheDocument();
+    expect(options(d).join("|")).not.toContain("Close folder");
+    await user.keyboard("open a local folder{Enter}");
+    await vi.waitFor(() => expect(push).toHaveBeenCalledWith("/hittable/folder"));
+    expect(fn("openFolder")).toHaveBeenCalled();
+  });
+
+  it("without File System Access there is no Open a local folder", async () => {
+    mount();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const d = await palette();
+    expect(options(d).join("|")).not.toContain("Open a local folder");
+  });
+
+  it("Copy request as cURL is offered only with a .hit file open", async () => {
+    ws.current.activeFile = { path: ["hittable", "users", "list.hit"], kind: "hit" };
+    mount();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(options(await palette()).join("|")).toContain("Copy request as cURL");
   });
 
   it("action rows show their shortcut from the registry", async () => {
     const user = mount();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const d = await palette();
-    await user.keyboard("toggle sidebar");
+    await user.keyboard("toggle explorer");
     const row = within(d).getAllByRole("option")[0];
-    expect(row).toHaveTextContent("Toggle sidebar");
+    expect(row).toHaveTextContent("Toggle explorer");
     expect(within(row).getByText("B")).toBeInTheDocument();
   });
 
   it("still works when storage is blocked", async () => {
-    const user = mount("/hittable");
+    const user = mount();
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     await palette();
-    await user.keyboard("notes{Enter}");
+    await user.keyboard("readme{Enter}");
     expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(fn("setActiveFile")).toHaveBeenCalledWith(["README.md"]));
+    vi.restoreAllMocks();
   });
 });

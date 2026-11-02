@@ -1,16 +1,18 @@
-import { test, expect, API, blankRequest, urlInput, send, response, statusBadge, clipboardText } from "./fixtures/test";
+import { test, expect, API, openRequest, FOLDER_ONLY, urlInput, send, response, statusBadge, clipboardText } from "./fixtures/test";
 
 const view = (page: import("@playwright/test").Page, name: "JSON tree view" | "Raw text view" | "HTML preview") =>
   response(page).getByRole("button", { name });
 
+test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
+
 test.describe("response viewer", () => {
-  test("before any send it invites you to send", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("before any send it invites you to send", async ({ page }) => {
+    await openRequest(page);
     await expect(response(page).getByText("Send a request to see the response")).toBeVisible();
   });
 
-  test("JSON responses open as a collapsible tree", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("JSON responses open as a collapsible tree", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/users`);
     await send(page);
     const r = response(page);
@@ -25,8 +27,8 @@ test.describe("response viewer", () => {
     await expect(r.getByText('"Ada Lovelace"')).toBeVisible();
   });
 
-  test("text responses show raw text with whitespace kept", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("text responses show raw text with whitespace kept", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/text`);
     await send(page);
     const pre = response(page).locator("pre");
@@ -34,36 +36,37 @@ test.describe("response viewer", () => {
     await expect(pre).toHaveCSS("white-space", "pre-wrap");
   });
 
-  test("HTML responses render in a preview beside the source", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("HTML responses render in a preview beside the source", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/html`);
     await send(page);
     const frame = page.frameLocator('iframe[title="HTML response preview"]');
     await expect(frame.getByRole("heading", { name: "Hello from the fixture" })).toBeVisible();
     await expect(response(page).getByText("Source", { exact: true })).toBeVisible();
     await expect(response(page).getByText("<h1", { exact: false }).first()).toBeVisible();
-    // Relative links resolve against the request URL.
-    await expect(frame.locator("base")).toHaveAttribute("href", `${API}/`);
+    // Relative links resolve against the page's URL, and open in a new tab.
+    await expect(frame.locator("base")).toHaveAttribute("href", `${API}/html`);
+    await expect(frame.locator("base")).toHaveAttribute("target", "_blank");
   });
 
-  test("Inspect picks an element in the preview and shows its tag", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("Inspect picks an element in the preview and shows its tag", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/html`);
     await send(page);
     const frame = page.frameLocator('iframe[title="HTML response preview"]');
     await expect(frame.getByRole("heading")).toBeVisible();
     await response(page).getByRole("button", { name: "Inspect elements" }).click();
-    // Click where the heading is drawn, as a user would: in inspect mode a layer
-    // over the preview takes the click and finds the element underneath.
+    // Click where the heading is drawn, as a user would.
     const box = (await frame.getByRole("heading").boundingBox())!;
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await expect(response(page).getByText(/Line \d+/)).toBeVisible();
-    await expect(response(page).getByText("greeting").first()).toBeVisible();
+    // The element's tag shows, and its line is marked in the source.
+    await expect(response(page).getByText("<h1>")).toBeVisible();
+    await expect(response(page).locator(".cm-picked-line")).toContainText('id="greeting"');
     await response(page).getByRole("button", { name: "Exit inspect mode" }).click();
   });
 
-  test("the view can be overridden until the next response", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("the view can be overridden until the next response", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/users/1`);
     await send(page);
     await expect(response(page).getByText('"Ada Lovelace"')).toBeVisible();
@@ -82,8 +85,8 @@ test.describe("response viewer", () => {
     await expect(response(page).getByText('"Ada Lovelace"')).toBeVisible();
   });
 
-  test("the headers tab lists, counts, filters and copies headers", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("the headers tab lists, counts, filters and copies headers", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/users`);
     await send(page);
     const tab = response(page).getByRole("tab", { name: /^headers\s*\(\d+\)$/ });
@@ -108,8 +111,8 @@ test.describe("response viewer", () => {
     await expect(response(page).getByText('No headers matching "no-such-header"')).toBeVisible();
   });
 
-  test("Set-Cookie headers are shown", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("Set-Cookie headers are shown", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/cookie`);
     await send(page);
     await response(page).getByRole("tab", { name: /^headers/ }).click();
@@ -118,8 +121,8 @@ test.describe("response viewer", () => {
     await expect(response(page).getByText(/theme=dark/)).toBeVisible();
   });
 
-  test("search counts matches, steps through them and expands to show them", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("search counts matches, steps through them and expands to show them", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/users`);
     await send(page);
     await expect(response(page).getByText('"Ada Lovelace"')).toBeVisible();
@@ -142,8 +145,8 @@ test.describe("response viewer", () => {
     await expect(box).toBeHidden();
   });
 
-  test("Copy puts the JSON body on the clipboard", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("Copy puts the JSON body on the clipboard", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/users/2`);
     await send(page);
     await response(page).getByTitle("Copy JSON").click();
@@ -151,8 +154,8 @@ test.describe("response viewer", () => {
     expect(JSON.parse(await clipboardText(page))).toMatchObject({ id: 2, name: "Alan Turing" });
   });
 
-  test("a large response renders and reports its size in KB", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("a large response renders and reports its size in KB", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/big`);
     await send(page);
     await expect(statusBadge(page)).toHaveText("200 OK");

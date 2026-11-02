@@ -1,16 +1,13 @@
 {
   "name": "Hittable",
   "short_name": "Hittable",
-  "description": "Premium API Testing Client for Developers",
-  "start_url": "/",
+  "description": "Open-source API client. Your requests are .hit files in your GitHub repository or a local folder.",
+  "start_url": "/hittable",
   "display": "standalone",
-  "background_color": "#080f1a",
-  "theme_color": "#00e5cc",
+  "background_color": "#0d0e11",
+  "theme_color": "#08090b",
   "icons": [
-    {
-      "src": "/assets/images/logo.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
-    }
+    { "src": "/assets/images/logo.png", "sizes": "334x336", "type": "image/png" },
+    { "src": "/favicon.ico", "sizes": "any", "type": "image/x-icon" }
   ]
 }

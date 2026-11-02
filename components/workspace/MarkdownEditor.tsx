@@ -5,7 +5,8 @@ import { useWorkspace } from "@/context/workspaceContext";
 import NoteEditor from "@/components/notes/NoteEditor";
 
 export default function MarkdownEditor() {
-  const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile } = useWorkspace();
+  const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile, readOnly: workspaceReadOnly, fileNotice } = useWorkspace();
+  const readOnly = workspaceReadOnly || !!fileNotice;
   const [localContent, setLocalContent] = useState("");
   const [isUnsaved, setIsUnsaved] = useState(false);
   const hasLoadedRef = useRef(false);
@@ -34,7 +35,8 @@ export default function MarkdownEditor() {
   return (
     <div className="flex flex-col h-full bg-(--surface-1) p-3">
       <NoteEditor
-        selectedId={activeFile?.path.join("/") ?? null}
+        // No id means no editing: a read-only workspace shows the preview only.
+        selectedId={readOnly ? null : activeFile?.path.join("/") ?? null}
         selectedTitle={selectedTitle}
         content={localContent}
         isUnsaved={isUnsaved}

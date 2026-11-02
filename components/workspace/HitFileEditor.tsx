@@ -11,11 +11,27 @@ import ResponsePanel from "@/components/RequestForm/ResponsePanel";
 import { DataSource } from "@/types/workspace";
 import { parseHitFile, serializeHitFile } from "@/utils/workspace/hitFileParser";
 import SourceEditor from "./SourceEditor";
+import Split from "@/components/ui/Split";
+import useMediaQuery from "@/hooks/useMediaQuery";
+import { useStoredFlag } from "@/utils/prefs";
+import { Columns2, Rows2 } from "lucide-react";
 
 export default function HitFileEditor() {
-  const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile, envContent } = useWorkspace();
+  const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile, envContent, readOnly: workspaceReadOnly, fileNotice, backendKind } = useWorkspace();
+  // In a GitHub repository a send does not write its response into the file:
+  // that would mark the request changed after every run and put response data
+  // (tokens, personal data) into the next commit. The response still shows;
+  // the file keeps the response it was committed with. A local folder keeps
+  // today's behaviour (and the terminal app's): the last response is saved.
+  const keepResponseOutOfFile = backendKind === "github";
+  const storedResponseRef = useRef<TResponseJson>(null);
+  const readOnly = workspaceReadOnly || !!fileNotice;
   const { available: extensionAvailable, checked: extensionChecked } = useExtension();
   const [viewMode, setViewMode] = useState<"runner" | "text">("text");
+  // Response below the request (default) or beside it; a phone always stacks.
+  const [responseBeside, setResponseBeside] = useStoredFlag("hittable:response-beside", false);
+  const narrow = useMediaQuery("(max-width: 767px)");
+  const beside = responseBeside && !narrow;
 
   const parsedContent = useMemo(() => {
     try {
@@ -39,16 +55,9 @@ export default function HitFileEditor() {
   });
 
   const [proxyResponse, setProxyResponse] = useState<TResponseJson>(null);
+  // A JSON error in Params, Headers or a JSON body blocks Send, as it says.
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
-  const selectorResponse = {
-    collectionName: "",
-    folderPath: [] as string[],
-    curlName: activeFile?.path[activeFile.path.length - 1] ?? "",
-    env: envContent as THittableEnv,
-    secrets: {} as THittableEnv,
-    curlJson: formInput,
-    responseJson: proxyResponse,
-  };
 
   // What the file held when the Runner last matched it: saving the same thing
   // again is skipped, so opening a file or switching views never rewrites it.
@@ -66,6 +75,7 @@ export default function HitFileEditor() {
       params: JSON.stringify(content.params, null, 2),
     });
     setProxyResponse(content.response ?? null);
+    storedResponseRef.current = content.response ?? null;
     lastSerializedRef.current = serializeHitFile({ ...content, response: content.response ?? null });
   }, []);
 
@@ -90,7 +100,8 @@ export default function HitFileEditor() {
     } catch {
       return;
     }
-    const serialized = serializeHitFile({ method: formInput.method, url: formInput.url, headers, params, body: formInput.body, response: proxyResponse });
+    const response = keepResponseOutOfFile ? storedResponseRef.current : proxyResponse;
+    const serialized = serializeHitFile({ method: formInput.method, url: formInput.url, headers, params, body: formInput.body, response });
     if (serialized === lastSerializedRef.current) return;
     lastSerializedRef.current = serialized;
     updateRawTextContent(serialized);
@@ -104,14 +115,16 @@ export default function HitFileEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only save when content changes in text mode
   }, [rawTextContent]);
 
+  // Headers and params are compared as data: the form holds them pretty
+  // printed, the file as objects, so comparing text always differed.
   const isUnsaved = useCallback(() => {
     if (!parsedContent) return false;
     return (
       parsedContent.method !== formInput.method ||
       parsedContent.url !== formInput.url ||
-      JSON.stringify(parsedContent.headers) !== formInput.headers ||
+      !sameJson(parsedContent.headers, formInput.headers) ||
       parsedContent.body !== formInput.body ||
-      JSON.stringify(parsedContent.params) !== formInput.params
+      !sameJson(parsedContent.params, formInput.params)
     );
   }, [formInput, parsedContent]);
 
@@ -126,41 +139,25 @@ export default function HitFileEditor() {
         try { return JSON.parse(formInput.params || "{}"); } catch { return {}; }
       })(),
       body: formInput.body,
-      response: proxyResponse,
+      response: keepResponseOutOfFile ? storedResponseRef.current : proxyResponse,
     };
     const serialized = serializeHitFile(content);
     updateRawTextContent(serialized);
     saveRawTextContent(serialized);
-  }, [formInput, proxyResponse, updateRawTextContent, saveRawTextContent]);
+  }, [formInput, proxyResponse, keepResponseOutOfFile, updateRawTextContent, saveRawTextContent]);
 
-  const handleRevert = useCallback(() => {
-    if (!parsedContent) return;
-    setFormInput({
-      method: parsedContent.method,
-      url: parsedContent.url,
-      headers: JSON.stringify(parsedContent.headers, null, 2),
-      body: parsedContent.body,
-      params: JSON.stringify(parsedContent.params, null, 2),
-    });
-    setProxyResponse(parsedContent.response ?? null);
-  }, [parsedContent]);
 
   const dataSource: DataSource = {
     formInput,
     setFormInput,
     proxyResponse,
     setProxyResponse,
-    selectorResponse,
+    env: envContent as THittableEnv,
+    requestKey: activeFile?.path.join("/") ?? "",
     extensionAvailable,
-    extensionChecked,
     isUnsaved,
     handleSaveCollection,
-    handleRevert,
-    collections: [],
-    setCollections: () => {},
-    history: [],
-    setHistory: () => {},
-    setSelectorResponse: () => {},
+    readOnly,
   };
 
   return (
@@ -183,7 +180,18 @@ export default function HitFileEditor() {
         >
           Runner
         </button>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {viewMode === "runner" && !narrow && (
+            <button
+              type="button"
+              onClick={() => setResponseBeside(!responseBeside)}
+              aria-label={beside ? "Show the response below the request" : "Show the response beside the request"}
+              title={beside ? "Response below" : "Response beside"}
+              className="workspace-button"
+            >
+              {beside ? <Rows2 size={15} aria-hidden="true" /> : <Columns2 size={15} aria-hidden="true" />}
+            </button>
+          )}
           <ExtensionStatus checked={extensionChecked} available={extensionAvailable} />
         </div>
       </div>
@@ -191,7 +199,7 @@ export default function HitFileEditor() {
       {viewMode === "text" ? (
         <SourceEditor key={activeFile?.path.join("/")} path={activeFile?.path ?? []}
           value={rawTextContent} onChange={updateRawTextContent}
-          onSave={saveRawTextContent} disabled={!isFileLoaded} />
+          onSave={saveRawTextContent} disabled={!isFileLoaded || readOnly} />
       ) : (
         <div className="flex-1 min-h-0 flex flex-col">
           {parseError ? (
@@ -208,15 +216,33 @@ export default function HitFileEditor() {
             </div>
           ) : (
             <div className="flex-1 min-h-0 flex flex-col gap-2 p-2">
-              <UrlBar dataSource={dataSource} error={null} />
-              <TabEditor dataSource={dataSource} setError={() => {}} />
-              <div className="flex-1 min-h-0">
-                <ResponsePanel dataSource={dataSource} />
-              </div>
+              <UrlBar dataSource={dataSource} error={jsonError} />
+              <Split
+                id="runner"
+                orientation={beside ? "horizontal" : "vertical"}
+                defaultSize={0.4}
+                minFirst={beside ? 240 : 96}
+                minSecond={beside ? 280 : 120}
+                collapsible={["first", "second"]}
+                firstLabel="Request"
+                secondLabel="Response"
+                className="split-gap flex-1"
+                first={<TabEditor dataSource={dataSource} setError={setJsonError} />}
+                second={<ResponsePanel dataSource={dataSource} />}
+              />
             </div>
           )}
         </div>
       )}
     </div>
   );
+}
+
+/** Whether a file's object and the form's JSON text hold the same data. */
+function sameJson(stored: unknown, formText: string): boolean {
+  try {
+    return JSON.stringify(stored ?? {}) === JSON.stringify(JSON.parse(formText || "{}"));
+  } catch {
+    return false; // half-typed JSON differs from anything saved
+  }
 }

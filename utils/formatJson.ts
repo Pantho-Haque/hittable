@@ -1,4 +1,3 @@
-import { Dispatch, SetStateAction } from "react";
 
 export const formatJson = (input: unknown) => {
   if (input === null || input === undefined) {
@@ -29,15 +28,3 @@ export const formatJson = (input: unknown) => {
   }
 };
 
-export const formatWithErrorHandleing = (
-  input: unknown,
-  setError: Dispatch<SetStateAction<string | null>>,
-) => {
-  const { output, error } = formatJson(input);
-  if (!!error) {
-    setError(error);
-  } else {
-    setError(null);
-  }
-  return output;
-};

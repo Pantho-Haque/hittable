@@ -12,7 +12,7 @@ The web app sends remote requests through a server-side proxy, which is what sid
 | `http://localhost:…`, `http://127.0.0.1:…` | the extension's service worker, from your machine | yes |
 | anything else | the app's `/api/proxy` | no |
 
-Without the extension, sending to localhost fails with **Install the Hittable Extension to make localhost requests**, and a **No Extension Found** dialog explains how to install it. The extension also returns the cookies for the target origin with each response, which the proxy cannot do.
+Without the extension, a localhost request does not go out. The response panel shows **localhost needs the Hittable browser extension**, explains why, and links to the download. The extension also returns the cookies for the target origin with each response, which the proxy cannot do.
 
 The extension is deliberately narrow: its host permissions cover only `http://localhost/*` and `http://127.0.0.1/*`. It is not a general CORS bypass, and remote requests never touch it. `0.0.0.0` is not covered; use `127.0.0.1`.
 
@@ -25,7 +25,7 @@ The extension is distributed as a zip attached to each `v*` release and loaded u
 3. Turn on **Developer mode** (top right).
 4. Click **Load unpacked** and select the unzipped folder.
 
-Reload the Hittable tab. The app pings for the extension every half second for about five seconds after load; once it answers, localhost requests go through it. There is no indicator to watch for: the absence of the **No Extension Found** dialog is the confirmation.
+Reload the Hittable tab. The app pings for the extension every half second for about five seconds after load. Once that check is done, a small status button in the toolbar of an open `.hit` file (next to **Text** and **Runner**) shows **Extension** with a green dot when it answered, or **No extension** when it did not. Click it for the install steps and a **Download** button. Nothing pops up on its own, so people who never call localhost are not bothered.
 
 ## How it talks to the page
 

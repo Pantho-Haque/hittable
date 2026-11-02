@@ -1,167 +1,119 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback, useMemo } from "react";
-
-interface HtmlPreviewProps {
-  html: string;
-  requestUrl?: string;
-  onElementSelect?: (info: ElementInfo) => void;
-  inspectMode?: boolean;
-}
+import { useEffect, useMemo, useRef } from "react";
 
 export interface ElementInfo {
   tagName: string;
   attributes: Record<string, string>;
   outerHTML: string;
-  sourceLine?: number;
 }
 
-export default function HtmlPreview({
-  html,
-  requestUrl,
-  onElementSelect,
-  inspectMode = false,
-}: HtmlPreviewProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [ready, setReady] = useState(false);
-  const highlightRef = useRef<HTMLDivElement | null>(null);
+interface HtmlPreviewProps {
+  html: string;
+  /** The page's own URL (after redirects): relative CSS, images and scripts resolve against it. */
+  baseUrl?: string;
+  /** Run the page's own scripts. Off blocks them with a CSP; the inspector still runs. */
+  scripts?: boolean;
+  inspectMode?: boolean;
+  onElementSelect?: (info: ElementInfo) => void;
+}
 
-  // Build the HTML with base href injected
-  const processedHtml = useMemo(() => {
-    if (!requestUrl) return html;
+/**
+ * The frame is sandboxed WITHOUT allow-same-origin: it gets an opaque origin,
+ * so the page's scripts can run but cannot touch this app, its storage or its
+ * cookies, and calls to the app's API arrive with `Origin: null` and are
+ * refused. No allow-modals (no alert spam), no top navigation; links open in a
+ * new tab, outside the sandbox.
+ */
+export const PREVIEW_SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox";
 
-    let baseUrl = "";
+// Runs inside the preview. The frame is another origin, so the inspector
+// cannot be driven from out here: it listens for on/off and posts back the
+// element the user clicked.
+const INSPECTOR = `(function(){
+var on=false,box=null,cur=null,P=parent;
+function hide(){if(box)box.style.display="none"}
+addEventListener("message",function(e){
+  if(e.source!==P||!e.data||e.data.type!=="hittable:inspect")return;
+  on=!!e.data.on;
+  if(!cur){cur=document.createElement("style");document.documentElement.appendChild(cur)}
+  cur.textContent=on?"*{cursor:crosshair!important}":"";
+  if(!on)hide();
+});
+document.addEventListener("mouseover",function(e){
+  var t=e.target;if(!on||!t||t.nodeType!==1||t===box)return;
+  if(!box){box=document.createElement("div");document.documentElement.appendChild(box)}
+  var r=t.getBoundingClientRect();
+  box.style.cssText="position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #37d4e0;background:rgba(55,212,224,.12);top:"+r.top+"px;left:"+r.left+"px;width:"+r.width+"px;height:"+r.height+"px";
+},true);
+document.addEventListener("mouseout",function(e){if(!e.relatedTarget)hide()},true);
+document.addEventListener("click",function(e){
+  if(!on)return;e.preventDefault();e.stopPropagation();
+  var t=e.target;if(!t||t.nodeType!==1)return;
+  var a={};for(var i=0;i<t.attributes.length;i++)a[t.attributes[i].name]=t.attributes[i].value;
+  P.postMessage({type:"hittable:picked",tagName:t.tagName.toLowerCase(),attributes:a,outerHTML:t.outerHTML.slice(0,500)},"*");
+},true);
+})();`;
+
+/** The page with our head tags added: base URL, script policy, inspector. */
+export function previewDocument(html: string, { baseUrl, scripts = true, nonce }: { baseUrl?: string; scripts?: boolean; nonce: string }): string {
+  let base = "";
+  if (baseUrl) {
     try {
-      const url = new URL(requestUrl);
-      // Use the directory of the request URL as the base
-      const pathParts = url.pathname.split("/");
-      pathParts.pop(); // Remove the filename
-      baseUrl = url.origin + pathParts.join("/") + "/";
+      // URL.href percent-encodes quotes, so it is safe inside the attribute.
+      base = `<base href="${new URL(baseUrl).href}" target="_blank">`;
     } catch {
-      // If URL parsing fails, try to extract origin
-      const match = requestUrl.match(/^(https?:\/\/[^/]+)/);
-      if (match) {
-        baseUrl = match[1] + "/";
-      }
+      // not a URL: links stay relative to nothing, as before
     }
+  }
+  const csp = scripts ? "" : `<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-${nonce}'">`;
+  // Light unless the page says otherwise: unstyled HTML must not inherit the
+  // app's dark scheme (dark text on a dark canvas). Page CSS comes later and wins.
+  const scheme = "<style>:root{color-scheme:light}</style>";
+  const head = `${csp}${base}${scheme}<script nonce="${nonce}">${INSPECTOR}</script>`;
+  // Function replacers: a `$` in the URL must not be read as a pattern.
+  // `<head` must not match `<header`.
+  if (/<head(\s[^>]*)?>/i.test(html)) return html.replace(/<head(\s[^>]*)?>/i, (tag) => `${tag}${head}`);
+  if (/<html(\s[^>]*)?>/i.test(html)) return html.replace(/<html(\s[^>]*)?>/i, (tag) => `${tag}<head>${head}</head>`);
+  return `${head}${html}`;
+}
 
-    if (!baseUrl) return html;
+export default function HtmlPreview({ html, baseUrl, scripts = true, inspectMode = false, onElementSelect }: HtmlPreviewProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const nonce = useMemo(() => crypto.randomUUID().replace(/-/g, ""), []);
+  const srcDoc = useMemo(() => previewDocument(html, { baseUrl, scripts, nonce }), [html, baseUrl, scripts, nonce]);
 
-    // Inject base tag if not already present
-    // Function replacers: a `$` in the URL must not be read as a pattern.
-    if (html.toLowerCase().includes("<head")) {
-      return html.replace(/<head[^>]*>/i, (tag) => `${tag}\n<base href="${baseUrl}">`);
-    } else if (html.toLowerCase().includes("<html")) {
-      return html.replace(/<html[^>]*>/i, (tag) => `${tag}\n<head><base href="${baseUrl}"></head>`);
-    } else {
-      return `<base href="${baseUrl}">\n${html}`;
-    }
-  }, [html, requestUrl]);
-
-  // Create and manage the highlight overlay in the iframe
-  const createHighlight = useCallback((doc: Document) => {
-    // A new response replaces the document; the old box is gone with it.
-    if (highlightRef.current?.ownerDocument === doc && doc.contains(highlightRef.current)) {
-      return highlightRef.current;
-    }
-
-    const el = doc.createElement('div');
-    el.id = '__hittable_highlight';
-    el.style.cssText = 'position:fixed;pointer-events:none;z-index:999999;border:2px solid #00e5cc;background:rgba(0,229,204,0.1);box-shadow:0 0 0 1px rgba(0,229,204,0.3);transition:all 0.05s ease;display:none;';
-    doc.body.appendChild(el);
-    highlightRef.current = el;
-    return el;
-  }, []);
-
-  const updateHighlight = useCallback((el: Element | null) => {
-    if (!iframeRef.current?.contentDocument || !el) {
-      if (highlightRef.current) {
-        highlightRef.current.style.display = 'none';
-      }
-      return;
-    }
-
-    const highlight = createHighlight(iframeRef.current.contentDocument);
-    const rect = el.getBoundingClientRect();
-
-    // position:fixed inside the preview, so the preview's own viewport coordinates.
-    highlight.style.top = rect.top + 'px';
-    highlight.style.left = rect.left + 'px';
-    highlight.style.width = rect.width + 'px';
-    highlight.style.height = rect.height + 'px';
-    highlight.style.display = 'block';
-  }, [createHighlight]);
-
-  const hideHighlight = useCallback(() => {
-    if (highlightRef.current) {
-      highlightRef.current.style.display = 'none';
-    }
-  }, []);
-
-  const getElementInfo = useCallback((el: Element): ElementInfo => {
-    const attrs: Record<string, string> = {};
-    for (const attr of Array.from(el.attributes)) {
-      attrs[attr.name] = attr.value;
-    }
-
-    return {
-      tagName: el.tagName.toLowerCase(),
-      attributes: attrs,
-      outerHTML: el.outerHTML.substring(0, 500),
-    };
-  }, []);
-
-  // Inspect mode works from a transparent layer over the preview rather than
-  // listeners inside it: the preview is sandboxed without scripts, and WebKit
-  // (Safari) never runs event listeners in such a frame, even the parent's.
-  // elementFromPoint is a plain DOM call, so it works in every engine.
-  const elementAt = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const frame = iframeRef.current;
-    const doc = frame?.contentDocument;
-    if (!frame || !doc) return null;
-    const box = frame.getBoundingClientRect();
-    const el = doc.elementFromPoint(e.clientX - box.left, e.clientY - box.top);
-    return el && el !== doc.body && el !== doc.documentElement && el.id !== "__hittable_highlight" ? el : null;
-  }, []);
-
+  const onSelectRef = useRef(onElementSelect);
   useEffect(() => {
-    if (!inspectMode) hideHighlight();
-  }, [inspectMode, hideHighlight]);
+    onSelectRef.current = onElementSelect;
+  });
 
-  // Handle iframe load
-  const handleLoad = useCallback(() => {
-    setReady(true);
+  // Picks come from the frame. Its page's own scripts can post too, so check
+  // the sender and the shape; at worst a page fakes what the inspector shows.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      const d = e.data;
+      if (e.source !== iframeRef.current?.contentWindow || d?.type !== "hittable:picked") return;
+      if (typeof d.tagName !== "string" || typeof d.outerHTML !== "string" || typeof d.attributes !== "object" || !d.attributes) return;
+      const attributes: Record<string, string> = {};
+      for (const [k, v] of Object.entries(d.attributes)) if (typeof v === "string") attributes[k] = v;
+      onSelectRef.current?.({ tagName: d.tagName, attributes, outerHTML: d.outerHTML.slice(0, 500) });
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, []);
+
+  const sendMode = () => iframeRef.current?.contentWindow?.postMessage({ type: "hittable:inspect", on: inspectMode }, "*");
+  useEffect(sendMode, [inspectMode]);
 
   return (
-    <div className="relative w-full h-full">
-      <iframe
-        ref={iframeRef}
-        srcDoc={processedHtml}
-        sandbox="allow-same-origin"
-        title="HTML response preview"
-        className="w-full h-full border-0 bg-white"
-        onLoad={handleLoad}
-        style={{ minHeight: 200 }}
-      />
-      {inspectMode && ready && (
-        <div
-          data-testid="inspect-layer"
-          className="absolute inset-0 cursor-crosshair"
-          onMouseMove={(e) => updateHighlight(elementAt(e))}
-          onMouseLeave={hideHighlight}
-          onClick={(e) => {
-            const el = elementAt(e);
-            if (el) onElementSelect?.(getElementInfo(el));
-          }}
-          onWheel={(e) => iframeRef.current?.contentDocument?.scrollingElement?.scrollBy(e.deltaX, e.deltaY)}
-        />
-      )}
-      {!ready && (
-        <div className="absolute inset-0 flex items-center justify-center bg-(--surface-1)">
-          <span className="text-white/50 text-[11px]">Loading preview…</span>
-        </div>
-      )}
-    </div>
+    <iframe
+      ref={iframeRef}
+      srcDoc={srcDoc}
+      sandbox={PREVIEW_SANDBOX}
+      title="HTML response preview"
+      className="block h-full w-full border-0 bg-white"
+      onLoad={sendMode}
+    />
   );
 }

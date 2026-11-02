@@ -2,11 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import RequestForm from "@/components/hittable/RequestForm";
-import { mountData, sampleCollections } from "../../helpers/dataHarness";
-
-const push = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+import { mountRunner, SAMPLE_ENV, type RunnerOptions } from "../../helpers/runnerHarness";
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -14,25 +10,23 @@ function proxyReplies(body: unknown, status = 200) {
   fetchMock.mockResolvedValue({ status, statusText: "", ok: status < 400, json: async () => body });
 }
 
-async function setup(opts?: Parameters<typeof mountData>[1]) {
+async function setup(opts?: RunnerOptions) {
   const user = userEvent.setup();
-  const r = mountData(<RequestForm />, opts);
-  const url = await screen.findByLabelText("Request URL");
-  await waitFor(() => expect(url).not.toHaveValue(""));
-  return { user, url: url as HTMLTextAreaElement, ...r };
+  const r = mountRunner(opts);
+  const url = screen.getByLabelText("Request URL") as HTMLTextAreaElement;
+  return { user, url, ...r };
 }
 
 const sentPayload = () => JSON.parse(fetchMock.mock.calls.at(-1)![1].body);
 
 beforeEach(() => {
-  localStorage.clear();
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("URL bar", () => {
-  it("loads the selected route's method and URL template", async () => {
+  it("loads the open request's method and URL template", async () => {
     await setup();
     expect(screen.getByLabelText("HTTP method")).toHaveValue("GET");
     expect(screen.getByLabelText("Request URL")).toHaveValue("https://<<HOST>>/users");
@@ -40,11 +34,12 @@ describe("URL bar", () => {
 
   it("offers GET POST PUT PATCH DELETE HEAD OPTIONS and switching marks the request unsaved", async () => {
     const { user, ctx } = await setup();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     const select = screen.getByLabelText("HTTP method");
     expect([...(select as HTMLSelectElement).options].map((o) => o.value)).toEqual(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
     await user.selectOptions(select, "PATCH");
     expect(ctx().formInput.method).toBe("PATCH");
-    expect(screen.getByText(/Unsaved · Ctrl\/Cmd\+S/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 
   it("typing a query string fills Params, decoded", async () => {
@@ -59,8 +54,8 @@ describe("URL bar", () => {
     await user.clear(url);
     await user.type(url, "https://x.io/users/:id/posts");
     const seg = screen.getByText(":id");
-    expect(seg).toHaveClass("text-amber-400");
-    expect(screen.getByText("/posts")).not.toHaveClass("text-amber-400");
+    expect(seg).toHaveClass("text-(--warning)");
+    expect(screen.getByText("/posts")).not.toHaveClass("text-(--warning)");
   });
 
   describe("pasting a curl command", () => {
@@ -76,15 +71,15 @@ describe("URL bar", () => {
       expect(JSON.parse(ctx().formInput.body)).toEqual({ title: "Done" });
     });
 
-    it("{{var}} and {{ _.var }} become <<var>> and empty variables on the collection, keeping existing values", async () => {
+    it("{{var}} and {{ _.var }} become <<var>>; ones env lacks are named as unknown, env is untouched", async () => {
       const { url, ctx } = await setup();
       paste(url, `curl -X POST https://api.example.com/{{version}}/login -H "Authorization: Bearer {{ _.TOKEN }}" -d '{"user":"{{user}}"}'`);
       await waitFor(() => expect(ctx().formInput.method).toBe("POST"), { timeout: 2000 });
       expect(ctx().formInput.url).toBe("https://api.example.com/<<version>>/login");
       expect(JSON.parse(ctx().formInput.headers)).toEqual({ Authorization: "Bearer <<TOKEN>>" });
       expect(JSON.parse(ctx().formInput.body)).toEqual({ user: "<<user>>" });
-      const env = ctx().collections.find((c) => c.collectionName === "Users")!.env;
-      expect(env).toEqual({ HOST: "api.example.com", TOKEN: "env-token", version: "", user: "" });
+      expect(screen.getByRole("note")).toHaveTextContent("Unknown variables <<version>>, <<user>>");
+      expect(screen.getByRole("note")).not.toHaveTextContent("TOKEN");
     });
 
     it("Undo on the toast restores the request from before the paste", async () => {
@@ -107,7 +102,7 @@ describe("URL bar", () => {
   });
 
   describe("sending", () => {
-    it("Send resolves <<KEY>> at send time (secrets win), goes through /api/proxy and shows the response", async () => {
+    it("Send resolves <<KEY>> from env at send time, goes through /api/proxy and shows the response", async () => {
       proxyReplies({ data: { users: [] }, status: 200, statusText: "OK", ok: true, headers: { "content-type": "application/json" } });
       const { user, ctx } = await setup();
       await user.click(screen.getByRole("button", { name: "Send" }));
@@ -136,25 +131,22 @@ describe("URL bar", () => {
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     });
 
-    it("every send is logged in history, newest first, with status, duration and size", async () => {
-      proxyReplies({ status: 201, statusText: "Created", data: { id: 9 } });
-      const { user, ctx } = await setup();
-      await user.click(screen.getByRole("button", { name: "Send" }));
-      await waitFor(() => expect(ctx().history).toHaveLength(1));
-      const [entry] = ctx().history;
-      expect(entry).toMatchObject({ method: "GET", url: "https://<<HOST>>/users", status: 201, statusText: "Created" });
-      expect(entry.sizeBytes).toBe(JSON.stringify({ id: 9 }).length);
-      expect(typeof entry.durationMs).toBe("number");
-      await waitFor(() => expect(JSON.parse(localStorage.getItem("hittable_history")!)).toHaveLength(1));
+    it("Enter in the URL sends once and adds no line break; Shift+Enter does nothing", async () => {
+      proxyReplies({ status: 204, data: null });
+      const { user, url, ctx } = await setup();
+      await user.click(url);
+      await user.keyboard("{Shift>}{Enter}{/Shift}");
+      expect(fetchMock).not.toHaveBeenCalled();
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expect(ctx().formInput.url).toBe("https://<<HOST>>/users");
     });
 
-    it("a failed send shows the error and is still logged", async () => {
+    it("a failed send shows the error", async () => {
       fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-      const { user, ctx } = await setup();
+      const { user } = await setup();
       await user.click(screen.getByRole("button", { name: "Send" }));
       expect(await screen.findByText(/Failed to fetch/)).toBeInTheDocument();
-      await waitFor(() => expect(ctx().history).toHaveLength(1));
-      expect(ctx().history[0].status).toBeUndefined();
     });
 
     it("localhost without the extension explains how to fix it and never hits the proxy", async () => {
@@ -190,7 +182,6 @@ describe("URL bar", () => {
       await user.click(screen.getByRole("button", { name: "Cancel" }));
       await waitFor(() => expect(ctx().proxyResponse).toEqual({ error: "Request cancelled" }));
       expect(await screen.findByRole("button", { name: "Send" })).toBeEnabled();
-      expect(ctx().history).toHaveLength(0); // a cancelled request is not history
       proxyReplies({ data: {}, status: 200, statusText: "OK", ok: true });
       await user.click(screen.getByRole("button", { name: "Send" }));
       await waitFor(() => expect(ctx().proxyResponse?.status).toBe(200));
@@ -239,29 +230,28 @@ describe("URL bar", () => {
   });
 
   describe("saving", () => {
-    it("Save is disabled until something changes; Ctrl/Cmd+S saves and clears the Unsaved pill", async () => {
+    it("Save is disabled until something changes; Ctrl/Cmd+S saves and disables it again", async () => {
       const { user, url, ctx } = await setup();
       const save = screen.getByRole("button", { name: "Save" });
       expect(save).toBeDisabled();
       await user.type(url, "/42");
       expect(save).toBeEnabled();
       await user.keyboard("{Control>}s{/Control}");
-      await waitFor(() => expect(screen.queryByText(/Unsaved/)).not.toBeInTheDocument());
-      const route = ctx().collections[0].items[0];
-      expect(route.type === "route" && route.curl).toContain("https://<<HOST>>/users/42");
+      expect(ctx().saves).toBe(1);
+      expect(save).toBeDisabled();
+      expect(ctx().formInput.url).toBe("https://<<HOST>>/users/42");
     });
 
-    it("Discard changes restores the saved request", async () => {
-      const { user, url } = await setup();
+    it("the Save button saves too", async () => {
+      const { user, url, ctx } = await setup();
       await user.type(url, "/42");
-      await user.click(screen.getByRole("button", { name: "Discard changes" }));
-      expect(url).toHaveValue("https://<<HOST>>/users");
-      expect(screen.queryByText(/Unsaved/)).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      expect(ctx().saves).toBe(1);
     });
   });
 
   // The cURL-only button became a "Copy as" menu (FR-8). Copied code has the
-  // variables filled in (secrets win), so it runs as it is.
+  // variables filled in from env, so it runs as it is.
   it("Copy as → cURL copies the request with its variables filled in", async () => {
     const { user } = await setup();
     await user.click(screen.getByRole("button", { name: /Copy as/ }));
@@ -292,17 +282,13 @@ describe("URL bar", () => {
     });
   });
 
-  // FR-16: a collection marked production confirms state-changing sends.
+  // FR-16: an environment marked production confirms state-changing sends.
   describe("production guard", () => {
-    const prodCollections = () => {
-      const c = sampleCollections();
-      c[0].env = { ...c[0].env, HITTABLE_PRODUCTION: "true" };
-      return c;
-    };
+    const prodEnv = { ...SAMPLE_ENV, HITTABLE_PRODUCTION: "true" };
 
     it("shows the PRODUCTION badge and sends a GET without asking", async () => {
       proxyReplies({ data: {}, status: 200, statusText: "OK", ok: true });
-      const { user } = await setup({ collections: prodCollections() });
+      const { user } = await setup({ env: prodEnv });
       expect(screen.getByText("PRODUCTION")).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Send" }));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -311,7 +297,7 @@ describe("URL bar", () => {
 
     it("a POST waits for confirmation: Cancel sends nothing, Send sends once", async () => {
       proxyReplies({ data: {}, status: 201, statusText: "Created", ok: true });
-      const { user } = await setup({ collections: prodCollections(), folderPath: ["Admin"], route: "Create user" });
+      const { user } = await setup({ env: prodEnv, request: "Create user" });
       await user.click(screen.getByRole("button", { name: "Send" }));
       const dialog = within(screen.getByRole("dialog", { name: "Send POST to production?" }));
       expect(dialog.getByText(/api\.example\.com/)).toBeInTheDocument();
@@ -325,7 +311,7 @@ describe("URL bar", () => {
 
     it("no badge and no question without the variable", async () => {
       proxyReplies({ data: {}, status: 201, ok: true });
-      const { user } = await setup({ folderPath: ["Admin"], route: "Create user" });
+      const { user } = await setup({ request: "Create user" });
       expect(screen.queryByText("PRODUCTION")).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Send" }));
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));

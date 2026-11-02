@@ -1,4 +1,6 @@
-import { test as base, expect, type Page, type Locator } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
+import { seedPrivateFolder, openWorkspace, openFile } from "./directory";
+export { openLauncher } from "./directory";
 
 // The fixture API (tests/e2e/fixtures/api-server.mjs) listens dual-stack.
 // `[::1]` is not one of the hostnames the app hands to the extension, so
@@ -8,37 +10,15 @@ const API_PORT = 4100;
 export const API = `http://[::1]:${API_PORT}`;
 export const LOCAL_API = `http://127.0.0.1:${API_PORT}`;
 
-export type Route = { type: "route"; name: string; curl: string; response?: string };
-export type Folder = { type: "folder"; name: string; items: (Route | Folder)[] };
-export type Collection = {
-  collectionName: string;
-  items: (Route | Folder)[];
-  env?: Record<string, string>;
-  secrets?: Record<string, string>;
-};
-
-export const route = (name: string, curl: string, response = ""): Route => ({ type: "route", name, curl, response });
-export const folder = (name: string, items: (Route | Folder)[]): Folder => ({ type: "folder", name, items });
-export const collection = (
-  collectionName: string,
-  items: (Route | Folder)[] = [],
-  env: Record<string, string> = {},
-  secrets: Record<string, string> = {},
-): Collection => ({ collectionName, items, env, secrets });
-
-type Seed = {
-  collections?: Collection[];
-  history?: unknown[];
-  notes?: Record<string, { title: string; content: string }>;
-  sidebarCollapsed?: boolean;
-};
+/** Raw localStorage entries, e.g. the old Local mode's `hittable` key. */
+type Seed = Record<string, string>;
 
 type Fixtures = {
   /** Answer the app's extension handshake like the real extension does. Default true. */
   extension: boolean;
   /** Uncaught page errors collected during the test; the test fails if any remain. */
   pageErrors: Error[];
-  /** Seed localStorage once, before the app's first load (reloads keep what the app wrote). */
+  /** Set localStorage keys once, before the app's first load (reloads keep what the app wrote). */
   seed: (data: Seed) => Promise<void>;
   /** Every alert/confirm/prompt the page opened. Dialogs are accepted. */
   dialogs: string[];
@@ -104,9 +84,10 @@ export const test = base.extend<Fixtures>({
       const errors: Error[] = [];
       page.on("pageerror", (err) => errors.push(err));
       await provide(errors);
-      // WebKit reports a Next.js prefetch that a navigation cancelled as an
-      // uncaught "…?_rsc=… due to access control checks"; nothing breaks.
-      const real = errors.filter((e) => !/\?_rsc=\S+ due to access control checks/.test(e.message));
+      // WebKit reports a fetch that a navigation cancelled (a Next.js prefetch,
+      // the top bar's session check) as an uncaught "… due to access control
+      // checks", even when the app catches it; nothing breaks.
+      const real = errors.filter((e) => !/(\?_rsc=\S+|\/api\/github\/session) due to access control checks/.test(e.message));
       expect(real.map((e) => e.message), "uncaught errors in the page").toEqual([]);
     },
     { auto: true },
@@ -133,10 +114,7 @@ export const test = base.extend<Fixtures>({
         ({ d, n }) => {
           if (Number(sessionStorage.getItem("__e2e_seed") ?? 0) >= n) return;
           sessionStorage.setItem("__e2e_seed", String(n));
-          if (d.collections) localStorage.setItem("hittable", JSON.stringify(d.collections));
-          if (d.history) localStorage.setItem("hittable_history", JSON.stringify(d.history));
-          if (d.notes) localStorage.setItem("notesStore", JSON.stringify(d.notes));
-          if (d.sidebarCollapsed !== undefined) localStorage.setItem("hittable_sidebar_collapsed", String(d.sidebarCollapsed));
+          for (const [k, v] of Object.entries(d)) localStorage.setItem(k, v);
         },
         { d: data, n },
       );
@@ -148,7 +126,6 @@ export { expect };
 
 // ─── Page helpers ─────────────────────────────────────────────────────────
 
-export const sidebar = (page: Page) => page.getByRole("complementary", { name: "Collections" });
 export const response = (page: Page) => page.getByRole("region", { name: "Response" });
 export const urlInput = (page: Page) => page.getByRole("textbox", { name: "Request URL" });
 export const methodSelect = (page: Page) => page.getByRole("combobox", { name: "HTTP method" });
@@ -158,17 +135,38 @@ export const editor = (page: Page, tab: "params" | "body" | "headers") =>
   page.getByRole("textbox", { name: `${tab} JSON` });
 export const dialog = (page: Page, name: string | RegExp) => page.getByRole("dialog", { name });
 
-/** Open /hittable with one collection selected and its route open. */
-export async function openRoute(page: Page, collectionName: string, routeName: string, folderPath: string[] = []) {
-  const p = folderPath.length ? `&p=${encodeURIComponent(folderPath.join("/"))}` : "";
-  await page.goto(`/hittable?c=${encodeURIComponent(collectionName)}&r=${encodeURIComponent(routeName)}${p}`);
-  await expect(urlInput(page)).toBeVisible();
-}
+export const FOLDER_ONLY = "Folder mode needs the File System Access API (Chromium only)";
 
-/** A fresh workspace with one empty request open, ready to be filled. */
-export async function blankRequest(page: Page, seed: Fixtures["seed"], url = "") {
-  await seed({ collections: [collection("Workbench", [route("scratch", url ? `curl -X GET ${url}` : "")])] });
-  await openRoute(page, "Workbench", "scratch");
+type RequestFile = {
+  url?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  params?: Record<string, string>;
+  body?: string;
+  /** hittable/env.json */
+  env?: Record<string, string>;
+  /** hittable/env.local.json, left out when not given */
+  envLocal?: Record<string, string>;
+  /** Any other files to put in the folder. */
+  files?: Record<string, string>;
+};
+
+/**
+ * Open a local folder holding hittable/req.hit (and env.json) and show that
+ * request in the Runner. Folder mode is Chromium only: skip other engines.
+ */
+export async function openRequest(page: Page, r: RequestFile = {}) {
+  const { url = "", method = "GET", headers = {}, params = {}, body = "" } = r;
+  await seedPrivateFolder(page, {
+    "hittable/env.json": JSON.stringify(r.env ?? {}),
+    ...(r.envLocal ? { "hittable/env.local.json": JSON.stringify(r.envLocal) } : {}),
+    "hittable/req.hit": JSON.stringify({ method, url, headers, params, body, response: null }, null, 2),
+    ...r.files,
+  });
+  await openWorkspace(page);
+  await openFile(page, "hittable/req.hit");
+  await expect(page.getByRole("button", { name: "Runner", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(urlInput(page)).toHaveValue(url);
 }
 
 /** Replace the whole content of a request editor tab. */
@@ -182,18 +180,6 @@ export async function send(page: Page) {
 }
 
 export const statusBadge = (page: Page) => response(page).locator("[aria-live=polite]");
-
-/** Row in the sidebar list for a collection, folder or route. */
-export const sidebarItem = (page: Page, name: string): Locator =>
-  sidebar(page).locator(`div[title=${JSON.stringify(name)}]`);
-
-/** Open the ⋮ menu of a sidebar row and pick an action. */
-export async function rowAction(page: Page, name: string, action: "Rename" | "Delete" | "Export") {
-  const row = sidebarItem(page, name);
-  await row.hover();
-  await row.getByRole("button", { name: `Actions for ${name}` }).click();
-  await page.getByRole("button", { name: action, exact: true }).click();
-}
 
 /** Read the text the app last put on the clipboard. */
 export async function clipboardText(page: Page) {

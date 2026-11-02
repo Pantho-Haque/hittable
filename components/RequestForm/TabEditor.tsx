@@ -3,7 +3,6 @@
 import { formatJson } from "@/utils/formatJson";
 import { Dispatch, SetStateAction, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { modifyUrlForNewParams } from "@/utils/responsePanelUtils";
-import { useDataContext } from "@/context/dataContext";
 import { Braces, Table2, Plus, Trash2, Sparkles } from "lucide-react";
 import type { DataSource } from "@/types/workspace";
 import {
@@ -57,7 +56,7 @@ function JsonEditor({
     <div className="flex-1 flex flex-col relative min-h-0">
       {/* Error indicator */}
       {error && (
-        <div className="px-3 py-1.5 text-[11px] text-red-400 bg-red-500/10 border-b border-red-500/20">
+        <div role="status" className="flex shrink-0 items-center gap-1.5 border-b border-(--danger)/25 bg-(--danger)/10 px-3 py-1.5 font-mono text-[11px] text-(--danger)">
           <span className="truncate">{error}</span>
         </div>
       )}
@@ -66,15 +65,15 @@ function JsonEditor({
         {/* Line numbers gutter */}
         <div
           ref={lineNumbersRef}
-          className="shrink-0 overflow-hidden select-none border-r border-white/5 bg-(--surface-0)/30"
-          style={{ width: 40 }}
+          className="shrink-0 overflow-hidden select-none border-r border-(--border) bg-(--ink-700)"
+          style={{ width: 44 }}
           aria-hidden="true"
         >
-          <div className="p-2 md:p-4 text-right">
+          <div className="py-3 pr-2.5 text-right">
             {Array.from({ length: lineCount }, (_, i) => (
               <div
                 key={i}
-                className="text-sm leading-relaxed text-slate-400 font-mono"
+                className="font-mono text-[13px] leading-5 text-(--muted)/60"
               >
                 {i + 1}
               </div>
@@ -88,7 +87,7 @@ function JsonEditor({
           key={tab}
           aria-label={label ?? `${tab} JSON`}
           wrap="off"
-          className="flex-1 min-w-0 w-full resize-none bg-transparent p-2 md:p-4 text-sm text-slate-200 placeholder-slate-500 leading-relaxed font-mono overflow-auto"
+          className="flex-1 min-w-0 w-full resize-none overflow-auto bg-(--ink-700) px-3 py-3 font-mono text-[13px] leading-5 text-(--text) placeholder:text-(--muted)/50"
           style={{ tabSize: 2 }}
           spellCheck={false}
           value={value}
@@ -125,67 +124,75 @@ function KeyValueTable({
     onChange(next);
   };
 
+  const cell = "h-8 w-full min-w-0 bg-transparent px-2.5 font-mono text-xs text-(--text) placeholder:text-(--muted)/50 outline-none focus:bg-(--surface-2)";
   return (
-    <div className="flex flex-col gap-1.5 flex-1 min-h-0 overflow-y-auto p-2 md:p-3">
-      {entries.length === 0 && (
-        <button
-          onClick={addRow}
-          className="flex items-center justify-center gap-1.5 text-[11px] text-white/60 hover:text-cyan-400 transition-colors cursor-pointer py-3 border border-dashed border-white/10 hover:border-cyan-500/30 rounded-md bg-white/2 hover:bg-cyan-500/5"
-        >
-          <Plus size={12} />
-          Add first row
-        </button>
-      )}
-
-      {entries.map(([key, value], idx) => (
-        <div key={idx} className="flex items-center gap-1.5 group">
-          <input
-            type="text"
-            value={key}
-            onChange={(e) => updateKey(idx, e.target.value)}
-            placeholder={keyPlaceholder || "Key"}
-            className="flex-1 min-w-0 bg-white/3 border border-white/5 rounded px-2 py-1.5 text-[11px] md:text-[11px] text-white/70 placeholder-white/40 outline-none focus:border-cyan-500/30 transition-colors font-mono"
-          />
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => updateValue(idx, e.target.value)}
-            placeholder={valuePlaceholder || "Value"}
-            className="flex-1 min-w-0 bg-white/3 border border-white/5 rounded px-2 py-1.5 text-[11px] md:text-[11px] text-white/70 placeholder-white/40 outline-none focus:border-cyan-500/30 transition-colors font-mono"
-          />
-          <button
-            onClick={() => removeRow(idx)}
-            className="p-1 text-white/60 hover:text-red-400 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 shrink-0"
-            title="Remove row"
-            aria-label="Remove row"
-          >
-            <Trash2 size={10} />
-          </button>
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2 md:p-3">
+      <div className="overflow-hidden rounded-md border border-(--border)">
+        <div className="grid grid-cols-[1fr_1fr_2rem] border-b border-(--border) bg-(--surface-3) text-[11px] font-medium text-(--muted)" aria-hidden="true">
+          <span className="px-2.5 py-1.5">{keyPlaceholder || "Key"}</span>
+          <span className="border-l border-(--border) px-2.5 py-1.5">{valuePlaceholder || "Value"}</span>
+          <span />
         </div>
-      ))}
-
-      {entries.length > 0 && (
+        {entries.map(([key, value], idx) => (
+          <div key={idx} className="group grid grid-cols-[1fr_1fr_2rem] border-b border-(--border) last:border-b-0 hover:bg-(--surface-2)/40">
+            <input
+              type="text"
+              aria-label={`${keyPlaceholder || "Key"} ${idx + 1}`}
+              value={key}
+              onChange={(e) => updateKey(idx, e.target.value)}
+              placeholder={keyPlaceholder || "Key"}
+              className={cell}
+            />
+            <input
+              type="text"
+              aria-label={`${valuePlaceholder || "Value"} ${idx + 1}`}
+              value={value}
+              onChange={(e) => updateValue(idx, e.target.value)}
+              placeholder={valuePlaceholder || "Value"}
+              className={`${cell} border-l border-(--border)`}
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(idx)}
+              className="flex items-center justify-center text-(--muted) opacity-0 transition-opacity hover:text-(--danger) focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+              title="Remove row"
+              aria-label="Remove row"
+            >
+              <Trash2 size={12} aria-hidden="true" />
+            </button>
+          </div>
+        ))}
         <button
+          type="button"
           onClick={addRow}
-          className="flex items-center justify-center gap-1.5 text-[11px] text-white/50 hover:text-cyan-400 transition-colors cursor-pointer py-2 mt-1 border border-dashed border-white/8 hover:border-cyan-500/25 rounded-md bg-white/2 hover:bg-cyan-500/5"
+          className={`flex w-full items-center gap-1.5 px-2.5 py-2 text-xs text-(--muted) transition-colors hover:bg-(--surface-2)/60 hover:text-(--brand) ${entries.length ? "border-t border-(--border)" : ""}`}
         >
-          <Plus size={12} />
-          Add row
+          <Plus size={12} aria-hidden="true" />
+          {entries.length === 0 ? "Add first row" : "Add row"}
         </button>
-      )}
+      </div>
     </div>
   );
 }
 
+/** Entries in a JSON object, for the tab badge; null when it is not one. */
+function countKeys(json: string | undefined): number | null {
+  try {
+    const v = JSON.parse(json || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v).length : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function TabEditor({
   setError,
-  dataSource: propDataSource,
+  dataSource,
 }: {
   setError: Dispatch<SetStateAction<string | null>>;
-  dataSource?: DataSource;
+  dataSource: DataSource;
 }) {
-  const contextData = useDataContext();
-  const { formInput, setFormInput } = propDataSource ?? contextData;
+  const { formInput, setFormInput } = dataSource;
 
   const [activeTab, setActiveTab] = useState<Tab>("params");
   const [viewMode, setViewMode] = useState<ViewMode>("json");
@@ -374,76 +381,77 @@ export default function TabEditor({
   const showJsonTools = isJsonTab(activeTab);
 
   return (
-    <div
-      className="flex flex-col rounded-lg border border-white/8 bg-(--surface-1)/60 overflow-hidden"
-      style={{ minHeight: 240, maxHeight: "60vh" }}
-    >
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-(--border) bg-(--surface-1)">
       {/* Tab bar */}
-      <div className="flex items-center border-b border-white/5 bg-(--surface-2)/50 px-1 pt-1 shrink-0">
-        <div role="tablist" aria-label="Request" className="flex items-center">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              id={`req-tab-${tab}`}
-              role="tab"
-              type="button"
-              aria-selected={activeTab === tab}
-              aria-controls="req-tabpanel"
-              tabIndex={activeTab === tab ? 0 : -1}
-              onClick={() => handleTabChange(tab)}
-              onKeyDown={(e) => onTabKeyDown(e, tab)}
-              className={`relative px-3 py-2 md:px-4 md:py-2 text-xs font-semibold transition-colors cursor-pointer min-h-[44px] md:min-h-0 ${
-                activeTab === tab ? "text-(--brand)" : "text-white/60 hover:text-white/80"
-              }`}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              {activeTab === tab && (
-                <span className="absolute bottom-0 left-3 right-3 h-px bg-cyan-400" aria-hidden="true" />
-              )}
-            </button>
-          ))}
+      <div className="flex h-10 shrink-0 items-stretch border-b border-(--border) bg-(--surface-3) pl-1 pr-2">
+        <div role="tablist" aria-label="Request" className="flex items-stretch">
+          {TABS.map((tab) => {
+            const n = tab === "body" ? null : countKeys(formInput[tab]);
+            const hasBody = tab === "body" && !!formInput.body?.trim();
+            return (
+              <button
+                key={tab}
+                id={`req-tab-${tab}`}
+                role="tab"
+                type="button"
+                aria-selected={activeTab === tab}
+                aria-controls="req-tabpanel"
+                tabIndex={activeTab === tab ? 0 : -1}
+                onClick={() => handleTabChange(tab)}
+                onKeyDown={(e) => onTabKeyDown(e, tab)}
+                className={`relative flex items-center gap-1.5 px-3 text-xs font-medium transition-colors min-h-[44px] md:min-h-0 ${
+                  activeTab === tab ? "text-(--text)" : "text-(--muted) hover:text-(--text)"
+                }`}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {!!n && (
+                  <span aria-hidden="true" className="rounded-full bg-(--surface-2) px-1.5 font-mono text-[11px] leading-4 text-(--muted)">
+                    {n}
+                  </span>
+                )}
+                {hasBody && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-(--brand)" />}
+                {activeTab === tab && (
+                  <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-(--brand)" aria-hidden="true" />
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="ml-auto flex items-center gap-0.5 mr-1">
-            {viewMode === "json" && showJsonTools && (
-              <button
-                onClick={handleBeautify}
-                title="Beautify JSON (Shift+Alt+F)"
-                aria-label="Beautify JSON (Shift+Alt+F)"
-                className="p-1.5 rounded transition-colors cursor-pointer text-white/60 hover:text-cyan-400 hover:bg-cyan-400/10"
-              >
-                <Sparkles size={12} aria-hidden="true" />
-              </button>
-            )}
-            {showJsonTools && (<>
+        <div className="ml-auto flex items-center gap-2">
+          {viewMode === "json" && showJsonTools && (
             <button
-              onClick={() => handleViewModeChange("json")}
-              title="JSON mode"
-              aria-label="JSON mode"
-              aria-pressed={viewMode === "json"}
-              className={`p-1.5 rounded transition-colors cursor-pointer ${
-                viewMode === "json"
-                  ? "text-cyan-400 bg-cyan-400/10"
-                  : "text-white/60 hover:text-white/80"
-              }`}
+              type="button"
+              onClick={handleBeautify}
+              title="Beautify JSON (Shift+Alt+F)"
+              aria-label="Beautify JSON (Shift+Alt+F)"
+              className="flex h-7 items-center gap-1 rounded px-2 text-xs text-(--muted) transition-colors hover:bg-(--surface-2) hover:text-(--text)"
             >
-              <Braces size={12} />
+              <Sparkles size={12} aria-hidden="true" />
+              <span className="max-sm:hidden">Format</span>
             </button>
-            <button
-              onClick={() => handleViewModeChange("table")}
-              title="Table mode"
-              aria-label="Table mode"
-              aria-pressed={viewMode === "table"}
-              className={`p-1.5 rounded transition-colors cursor-pointer ${
-                viewMode === "table"
-                  ? "text-cyan-400 bg-cyan-400/10"
-                  : "text-white/60 hover:text-white/80"
-              }`}
-            >
-              <Table2 size={12} aria-hidden="true" />
-            </button>
-            </>)}
-          </div>
+          )}
+          {showJsonTools && (
+            <div className="flex h-7 items-center rounded-md border border-(--border) p-0.5">
+              {(["json", "table"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => handleViewModeChange(m)}
+                  title={m === "json" ? "JSON mode" : "Table mode"}
+                  aria-label={m === "json" ? "JSON mode" : "Table mode"}
+                  aria-pressed={viewMode === m}
+                  className={`flex h-full items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors ${
+                    viewMode === m ? "bg-(--surface-2) text-(--text)" : "text-(--muted) hover:text-(--text)"
+                  }`}
+                >
+                  {m === "json" ? <Braces size={11} aria-hidden="true" /> : <Table2 size={11} aria-hidden="true" />}
+                  <span className="max-sm:hidden">{m === "json" ? "JSON" : "Table"}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Content */}
@@ -454,7 +462,9 @@ export default function TabEditor({
         className="flex-1 flex flex-col min-h-0"
       >
       {activeTab === "body" && (
-        <div role="radiogroup" aria-label="Body type" className="flex items-center gap-1 border-b border-white/5 px-2 py-1.5 shrink-0">
+        <div className="flex shrink-0 items-center gap-2 border-b border-(--border) px-3 py-2">
+        <span className="text-[11px] text-(--muted)" aria-hidden="true">Type</span>
+        <div role="radiogroup" aria-label="Body type" className="flex items-center rounded-md border border-(--border) p-0.5">
           {BODY_TYPES.map((t) => (
             <button
               key={t.id}
@@ -462,17 +472,18 @@ export default function TabEditor({
               role="radio"
               aria-checked={bodyType === t.id}
               onClick={() => changeBodyType(t.id)}
-              className={`rounded px-2 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                bodyType === t.id ? "bg-cyan-400/10 text-(--brand)" : "text-white/60 hover:text-white/85"
+              className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                bodyType === t.id ? "bg-(--accent-soft) text-(--brand)" : "text-(--muted) hover:text-(--text)"
               }`}
             >
               {t.label}
             </button>
           ))}
         </div>
+        </div>
       )}
       {activeTab === "body" && bodyType === "none" ? (
-        <p className="flex-1 flex items-center justify-center p-6 text-xs text-white/60">
+        <p className="flex-1 flex items-center justify-center p-6 text-xs text-(--muted)">
           This request has no body. Pick JSON, Text or Form to add one.
         </p>
       ) : activeTab === "body" && bodyType === "form" ? (

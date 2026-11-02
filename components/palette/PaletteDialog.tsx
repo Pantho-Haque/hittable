@@ -2,26 +2,22 @@
 
 import {
   useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Command, FileText } from "lucide-react";
 import { ModalShell } from "@/components/ui/SharedModal";
 import { ShortcutKeys } from "@/components/modals/ShortcutsModal";
-import { METHOD_COLORS } from "@/constants";
 import { shortcutById } from "@/constants/shortcuts";
-import { useDataContext } from "@/context/dataContext";
 import { useWorkspace } from "@/context/workspaceContext";
 import { useShortcuts } from "@/context/ShortcutKeypressProvider";
 import { fuzzyScore } from "@/utils/fuzzy";
-import { selectionHref } from "@/utils/selectionHref";
 import { openTool, requestCopyCurl, type ToolName } from "@/utils/uiEvents";
-import type { TDirectoryNode, THittableItem } from "@/types";
+import type { WsNode } from "@/services/workspace/backend";
 
 type Item = {
   id: string;
-  kind: "action" | "request" | "file";
+  kind: "action" | "file";
   label: string;
   detail?: string;
-  method?: string;
   shortcut?: string;
   keywords?: string;
   run: () => void;
@@ -48,28 +44,10 @@ function saveRecent(id: string) {
   }
 }
 
-function extractMethod(curl: string): string {
-  const m = curl.match(/-X\s+([A-Z]+)/i);
-  if (m) return m[1].toUpperCase();
-  return /curl\s+-I\b/.test(curl) ? "HEAD" : "GET";
-}
-
-function walkRoutes(
-  items: THittableItem[],
-  folderPath: string[],
-  visit: (name: string, curl: string, folderPath: string[]) => void,
-) {
-  for (const item of items) {
-    if (item.type === "route") visit(item.name, item.curl, folderPath);
-    else walkRoutes(item.items, [...folderPath, item.name], visit);
-  }
-}
-
-function walkFiles(nodes: TDirectoryNode[], path: string[], visit: (node: TDirectoryNode, path: string[]) => void) {
+function walkFiles(nodes: WsNode[], visit: (node: WsNode) => void) {
   for (const node of nodes) {
-    const p = [...path, node.name];
-    if (node.kind === "file") visit(node, p);
-    else if (node.children) walkFiles(node.children, p, visit);
+    if (node.kind === "file") visit(node);
+    else if (node.children) walkFiles(node.children, visit);
   }
 }
 
@@ -79,21 +57,17 @@ const directorySupported = () => typeof window !== "undefined" && "showDirectory
 
 export default function PaletteDialog({
   onClose,
-  collectionName,
   typedSoFar = () => "",
   takeTyped = () => "",
 }: {
   onClose: () => void;
-  collectionName: string;
   /** Characters typed since Ctrl+K while this dialog was loading (read-only). */
   typedSoFar?: () => string;
   /** The same, and stop holding keys: from now on they reach the input. */
   takeTyped?: () => string;
 }) {
+  const { backendKind, tree, setActiveFile, activeFile, openFolder, closeWorkspace } = useWorkspace();
   const router = useRouter();
-  const routeName = useSearchParams().get("r") ?? "";
-  const { collections } = useDataContext();
-  const { mode, tree, setActiveFile, activeFile, openFolder, disconnectFolder } = useWorkspace();
   const { toggle } = useShortcuts();
   // Render reads what was typed while loading (render may run twice); the
   // effect takes the final text, keys typed until then included.
@@ -118,58 +92,37 @@ export default function PaletteDialog({
       id: `action:${id}`, kind: "action", label, keywords, shortcut, run: () => openTool(id, target),
     });
     const list: Item[] = [];
-    const local = mode === "local";
-
-    if (local && collectionName) list.push(tool("new-request", "New request", "create route add", undefined, "new-route"));
     list.push({
-      id: "action:toggle-sidebar", kind: "action", label: local ? "Toggle sidebar" : "Toggle explorer",
-      keywords: "hide show panel", shortcut: "toggle-sidebar", run: () => toggle("toggleSidebar"),
+      id: "action:toggle-sidebar", kind: "action", label: "Toggle explorer",
+      keywords: "hide show panel sidebar", shortcut: "toggle-sidebar", run: () => toggle("toggleSidebar"),
     });
-    if (local && collectionName) list.push(tool("env", "Environment variables", "env secrets variables", collectionName));
-    if ((local && routeName) || activeFile?.kind === "hit") {
+    if (activeFile?.kind === "hit") {
       list.push({ id: "action:copy-curl", kind: "action", label: "Copy request as cURL", keywords: "clipboard export", run: requestCopyCurl });
     }
-    if (local) {
-      list.push(tool("import", "Import collection", "postman insomnia curl paste"));
-      if (collectionName) list.push(tool("export", "Export collection", "download share postman insomnia", collectionName));
-      list.push(tool("history", "Request history", "recent log replay"));
-      list.push(tool("notes", "Notes", "notebook text"));
-      list.push(tool("auth", "Auth headers", "authentication bearer token basic api key"));
-      list.push(tool("info", "Help and info", "about extension proxy privacy"));
-    }
     list.push(tool("shortcuts", "Keyboard shortcuts", "keys cheatsheet hotkeys help", undefined, "cheatsheet"));
-    if (mode === "directory") {
-      list.push({ id: "action:switch", kind: "action", label: "Switch to Local collections", keywords: "mode workspace browser storage", run: disconnectFolder });
-    } else if (directorySupported()) {
-      list.push({ id: "action:switch", kind: "action", label: "Open a folder (Folder mode)", keywords: "switch mode directory workspace disk", run: () => void openFolder() });
-    }
-
-    if (local) {
-      for (const col of collections) {
-        walkRoutes(col.items, [], (name, curl, folderPath) => {
-          list.push({
-            id: `request:${JSON.stringify([col.collectionName, folderPath, name])}`,
-            kind: "request",
-            label: name,
-            detail: [col.collectionName, ...folderPath].join(" / "),
-            method: extractMethod(curl),
-            run: () => router.push(selectionHref({ collectionName: col.collectionName, folderPath, curlName: name })),
-          });
-        });
-      }
-    } else {
-      walkFiles(tree, [], (node, path) => {
-        list.push({
-          id: `file:${path.join("/")}`,
-          kind: "file",
-          label: node.name,
-          detail: path.slice(0, -1).join(" / "),
-          run: () => setActiveFile({ path, handle: node.handle as FileSystemFileHandle }),
-        });
+    if (backendKind) {
+      list.push({
+        id: "action:close-folder", kind: "action", label: backendKind === "folder" ? "Close folder" : "Close repository",
+        keywords: "disconnect workspace", run: () => { closeWorkspace(); router.push("/hittable"); },
       });
     }
+    if (directorySupported()) {
+      list.push({
+        id: "action:open-folder", kind: "action", label: "Open a local folder", keywords: "directory workspace disk",
+        run: () => void openFolder().then((ok) => ok && router.push("/hittable/folder")),
+      });
+    }
+    walkFiles(tree, (node) => {
+      list.push({
+        id: `file:${node.path.join("/")}`,
+        kind: "file",
+        label: node.name,
+        detail: node.path.slice(0, -1).join(" / "),
+        run: () => setActiveFile(node.path),
+      });
+    });
     return list;
-  }, [mode, collectionName, routeName, activeFile, collections, tree, router, toggle, setActiveFile, openFolder, disconnectFolder]);
+  }, [backendKind, activeFile, tree, toggle, setActiveFile, openFolder, closeWorkspace, router]);
 
   const results = useMemo(() => {
     const rank = (id: string) => {
@@ -177,7 +130,7 @@ export default function PaletteDialog({
       return i < 0 ? MAX_RECENT : i;
     };
     if (!query.trim()) {
-      // Recently used first, then actions, then requests/files in their order.
+      // Recently used first, then actions, then files in their order.
       return items
         .map((item, i) => ({ item, i }))
         .sort((a, b) => rank(a.item.id) - rank(b.item.id) || a.i - b.i)
@@ -187,7 +140,7 @@ export default function PaletteDialog({
     const scored: { item: Item; score: number }[] = [];
     for (const item of items) {
       const own = fuzzyScore(query, item.label);
-      const score = own !== null ? own + 50 : fuzzyScore(query, `${item.label} ${item.detail ?? ""} ${item.method ?? ""} ${item.keywords ?? ""}`);
+      const score = own !== null ? own + 50 : fuzzyScore(query, `${item.label} ${item.detail ?? ""} ${item.keywords ?? ""}`);
       if (score !== null) scored.push({ item, score: score + (MAX_RECENT - rank(item.id)) * 2 });
     }
     return scored.sort((a, b) => b.score - a.score).slice(0, MAX_SHOWN).map((x) => x.item);
@@ -239,7 +192,7 @@ export default function PaletteDialog({
           aria-autocomplete="list"
           aria-activedescendant={current >= 0 ? optionId(current) : undefined}
           aria-label="Search requests, files and actions"
-          placeholder={mode === "local" ? "Search requests and actions…" : "Search files and actions…"}
+          placeholder="Search files and actions…"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -266,14 +219,7 @@ export default function PaletteDialog({
                   selected ? "bg-(--surface-2) text-white" : "text-white/75"
                 }`}
               >
-                {item.kind === "request" ? (
-                  <span
-                    className="w-14 shrink-0 text-center text-[11px] font-bold"
-                    style={{ color: METHOD_COLORS[item.method ?? "GET"] ?? "var(--muted)" }}
-                  >
-                    {item.method}
-                  </span>
-                ) : item.kind === "file" ? (
+                {item.kind === "file" ? (
                   <FileText size={14} className="mx-5 shrink-0 text-(--muted)" aria-hidden="true" />
                 ) : (
                   <Command size={14} className="mx-5 shrink-0 text-(--brand)" aria-hidden="true" />

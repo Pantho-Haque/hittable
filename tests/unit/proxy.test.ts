@@ -267,7 +267,9 @@ describe("forward: requests a user sends", () => {
   });
 
   it("follows redirects", async () => {
-    expect((await forward({ url: `${base}/redirect`, method: "GET" })).data).toEqual({ hello: "wörld", n: 1 });
+    const followed = await forward({ url: `${base}/redirect`, method: "GET" });
+    expect(followed.data).toEqual({ hello: "wörld", n: 1 });
+    expect(followed.url).toBe(`${base}/json`); // the final URL, for the HTML preview's base
     const r = await forward({ url: `${base}/post-redirect`, method: "POST", body: "x" });
     expect((r.data as { method: string }).method).toBe("GET"); // 303 turns POST into GET
   });

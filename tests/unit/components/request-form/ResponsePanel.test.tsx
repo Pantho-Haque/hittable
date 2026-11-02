@@ -1,29 +1,27 @@
 // @vitest-environment jsdom
 import { EXTENSION_URL } from "@/config";
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import ResponsePanel from "@/components/RequestForm/ResponsePanel";
 import HtmlPreview from "@/components/RequestForm/ResponsePanelComponents/HtmlPreview";
-import { mountData } from "../../helpers/dataHarness";
+import { mountRunner } from "../../helpers/runnerHarness";
 import type { TResponseJson } from "@/types";
-import type { DataSource } from "@/types/workspace";
 
-function setup(res?: TResponseJson) {
+function setup(response?: TResponseJson) {
   const user = userEvent.setup();
-  const r = mountData(<ResponsePanel />);
-  if (res !== undefined) act(() => r.ctx().setProxyResponse(res));
-  return { user, ...r, respond: (next: TResponseJson) => act(() => r.ctx().setProxyResponse(next)) };
+  const r = mountRunner({ response });
+  return { user, ...r, respond: (next: TResponseJson) => act(() => r.respond(next)) };
 }
 
 const json = (data: unknown, extra: Partial<NonNullable<TResponseJson>> = {}): TResponseJson => ({
   status: 200, statusText: "OK", ok: true, data, headers: { "content-type": "application/json; charset=utf-8" }, ...extra,
 });
 const status = () => screen.getByText((_, el) => el?.getAttribute("aria-live") === "polite");
+// The whole Runner is mounted, so tab queries are scoped to the panel: the
+// request editor has a Headers tab of its own.
 const panel = () => screen.getByRole("region", { name: "Response" });
 
 beforeEach(() => {
-  localStorage.clear();
   Element.prototype.scrollIntoView = () => {}; // not in jsdom
 });
 
@@ -72,7 +70,7 @@ describe("Response panel", () => {
   it("an error response shows the message instead of tabs", () => {
     setup({ error: "Error: Failed to connect to target URL" });
     expect(screen.getByRole("alert")).toHaveTextContent("Failed to connect to target URL");
-    expect(screen.queryByRole("tab", { name: /headers/i })).not.toBeInTheDocument();
+    expect(within(panel()).queryByRole("tab", { name: /headers/i })).not.toBeInTheDocument();
   });
 
   // FR-10: the missing-extension case says what to do, with a primary
@@ -95,7 +93,7 @@ describe("Response panel", () => {
 
     it("shows the header count and every header", async () => {
       const { user } = withHeaders();
-      const headersTab = screen.getByRole("tab", { name: /headers/i });
+      const headersTab = within(panel()).getByRole("tab", { name: /headers/i });
       expect(headersTab).toHaveTextContent("(3)");
       await user.click(headersTab);
       expect(screen.getByText("x-request-id")).toBeInTheDocument();
@@ -104,7 +102,7 @@ describe("Response panel", () => {
 
     it("copies one header or all of them", async () => {
       const { user } = withHeaders();
-      await user.click(screen.getByRole("tab", { name: /headers/i }));
+      await user.click(within(panel()).getByRole("tab", { name: /headers/i }));
       await user.click(screen.getByTitle("Copy x-request-id"));
       expect(await navigator.clipboard.readText()).toBe("x-request-id: abc123");
       await user.click(screen.getByTitle("Copy all headers"));
@@ -115,7 +113,7 @@ describe("Response panel", () => {
 
     it("search filters header rows by name or value", async () => {
       const { user } = withHeaders();
-      await user.click(screen.getByRole("tab", { name: /headers/i }));
+      await user.click(within(panel()).getByRole("tab", { name: /headers/i }));
       await user.click(screen.getByTitle("Search (⌘F)"));
       await user.type(screen.getByPlaceholderText("Search keys & values…"), "STORE");
       expect(screen.getByText("cache-control")).toBeInTheDocument();
@@ -129,7 +127,7 @@ describe("Response panel", () => {
 
     it("a response without headers says so", async () => {
       const { user } = setup({ status: 200, data: "x" });
-      await user.click(screen.getByRole("tab", { name: /headers/i }));
+      await user.click(within(panel()).getByRole("tab", { name: /headers/i }));
       expect(screen.getByText("No response headers")).toBeInTheDocument();
     });
   });
@@ -274,65 +272,75 @@ describe("Response panel", () => {
 
 describe("HTML preview", () => {
   const iframe = () => screen.getByTitle("HTML response preview") as HTMLIFrameElement;
+  const srcdoc = () => iframe().getAttribute("srcdoc")!;
 
-  it("is sandboxed so the page's scripts never run", () => {
+  it("runs page scripts only in an opaque-origin sandbox: never allow-same-origin, no dialogs, no top navigation", () => {
     render(<HtmlPreview html="<script>alert(1)</script>" />);
-    const sandbox = iframe().getAttribute("sandbox")!;
-    expect(sandbox).not.toBe(null);
-    expect(sandbox.split(/\s+/)).not.toContain("allow-scripts");
+    const flags = iframe().getAttribute("sandbox")!.split(/\s+/);
+    expect(flags).toContain("allow-scripts");
+    for (const unsafe of ["allow-same-origin", "allow-modals", "allow-top-navigation", "allow-forms"]) expect(flags).not.toContain(unsafe);
   });
 
-  it("injects <base href> pointing at the request's directory", () => {
-    render(<HtmlPreview html="<html><head><title>t</title></head><body></body></html>" requestUrl="https://site.io/docs/page.html" />);
-    expect(iframe().getAttribute("srcdoc")).toContain('<head>\n<base href="https://site.io/docs/">');
+  it("injects <base href> at the page's URL, opening links in a new tab", () => {
+    render(<HtmlPreview html="<html><head><title>t</title></head><body></body></html>" baseUrl="https://www.site.io/docs/page.html" />);
+    expect(srcdoc()).toMatch(/^<html><head><base href="https:\/\/www.site.io\/docs\/page.html" target="_blank"><style>:root\{color-scheme:light\}<\/style><script nonce=/);
   });
 
-  it("adds a head when the page has only <html>, or prepends the tag for a fragment", () => {
-    const { unmount } = render(<HtmlPreview html="<html><body>x</body></html>" requestUrl="https://site.io/a" />);
-    expect(iframe().getAttribute("srcdoc")).toContain('<html>\n<head><base href="https://site.io/"></head>');
+  it("does not mistake <header> for <head>, and adds a head when there is none", () => {
+    const { unmount } = render(<HtmlPreview html="<html><body><header>x</header></body></html>" baseUrl="https://site.io/a" />);
+    expect(srcdoc()).toMatch(/^<html><head><base href="https:\/\/site.io\/a" target="_blank"><style>[^<]*<\/style><script[^>]*>[\s\S]*<\/script><\/head><body><header>x<\/header>/);
     unmount();
-    render(<HtmlPreview html="<p>x</p>" requestUrl="https://site.io/a/b" />);
-    expect(iframe().getAttribute("srcdoc")).toBe('<base href="https://site.io/a/">\n<p>x</p>');
+    render(<HtmlPreview html="<p>x</p>" baseUrl="https://site.io/a/b" />);
+    expect(srcdoc()).toMatch(/^<base href="https:\/\/site.io\/a\/b" target="_blank"><style>[^<]*<\/style><script[\s\S]*<\/script><p>x<\/p>$/);
   });
 
-  it("a `$` in the URL path is inserted literally", () => {
-    render(<HtmlPreview html="<html><head></head></html>" requestUrl="https://site.io/a$&b/page" />);
-    expect(iframe().getAttribute("srcdoc")).toContain('<head>\n<base href="https://site.io/a$&b/">');
+  it("a quote or `$` in the URL cannot break out of the attribute", () => {
+    render(<HtmlPreview html="<html><head></head></html>" baseUrl={'https://site.io/a$&b/"><script>x()</script>'} />);
+    expect(srcdoc()).toContain('<base href="https://site.io/a$&b/%22%3E%3Cscript%3Ex()%3C/script%3E" target="_blank">');
   });
 
-  it("without a request URL the HTML is used as-is", () => {
-    render(<HtmlPreview html="<p>x</p>" />);
-    expect(iframe().getAttribute("srcdoc")).toBe("<p>x</p>");
+  it("without a usable URL there is no base tag", () => {
+    const { unmount } = render(<HtmlPreview html="<p>x</p>" />);
+    expect(srcdoc()).not.toContain("<base");
+    unmount();
+    render(<HtmlPreview html="<p>x</p>" baseUrl="not a url" />);
+    expect(srcdoc()).not.toContain("<base");
   });
 
-  it("the panel resolves <<KEY>> in the request URL for the base href", () => {
-    const { ctx } = mountData(<ResponsePanel />);
-    act(() => {
-      ctx().setSelectorResponse({
-        collectionName: "Users", folderPath: [], curlName: "Page",
-        env: { HOST: "env.io" }, secrets: { HOST: "secret.io" },
-        curlJson: { method: "GET", url: "https://<<HOST>>/docs/index.html", headers: "{}", body: "", params: "{}" },
-      });
-      // The URL in the bar is what was sent, so it is the one the preview uses.
-      ctx().setFormInput((f) => ({ ...f, url: "https://<<HOST>>/docs/index.html" }));
-      ctx().setProxyResponse({ status: 200, data: "<html><head></head></html>", headers: { "content-type": "text/html" } });
+  it("scripts off adds a CSP that only lets the inspector run", () => {
+    const { unmount } = render(<HtmlPreview html="<html><head></head></html>" scripts={false} />);
+    const nonce = srcdoc().match(/<script nonce="(\w+)">/)![1];
+    expect(srcdoc()).toContain(`<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-${nonce}'">`);
+    unmount();
+    render(<HtmlPreview html="<html><head></head></html>" />);
+    expect(srcdoc()).not.toContain("Content-Security-Policy");
+  });
+
+  it("a pick posted by the frame is reported; messages from anywhere else are ignored", () => {
+    const picked = vi.fn();
+    render(<HtmlPreview html="<p>x</p>" inspectMode onElementSelect={picked} />);
+    const pick = { type: "hittable:picked", tagName: "p", attributes: { id: "a", n: 1 }, outerHTML: "<p id=a>x</p>" };
+    window.dispatchEvent(new MessageEvent("message", { data: pick, source: window }));
+    expect(picked).not.toHaveBeenCalled();
+    window.dispatchEvent(new MessageEvent("message", { data: pick, source: iframe().contentWindow }));
+    expect(picked).toHaveBeenCalledWith({ tagName: "p", attributes: { id: "a" }, outerHTML: "<p id=a>x</p>" });
+  });
+
+  it("the panel prefers the final URL the proxy reports over the request URL", () => {
+    mountRunner({
+      request: { method: "GET", url: "https://site.io/", headers: "{}", body: "", params: "{}" },
+      response: { status: 200, url: "https://www.site.io/home", data: "<html><head></head></html>", headers: { "content-type": "text/html" } },
     });
-    expect(iframe().getAttribute("srcdoc")).toContain('<base href="https://secret.io/docs/">');
+    expect(srcdoc()).toContain('<base href="https://www.site.io/home" target="_blank">');
   });
 
-  it("in Directory mode the base href comes from the open file, not the Local-mode route", () => {
-    const { ctx } = mountData(<span />);
-    const fileSource = {
-      ...ctx(),
-      proxyResponse: { status: 200, data: "<p>x</p>", headers: { "content-type": "text/html" } },
-      selectorResponse: {
-        collectionName: "", folderPath: [], curlName: "page.hit", env: {}, secrets: {},
-        curlJson: { method: "GET", url: "https://file.io/x/y", headers: "{}", body: "", params: "{}" },
-      },
-      formInput: { method: "GET", url: "https://file.io/x/y", headers: "{}", body: "", params: "{}" },
-    } as unknown as DataSource;
-    mountData(<ResponsePanel dataSource={fileSource} />);
-    expect(iframe().getAttribute("srcdoc")).toBe('<base href="https://file.io/x/">\n<p>x</p>');
+  it("the panel resolves <<KEY>> from env in the request URL for the base href", () => {
+    mountRunner({
+      request: { method: "GET", url: "https://<<HOST>>/docs/index.html", headers: "{}", body: "", params: "{}" },
+      env: { HOST: "env.io" },
+      response: { status: 200, data: "<html><head></head></html>", headers: { "content-type": "text/html" } },
+    });
+    expect(iframe().getAttribute("srcdoc")).toContain('<base href="https://env.io/docs/index.html" target="_blank">');
   });
 });
 

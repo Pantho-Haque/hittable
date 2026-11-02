@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { JsonValue } from "@/types";
 import { getType, valueMatchesSearch } from "@/utils/responsePanelUtils";
-import { Highlight } from "@/components";
+import { Highlight } from "./Highlight";
 
 export default function JsonNode({
   keyName,

@@ -34,7 +34,7 @@ export default function DocsToc({ headings }: { headings: DocHeading[] }) {
               className={cn(
                 "-ml-px block border-l py-1 pr-2 leading-snug transition-colors",
                 h.depth === 3 ? "pl-6" : "pl-3",
-                active === h.id ? "border-cyan-400 text-cyan-300" : "border-transparent text-white/60 hover:text-slate-100",
+                active === h.id ? "border-(--brand) text-(--brand)" : "border-transparent text-white/60 hover:text-(--text)",
               )}
             >
               {h.text}

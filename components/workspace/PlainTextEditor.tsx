@@ -6,7 +6,8 @@ import { isSvg } from "@/utils/workspace/fileKind";
 import SourceEditor from "./SourceEditor";
 
 export default function PlainTextEditor() {
-  const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile } = useWorkspace();
+  const { rawTextContent, updateRawTextContent, saveRawTextContent, isFileLoaded, activeFile, readOnly: workspaceReadOnly, fileNotice } = useWorkspace();
+  const readOnly = workspaceReadOnly || !!fileNotice;
   const name = activeFile?.path[activeFile.path.length - 1] ?? "";
   const svg = isSvg(name);
   const [preview, setPreview] = useState(false);
@@ -26,7 +27,7 @@ export default function PlainTextEditor() {
       key={activeFile?.path.join("/")}
       path={activeFile?.path ?? []}
       value={rawTextContent}
-      disabled={!isFileLoaded}
+      disabled={!isFileLoaded || readOnly}
       onChange={(value) => {
         updateRawTextContent(value);
         saveRawTextContent(value);

@@ -2,16 +2,19 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <main className="flex min-h-[calc(100dvh-44px)] flex-col items-center justify-center bg-(--ink-900) p-8 font-sans text-slate-100">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-(--ink-800) p-8 text-center shadow-2xl">
-        <h1 className="mb-2 text-5xl font-bold tracking-tight">404</h1>
-        <h2 className="mb-4 text-lg text-slate-300">Page not found</h2>
-        <p className="mb-8 text-sm text-slate-400">The page you are looking for doesn&apos;t exist or has been moved.</p>
-        <div className="flex items-center justify-center gap-3">
-          <Link href="/" className="rounded-full bg-(--brand) px-4 py-2 text-sm font-semibold text-(--ink-950) transition-all hover:brightness-110">
+    <main className="flex min-h-[calc(100dvh-44px)] items-center bg-(--ink-900) px-4 py-16 text-(--text) sm:px-6">
+      <div className="mx-auto w-full max-w-md">
+        <p className="font-mono text-sm text-(--muted)">
+          <span className="text-(--danger)">404</span> Not Found
+        </p>
+        <h1 className="mt-3 text-5xl font-semibold tracking-[-0.03em]">404</h1>
+        <h2 className="mt-2 text-lg text-(--text)">Page not found</h2>
+        <p className="mt-3 text-sm leading-relaxed text-(--muted)">Nothing lives at this path. It may have moved, or the link has a typo.</p>
+        <div className="mt-8 flex flex-wrap items-center gap-3">
+          <Link href="/" className="flex min-h-10 items-center rounded-md bg-(--brand) px-4 text-sm font-semibold text-(--accent-ink) hover:brightness-110">
             Home
           </Link>
-          <Link href="/docs" className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/5">
+          <Link href="/docs" className="flex min-h-10 items-center rounded-md border border-(--border-strong) px-4 text-sm font-medium text-(--text) hover:bg-(--ink-800)">
             Docs
           </Link>
         </div>

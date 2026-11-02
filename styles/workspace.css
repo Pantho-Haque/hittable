@@ -1,6 +1,6 @@
 .workspace {
   color-scheme: dark;
-  color: #e2e8f0;
+  color: var(--text);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
@@ -13,28 +13,30 @@
   min-height: 2rem;
   padding: 0.375rem 0.5rem;
   border-radius: 0.375rem;
-  color: #a8b5c7;
+  color: var(--muted);
   font-size: 0.75rem;
   font-weight: 500;
   transition: color 120ms, background-color 120ms;
 }
-.workspace-button:hover { color: #f1f5f9; background: #ffffff0d; }
-.workspace-button[aria-pressed="true"] { color: #a5f3fc; background: #22d3ee1a; }
+.workspace-button:hover { color: var(--text); background: var(--border); }
+.workspace-button[aria-pressed="true"] { color: var(--brand); background: var(--accent-soft); }
 .workspace :is(button, textarea, input, [tabindex]):focus-visible {
-  outline: 2px solid #67e8f9;
+  outline: 2px solid var(--brand);
   outline-offset: -2px;
 }
-.source-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: #0c1422; }
-.source-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-shrink: 0; min-height: 3rem; padding: 0.375rem 1rem; border-bottom: 1px solid #ffffff0f; background: #101c2d; }
-.source-breadcrumb { padding: 0.5rem 1rem; font-size: 0.75rem; color: #a8b5c7; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex-shrink: 0; }
+.source-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: var(--ink-700); }
+.source-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-shrink: 0; min-height: 3rem; padding: 0.375rem 1rem; border-bottom: 1px solid var(--border); background: var(--ink-600); }
+.source-breadcrumb { padding: 0.5rem 1rem; font-size: 0.75rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex-shrink: 0; }
 /* Host for the CodeMirror view. Typography and colours live in
    components/workspace/editorTheme.ts so CodeMirror owns its own metrics. */
 .source-content { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .source-content .cm-editor { flex: 1; min-width: 0; height: 100%; }
 .source-content .cm-editor.cm-focused { outline: none; }
-.source-content .cm-placeholder { color: #94a3b8; }
-.source-status { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-shrink: 0; padding: 0.5rem 1rem; border-top: 1px solid #ffffff0f; color: #a8b5c7; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
-.workspace .note-preview { font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: 0.9375rem; line-height: 1.8; color: #dce6f3; overflow-wrap: anywhere; }
+.response-source .cm-editor { height: 100%; font-size: 12px; }
+.response-source .cm-editor.cm-focused { outline: none; }
+.source-content .cm-placeholder { color: var(--muted); }
+.source-status { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-shrink: 0; padding: 0.5rem 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.workspace .note-preview { font-family: var(--font-geist-sans), system-ui, sans-serif; font-size: 0.9375rem; line-height: 1.8; color: var(--text); overflow-wrap: anywhere; }
 .workspace .note-preview code { font-family: var(--font-geist-mono), monospace; }
 .note-preview img { max-width: 100%; height: auto; }
 .note-preview ul { list-style: disc; }
@@ -45,3 +47,32 @@
   .workspace-button,
   .source-content .cm-foldGutter .cm-gutterElement { transition: none; }
 }
+
+/* ── Split panes (components/ui/Split.tsx) ── */
+.split-handle { position: relative; flex: none; z-index: 10; background: var(--border); touch-action: none; outline: none; transition: background-color 0.1s ease 0s; }
+.split-handle-x { width: 1px; cursor: col-resize; }
+.split-handle-y { height: 1px; cursor: row-resize; }
+/* A 9px target around a 1px line. */
+.split-handle::after { content: ""; position: absolute; inset: 0 -4px; }
+.split-handle-y::after { inset: -4px 0; }
+/* Between two framed boxes (the runner): a gap instead of a line. */
+.split-gap > .split-handle { background: transparent; }
+.split-gap > .split-handle-x { margin: 0 3px; }
+.split-gap > .split-handle-y { margin: 3px 0; }
+/* Highlight after a short hover, so passing over it does not flicker (VS Code's sash). */
+.split-handle:hover, .split-handle:active { background: var(--brand); box-shadow: 0 0 0 1px var(--brand); transition-delay: 0.15s; }
+.split-handle:focus-visible { background: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+body.is-splitting-x, body.is-splitting-x * { cursor: col-resize !important; user-select: none; }
+body.is-splitting-y, body.is-splitting-y * { cursor: row-resize !important; user-select: none; }
+body.is-splitting-x iframe, body.is-splitting-y iframe { pointer-events: none; }
+.split-restore { display: flex; flex: none; align-items: center; gap: 6px; border: 0; background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer; }
+.split-restore:hover { background: var(--ink-600); color: var(--text); }
+.split-restore:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.split-restore-y { width: 100%; height: 28px; padding: 0 12px; }
+.split-restore-x { width: 28px; height: 100%; padding: 12px 0; writing-mode: vertical-rl; }
+
+/* Request URL bar: method + URL are one field, so focus rings the whole field. */
+.url-field:hover { border-color: var(--ink-400); }
+.url-field:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px var(--accent-soft); }
+.workspace .url-field :is(select, textarea):focus-visible { outline: none; }
+.url-field select:focus-visible { background: var(--surface-2); }

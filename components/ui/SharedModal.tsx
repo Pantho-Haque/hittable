@@ -118,39 +118,6 @@ export function ModalShell({
   );
 }
 
-export function ModalInput({
-  value,
-  onChange,
-  onKeyDown,
-  placeholder,
-  autoFocus,
-  ariaLabel,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onKeyDown?: (e: React.KeyboardEvent) => void;
-  placeholder?: string;
-  autoFocus?: boolean;
-  ariaLabel?: string;
-}) {
-  return (
-    <input
-      autoFocus={autoFocus}
-      aria-label={ariaLabel || placeholder || "Input"}
-      className="w-full border-b border-cyan-500/30 bg-transparent outline-none py-2 text-sm text-white/80 placeholder-white/20 focus:border-cyan-400 transition-colors"
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => {
-        // Enter usually confirms and closes the modal, which returns focus to
-        // the button that opened it; without this the same keystroke's
-        // keypress would then "click" that button and reopen the modal.
-        if (e.key === "Enter") e.preventDefault();
-        onKeyDown?.(e);
-      }}
-    />
-  );
-}
 
 export function ModalActions({
   onCancel,

@@ -63,15 +63,19 @@ export async function removeDirectoryHandle(): Promise<void> {
   }
 }
 
+/**
+ * Whether the folder can be read and written. Asking (`prompt`) needs a user
+ * gesture, so a page load only checks a permission the browser kept.
+ */
 export async function verifyPermission(
-  handle: FileSystemDirectoryHandle
+  handle: FileSystemDirectoryHandle,
+  prompt = true
 ): Promise<boolean> {
   const options = { mode: "readwrite" as const };
-  if ((await handle.queryPermission(options)) === "granted") {
-    return true;
+  try {
+    if ((await handle.queryPermission(options)) === "granted") return true;
+    return prompt && (await handle.requestPermission(options)) === "granted";
+  } catch {
+    return false; // no user activation, or the handle is stale
   }
-  if ((await handle.requestPermission(options)) === "granted") {
-    return true;
-  }
-  return false;
 }

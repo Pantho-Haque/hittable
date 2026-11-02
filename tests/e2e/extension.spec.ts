@@ -10,10 +10,12 @@ import {
   fillTab,
   response,
   statusBadge,
-  collection,
-  route,
-  openRoute,
+  openRequest,
+  FOLDER_ONLY,
 } from "./fixtures/test";
+
+// The extension status lives in the Runner, which needs a folder workspace.
+test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
 
 test.describe("without the browser extension", () => {
   test.use({ extension: false });
@@ -24,9 +26,8 @@ test.describe("without the browser extension", () => {
   const extensionButton = (page: import("@playwright/test").Page) =>
     page.getByRole("button", { name: "Extension not installed" });
 
-  test("nothing pops up; the status button explains how to install it", async ({ page, seed }) => {
-    await seed({ collections: [collection("Local", [route("r", `curl -X GET ${LOCAL_API}/users`)])] });
-    await openRoute(page, "Local", "r");
+  test("nothing pops up; the status button explains how to install it", async ({ page }) => {
+    await openRequest(page, { url: `${LOCAL_API}/users` });
     // The app pings for ~5 s before deciding the extension is missing.
     await expect(extensionButton(page)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -38,10 +39,9 @@ test.describe("without the browser extension", () => {
     await expect(modal).toBeHidden();
   });
 
-  test("Download opens the extension release", async ({ page, seed, context }) => {
-    await seed({ collections: [collection("Local", [route("r", `curl -X GET ${LOCAL_API}/users`)])] });
+  test("Download opens the extension release", async ({ page, context }) => {
     await context.route("https://github.com/**", (r) => r.fulfill({ status: 200, body: "ok" }));
-    await openRoute(page, "Local", "r");
+    await openRequest(page, { url: `${LOCAL_API}/users` });
     await extensionButton(page).click({ timeout: 10_000 });
     const modal = dialog(page, "Localhost extension");
     const [popup] = await Promise.all([context.waitForEvent("page"), modal.getByRole("button", { name: "Download" }).click()]);
@@ -49,9 +49,8 @@ test.describe("without the browser extension", () => {
   });
 
   for (const host of ["localhost", "127.0.0.1", "0.0.0.0"]) {
-    test(`a request to ${host} says to install the extension and never hits the proxy`, async ({ page, seed }) => {
-      await seed({ collections: [collection("Local", [route("r", `curl -X GET http://${host}:4100/users`)])] });
-      await openRoute(page, "Local", "r");
+    test(`a request to ${host} says to install the extension and never hits the proxy`, async ({ page }) => {
+      await openRequest(page, { url: `http://${host}:4100/users` });
       await expect(extensionButton(page)).toBeVisible({ timeout: 10_000 });
       let proxied = false;
       page.on("request", (r) => r.url().endsWith("/api/proxy") && (proxied = true));
@@ -62,18 +61,16 @@ test.describe("without the browser extension", () => {
     });
   }
 
-  test("remote URLs still work without it", async ({ page, seed }) => {
-    await seed({ collections: [collection("Remote", [route("r", `curl -X GET ${API}/users/1`)])] });
-    await openRoute(page, "Remote", "r");
+  test("remote URLs still work without it", async ({ page }) => {
+    await openRequest(page, { url: `${API}/users/1` });
     await send(page);
     await expect(statusBadge(page)).toHaveText("200 OK");
   });
 });
 
 test.describe("with the browser extension", () => {
-  test("localhost requests go through the extension, not the proxy", async ({ page, seed }) => {
-    await seed({ collections: [collection("Local", [route("r", "")])] });
-    await openRoute(page, "Local", "r");
+  test("localhost requests go through the extension, not the proxy", async ({ page }) => {
+    await openRequest(page);
     await page.waitForFunction(() => window.__hittableExtension === true);
     let proxied = false;
     page.on("request", (r) => r.url().endsWith("/api/proxy") && (proxied = true));
@@ -93,9 +90,8 @@ test.describe("with the browser extension", () => {
     await expect(dialog(page, "No Extension Found")).toHaveCount(0);
   });
 
-  test("an extension failure is shown as an error", async ({ page, seed }) => {
-    await seed({ collections: [collection("Local", [route("r", "curl -X GET http://localhost:1/nothing")])] });
-    await openRoute(page, "Local", "r");
+  test("an extension failure is shown as an error", async ({ page }) => {
+    await openRequest(page, { url: "http://localhost:1/nothing" });
     await page.waitForFunction(() => window.__hittableExtension === true);
     await send(page);
     // Chrome: "Failed to fetch", Safari: "Load failed", Firefox: "NetworkError…".

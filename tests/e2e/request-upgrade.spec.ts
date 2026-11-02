@@ -2,25 +2,25 @@ import {
   test,
   expect,
   API,
-  blankRequest,
-  collection,
-  editor,
+  openRequest,
   fillTab,
   methodSelect,
-  openRoute,
   response,
-  route,
   send,
   statusBadge,
   urlInput,
+  FOLDER_ONLY,
 } from "./fixtures/test";
+import { openFile, readFile } from "./fixtures/directory";
+
+test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
 
 // The Round 1 request-building requirements (docs/web-ux-requirements.md),
 // end to end against the fixture API.
 
 test.describe("body types (FR-4)", () => {
-  test("a Form body arrives URL-encoded with its Content-Type", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("a Form body arrives URL-encoded with its Content-Type", async ({ page }) => {
+    await openRequest(page);
     await methodSelect(page).selectOption("POST");
     await urlInput(page).fill(`${API}/echo`);
     await page.getByRole("tab", { name: "Body", exact: true }).click();
@@ -36,8 +36,8 @@ test.describe("body types (FR-4)", () => {
     await expect(response(page).getByText('"application/x-www-form-urlencoded"')).toBeVisible();
   });
 
-  test("a Text body arrives byte for byte, even when it is not JSON", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("a Text body arrives byte for byte, even when it is not JSON", async ({ page }) => {
+    await openRequest(page);
     await methodSelect(page).selectOption("POST");
     await urlInput(page).fill(`${API}/echo`);
     await page.getByRole("tab", { name: "Body", exact: true }).click();
@@ -48,35 +48,34 @@ test.describe("body types (FR-4)", () => {
     await expect(response(page).getByText('"text/plain"')).toBeVisible();
   });
 
-  test("the type survives a save and reload", async ({ page, seed }) => {
-    await seed({ collections: [collection("Bodies", [route("form", `curl -X POST ${API}/echo`)])] });
-    await openRoute(page, "Bodies", "form");
+  test("the type survives a save and reload", async ({ page }) => {
+    await openRequest(page, { method: "POST", url: `${API}/echo` });
     await page.getByRole("tab", { name: "Body", exact: true }).click();
     await page.getByRole("radio", { name: "Form" }).click();
     await page.getByPlaceholder("Field").first().fill("k");
     await page.getByPlaceholder("Value").first().fill("v");
     await page.keyboard.press("ControlOrMeta+s");
-    await expect(page.getByText(/Unsaved/)).toBeHidden();
+    await expect.poll(async () => JSON.parse(await readFile(page, "hittable/req.hit")).body).toBe("k=v");
     await page.reload();
+    await openFile(page, "hittable/req.hit");
     await page.getByRole("tab", { name: "Body", exact: true }).click();
     await expect(page.getByRole("radio", { name: "Form" })).toHaveAttribute("aria-checked", "true");
     await expect(page.getByPlaceholder("Field").first()).toHaveValue("k");
   });
 
-  test("invalid JSON blocks Send only for a JSON body", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("invalid JSON blocks Send only for a JSON body", async ({ page }) => {
+    await openRequest(page);
     await fillTab(page, "body", "{oops");
     await expect(page.getByRole("button", { name: "Send" })).toBeDisabled();
     await page.getByRole("radio", { name: "Text" }).click();
     await expect(page.getByRole("button", { name: "Send" })).toBeEnabled();
-    void editor;
   });
 });
 
 // The fixture API answers every OPTIONS with 204 (and /echo with 200 for
 // anything else), so a 204 shows the method really went out as OPTIONS.
-test("OPTIONS can be sent (FR-5)", async ({ page, seed }) => {
-  await blankRequest(page, seed);
+test("OPTIONS can be sent (FR-5)", async ({ page }) => {
+  await openRequest(page);
   await methodSelect(page).selectOption("OPTIONS");
   await urlInput(page).fill(`${API}/echo`);
   await send(page);
@@ -84,8 +83,8 @@ test("OPTIONS can be sent (FR-5)", async ({ page, seed }) => {
 });
 
 test.describe("cancel (FR-6)", () => {
-  test("Cancel returns to idle at once, and the next Send works", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("Cancel returns to idle at once, and the next Send works", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/slow?ms=5000`);
     await send(page);
     // A click within 400 ms of sending is taken as the tail of a double-click.
@@ -100,8 +99,8 @@ test.describe("cancel (FR-6)", () => {
     await expect(statusBadge(page)).toHaveText("200 OK");
   });
 
-  test("Esc cancels while the URL bar has focus", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("Esc cancels while the URL bar has focus", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/slow?ms=5000`);
     await urlInput(page).press("ControlOrMeta+Enter");
     await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible();
@@ -117,8 +116,8 @@ test.describe("status (FR-7)", () => {
     [404, "404 Not Found", "warning"],
     [503, "503 Service Unavailable", "danger"],
   ] as const) {
-    test(`${code} reads "${text}" and is shown as ${kind}`, async ({ page, seed }) => {
-      await blankRequest(page, seed);
+    test(`${code} reads "${text}" and is shown as ${kind}`, async ({ page }) => {
+      await openRequest(page);
       await urlInput(page).fill(`${API}/status/${code}`);
       await send(page);
       await expect(statusBadge(page)).toHaveText(text);
@@ -126,8 +125,8 @@ test.describe("status (FR-7)", () => {
     });
   }
 
-  test("size is the bytes received", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("size is the bytes received", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/text`);
     await send(page);
     // "plain text line one\n  indented line two\nhello world" is 51 bytes.
@@ -136,17 +135,16 @@ test.describe("status (FR-7)", () => {
 });
 
 test.describe("variables and curl (FR-3, FR-9)", () => {
-  test("unknown variables are marked and named before sending", async ({ page, seed }) => {
-    await seed({ collections: [collection("Vars", [route("r", `curl -X GET <<BASE_URL>>/x/<<MISSING>>`)], { BASE_URL: API })] });
-    await openRoute(page, "Vars", "r");
+  test("unknown variables are marked and named before sending", async ({ page }) => {
+    await openRequest(page, { url: "<<BASE_URL>>/x/<<MISSING>>", env: { BASE_URL: API } });
     const bar = urlInput(page).locator("..");
     await expect(bar.locator('[data-var="BASE_URL"]')).toHaveAttribute("data-resolved", "true");
     await expect(bar.locator('[data-var="MISSING"]')).toHaveAttribute("data-resolved", "false");
     await expect(page.getByRole("note")).toContainText("Unknown variable <<MISSING>>");
   });
 
-  test("a pasted curl fills the form at once, and Undo puts the old request back", async ({ page, seed }) => {
-    await blankRequest(page, seed, `${API}/users/1`);
+  test("a pasted curl fills the form at once, and Undo puts the old request back", async ({ page }) => {
+    await openRequest(page, { url: `${API}/users/1` });
     await urlInput(page).focus();
     await page.evaluate((cmd) => {
       const el = document.activeElement as HTMLTextAreaElement;

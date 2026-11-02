@@ -1,16 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { parseHitFile, serializeHitFile } from "@/utils/workspace/hitFileParser";
-import { parseEnvFile, serializeEnvFile } from "@/utils/workspace/envFileParser";
+import { findNode, isReservedPath, type WsNode } from "@/services/workspace/backend";
+import { editorKind } from "@/utils/workspace/fileKind";
 import {
-  buildTree, findNodeByPath, getParentHandle, getParentHandleForPath, isReservedRootEntry, getFileKind,
-} from "@/utils/workspace/directoryTreeHelpers";
-import {
-  fileExists, directoryExists, getFileHandle, getDirectoryHandle, readFileText, writeFileText, createFile,
-  createDirectory, removeEntry, renameEntry, listDirectory,
+  fileExists, directoryExists, readFileText, writeFileText, createFile, createDirectory, removeEntry, moveEntry,
 } from "@/utils/workspace/fsHelpers";
 import { getFileIcon, getFolderIcon } from "@/utils/workspace/fileIcons";
 import { languageForFile, languageNameForFile, languageHasCompletion } from "@/utils/workspace/editorLanguages";
-import { FakeDir, FakeFile, asDir } from "../helpers/fakeFs";
+import { FakeDir, asDir } from "../helpers/fakeFs";
 import type { THitFileContent } from "@/types";
 
 describe(".hit files", () => {
@@ -53,64 +50,48 @@ describe(".hit files", () => {
   });
 });
 
-describe("env.json", () => {
-  it("parses a flat object and rejects arrays, scalars and invalid JSON", () => {
-    expect(parseEnvFile('{"BASE_URL":"https://x.dev","TOKEN":""}')).toEqual({ BASE_URL: "https://x.dev", TOKEN: "" });
-    for (const bad of ["[1]", "1", '"s"', "null", "{bad", ""]) expect(parseEnvFile(bad)).toEqual({});
-  });
-  it("serialises with two-space indent and a trailing newline", () => {
-    expect(serializeEnvFile({ A: "1" })).toBe('{\n  "A": "1"\n}\n');
-  });
-});
+describe("workspace paths", () => {
+  const tree: WsNode[] = [
+    { name: "hittable", path: ["hittable"], kind: "directory", children: [
+      { name: "api", path: ["hittable", "api"], kind: "directory", children: [{ name: "get.hit", path: ["hittable", "api", "get.hit"], kind: "file" }] },
+    ] },
+    { name: "README.md", path: ["README.md"], kind: "file" },
+  ];
 
-describe("directory tree helpers", () => {
-  const root = new FakeDir("root", { hittable: { "env.json": "{}", api: { "get.hit": "{}" }, notes: { "a.md": "# a" } }, "README.md": "" });
-
-  it("builds the tree recursively", async () => {
-    const tree = await buildTree(asDir(root));
-    expect(tree.map((n) => [n.name, n.kind])).toEqual([["hittable", "directory"], ["README.md", "file"]]);
-    expect(findNodeByPath(tree, ["hittable", "api", "get.hit"])?.kind).toBe("file");
-    expect(findNodeByPath(tree, ["hittable", "missing"])).toBeNull();
-    expect(findNodeByPath(tree, ["README.md", "x"])).toBeNull();
-    expect(findNodeByPath(tree, [])).toBeNull();
+  it("finds a node by path", () => {
+    expect(findNode(tree, ["hittable", "api", "get.hit"])?.kind).toBe("file");
+    expect(findNode(tree, ["hittable", "missing"])).toBeNull();
+    expect(findNode(tree, ["README.md", "x"])).toBeNull();
+    expect(findNode(tree, [])).toBeNull();
   });
 
-  it("finds the parent directory handle of a path", async () => {
-    const tree = await buildTree(asDir(root));
-    expect(getParentHandle(tree, ["hittable", "api", "get.hit"])).toBe(root.at("hittable/api"));
-    expect(getParentHandleForPath(tree, ["hittable", "env.json"])).toBe(root.at("hittable"));
-    expect(getParentHandle(tree, ["README.md"])).toBeNull();
-    expect(getParentHandle(tree, ["README.md", "x"])).toBeNull();
-  });
-
-  it("reserves env.json, env and notes", () => {
-    expect(["env.json", "env", "notes"].every(isReservedRootEntry)).toBe(true);
-    expect(["Env.json", "notes.md", "api"].some(isReservedRootEntry)).toBe(false);
+  it("reserves env.json, env and notes at the root and directly in hittable/", () => {
+    expect([["env.json"], ["notes"], ["hittable", "env"], ["hittable", "notes"], ["hittable", "env.json"]].every(isReservedPath)).toBe(true);
+    expect([["Env.json"], ["hittable", "notes.md"], ["hittable", "api", "env.json"], ["hittable", "env.local.json"]].some(isReservedPath)).toBe(false);
   });
 
   it("routes files to editors by name", () => {
-    expect(["a.hit", "env.json", "env", "x.md", "x.json", "Makefile"].map(getFileKind)).toEqual(["hit", "env", "env", "markdown", "text", "text"]);
+    expect(["a.hit", "env.json", "env", "x.md", "x.json", "Makefile"].map(editorKind)).toEqual(["hit", "env", "env", "markdown", "text", "text"]);
   });
 });
 
 describe("file-system helpers", () => {
-  it("checks existence and returns null for missing handles", async () => {
+  it("checks existence", async () => {
     const d = asDir(new FakeDir("d", { f: "x", sub: {} }));
     expect(await fileExists(d, "f")).toBe(true);
     expect(await fileExists(d, "sub")).toBe(false);
     expect(await directoryExists(d, "sub")).toBe(true);
-    expect(await getFileHandle(d, "nope")).toBeNull();
-    expect(await getDirectoryHandle(d, "nope")).toBeNull();
+    expect(await directoryExists(d, "nope")).toBe(false);
   });
 
-  it("creates, writes, reads and lists", async () => {
-    const d = asDir(new FakeDir("d"));
-    const h = await createFile(d, "a.hit", "one");
+  it("creates, writes and reads", async () => {
+    const raw = new FakeDir("d");
+    const h = await createFile(asDir(raw), "a.hit", "one");
     expect(await readFileText(h)).toBe("one");
     await writeFileText(h, "two");
     expect(await readFileText(h)).toBe("two");
-    await createDirectory(d, "sub");
-    expect(await listDirectory(d)).toEqual([{ name: "a.hit", kind: "file" }, { name: "sub", kind: "directory" }]);
+    await createDirectory(asDir(raw), "sub");
+    expect(raw.toTree()).toEqual({ "a.hit": "two", sub: {} });
   });
 
   it("removes a non-empty folder", async () => {
@@ -119,33 +100,16 @@ describe("file-system helpers", () => {
     expect(raw.toTree()).toEqual({});
   });
 
-  it("renames a file, keeping its content", async () => {
-    const raw = new FakeDir("d", { "old.hit": '{"url":"x"}' });
-    await renameEntry(asDir(raw), "old.hit", "new.hit", "file");
-    expect(raw.toTree()).toEqual({ "new.hit": '{"url":"x"}' });
+  it("moves a folder with nested content into another folder", async () => {
+    const raw = new FakeDir("d", { api: { "a.hit": "A", deep: { "b.hit": "B" } }, out: {} });
+    await moveEntry(asDir(raw), "api", asDir(raw.at("out") as FakeDir), "v2");
+    expect(raw.toTree()).toEqual({ out: { v2: { "a.hit": "A", deep: { "b.hit": "B" } } } });
   });
 
-  it("renames a binary file byte for byte", async () => {
-    const raw = new FakeDir("d");
-    const png = new FakeFile("logo.png");
-    png.bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x80]);
-    raw.children.set("logo.png", png);
-    await renameEntry(asDir(raw), "logo.png", "icon.png", "file");
-    const copy = raw.at("icon.png") as FakeFile;
-    expect(raw.at("logo.png")).toBeUndefined();
-    expect([...(copy.bytes ?? [])]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x80]);
-  });
-
-  it("renames a folder with nested content", async () => {
-    const raw = new FakeDir("d", { api: { "a.hit": "A", deep: { "b.hit": "B" } } });
-    await renameEntry(asDir(raw), "api", "v2", "directory");
-    expect(raw.toTree()).toEqual({ v2: { "a.hit": "A", deep: { "b.hit": "B" } } });
-  });
-
-  it("refuses to rename onto an existing name and leaves both untouched", async () => {
+  it("refuses to move onto an existing name and leaves both untouched", async () => {
     const raw = new FakeDir("d", { "a.hit": "A", "b.hit": "B", dir: {} });
-    await expect(renameEntry(asDir(raw), "a.hit", "b.hit", "file")).rejects.toThrow('"b.hit" already exists');
-    await expect(renameEntry(asDir(raw), "a.hit", "dir", "file")).rejects.toThrow("already exists");
+    await expect(moveEntry(asDir(raw), "a.hit", asDir(raw), "b.hit")).rejects.toThrow('"b.hit" already exists');
+    await expect(moveEntry(asDir(raw), "a.hit", asDir(raw), "dir")).rejects.toThrow("already exists");
     expect(raw.toTree()).toEqual({ "a.hit": "A", "b.hit": "B", dir: {} });
   });
 });

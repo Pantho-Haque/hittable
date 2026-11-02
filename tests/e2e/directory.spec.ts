@@ -3,13 +3,13 @@ import { seedPrivateFolder, readFile, tree, node, expand, openWorkspace } from "
 
 test.describe("directory mode", () => {
   // Safari has no showDirectoryPicker (and no main-thread createWritable), so its
-  // users get Local mode plus an explanation, tested in tools.spec.ts.
+  // users get an explanation on the launcher, tested in launcher.spec.ts.
   test.skip(({ browserName }) => browserName !== "chromium", "Directory mode needs the File System Access API (Chromium only)");
 
   test("picking a folder scaffolds hittable/ and lists it in the explorer", async ({ page }) => {
     await seedPrivateFolder(page);
     await openWorkspace(page);
-    await expect(page.getByRole("heading", { name: "Your workspace is ready" })).toBeVisible();
+    await expect(page.getByText("Select a file in the explorer to edit a request, environment, or note.")).toBeVisible();
     await expand(page, "hittable");
     await expect(node(page, "hittable/env.json")).toBeVisible();
     await expect(node(page, "hittable/notes")).toBeVisible();
@@ -53,7 +53,7 @@ test.describe("directory mode", () => {
     await expect(page.getByRole("button", { name: "Text" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("the workspace reconnects after a reload, and can be switched back to Local", async ({ page }) => {
+  test("the workspace reconnects after a reload, and Close returns to the launcher", async ({ page }) => {
     await seedPrivateFolder(page);
     await openWorkspace(page);
     await page.reload();
@@ -61,10 +61,11 @@ test.describe("directory mode", () => {
     await expand(page, "hittable");
     await expect(node(page, "hittable/env.json")).toBeVisible();
 
-    await page.getByRole("button", { name: "Switch to local workspace" }).click();
-    await expect(page.getByRole("complementary", { name: "Collections" })).toBeVisible();
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect(page).toHaveURL(/\/hittable$/);
+    await expect(page.getByRole("button", { name: "Open a local folder" })).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("complementary", { name: "Collections" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Reconnect/ })).toHaveCount(0);
   });
 
   test("New File creates a .hit seeded with an empty GET, and the context menu deletes it", async ({ page }) => {

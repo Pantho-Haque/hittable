@@ -1,212 +1,114 @@
 <p align="center">
-  <img src="public/docs/intro.png" alt="Hittable — a terminal API client · .hit files, shared with the web app" width="820">
+  <img src="public/docs/intro.png" alt="Hittable: a terminal API client, .hit files shared with the web app" width="820">
 </p>
 
-# <p align="center">📦 Hittable</p>
+<h1 align="center">Hittable</h1>
 
 <p align="center">
-  <strong>A developer-first HTTP client built for speed, transparency, and DX.</strong><br>
-  No accounts, no bloat. Just fire requests.
+  An open-source, local-first API client. Your requests are plain <code>.hit</code> files in your own repository.
 </p>
 
 <p align="center">
-  <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js" alt="Next.js"></a>
-  <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-5-3178c6?style=for-the-badge&logo=typescript" alt="TypeScript"></a>
-  <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Tailwind-4-38bdf8?style=for-the-badge&logo=tailwindcss" alt="Tailwind"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-00e5cc?style=for-the-badge" alt="License"></a>
+  <a href="https://hittable.vercel.app/hittable">Web app</a> ·
+  <a href="https://hittable.vercel.app/docs">Documentation</a> ·
+  <a href="https://hittable.vercel.app/docs/shellapp">Terminal app</a>
 </p>
 
----
+## What it is
 
-### 🚀 Live at [hittable.vercel.app](https://hittable.vercel.app)
+Hittable keeps every request as a small JSON file (`.hit`) in a `hittable/` folder, next to your code. Variables live in `hittable/env.json`, with a git-ignored `hittable/env.local.json` for real secrets. There is no Hittable account and no database. Two tools work on the same files:
 
-## What is Hittable?
+- **The web app** at [hittable.vercel.app/hittable](https://hittable.vercel.app/hittable), or self-hosted.
+- **The terminal app**, `hittable`, a single Go binary with an editor, a Git panel and a shell.
 
-Hittable is a lightweight, open-source HTTP API client that runs entirely in your browser. It hits the "sweet spot" between simplified online testers and heavy desktop apps like Postman.
+Edit a request in the browser, run it from the terminal, commit it, and your team gets it with `git pull`.
 
-### 🆕 Latest Upgrades (May 2026)
-- **Searchable Response Panel**: Find text within large JSON responses instantly using the new floating search bar.
-- **Route Documentation**: Add context to your requests with a built-in markdown Notes Editor.
-- **Intelligent UI Indicators**: Real-time visual feedback for unsaved changes (`Ctrl/Cmd+S`) and request errors.
-- **Hittable Companion Extension**: A rebuilt browser extension proxy that seamlessly bypasses CORS for all remote APIs.
-- **Redesigned Landing Experience**: Added a live terminal demo and professional portfolio integration.
-- **Codebase Refactor**: Highly modularized component architecture for better performance and maintainability.
+## Web app
 
-### Why Hittable?
-- **Zero Install**: Lives in your browser, fully persistent to `localStorage`.
-- **CORS Bypass**: Leverage the Hittable Companion extension to bypass CORS restrictions without a proxy server.
-- **Keyboard First**: Every major action has a shortcut. Stop reaching for the mouse.
-- **Privacy Centric**: Your data never leaves your browser. No cloud syncing of sensitive API keys.
+There are two ways to open a workspace:
 
----
+- **Sign in with GitHub** (v3, being rolled out). Pick one of your repositories; the picker has search, owner filters, a Recent list, and badges for Private, Fork, Archived and Read-only repositories. The repository's `.hit` files open in the workspace. Edits are kept as a working copy on this device (IndexedDB) until you review the diff and commit, either to the branch or to a new branch with a pull request.
+- **Open a local folder**. No account. Uses the File System Access API (Chrome and Edge) and autosaves to disk.
 
-## ✨ Key Features
+In both modes you get:
 
-- **📂 Smart Collections**: Group routes into logical folders. Rename, duplicate, or delete them with an intuitive context menu.
-- **🔄 Import/Export**: Export your collections and share configurations with your team seamlessly.
-- **🌐 Environment Variables**: Define `<<KEY>>` placeholders to easily switch between environments like `localhost` and `production`.
-- **⚡ curl Integration**: 
-  - Paste a raw `curl` command into the URL bar for instant parsing
-  - Copy any route as a `curl` command with one click
-- **🔗 Browser Extension**: The Hittable Companion extension automatically detects your app and proxies requests to avoid CORS.
-- **🖱️ Clickable Links**: URLs inside JSON responses are fully clickable.
-- **📝 Route Notes**: Write rich markdown notes to document API parameters and expected behaviors.
-- **🔍 Deep Search**: Find exactly what you need in massive API payloads with floating text match highlights.
-- **⌨️ Pro Shortcuts**: `Cmd/Ctrl + Enter` (Send), `Cmd/Ctrl + S` (Save), `Shift + T` (New Route), `Cmd/Ctrl + F` (Search).
-- **🛡️ Type Safe**: Built with strict TypeScript for maximum reliability and a bulletproof developer experience.
+- a request runner with params, headers and body types (None, JSON, Text, Form)
+- `<<KEY>>` variables from `hittable/env.json` and `hittable/env.local.json`
+- a production guard: set `HITTABLE_PRODUCTION=true` and unsafe methods ask before sending
+- a response viewer with a JSON tree, raw text, a sandboxed HTML preview, search, a JSONPath filter, and compare against the previous response
+- copy as cURL, JavaScript fetch, Python requests or HTTPie
+- share links that carry the request in the URL fragment, with credentials replaced by variables; nothing is uploaded
+- paste a curl command into the URL bar to fill in the request
+- a CodeMirror editor for every file, a command palette (`Ctrl/Cmd+K`) and keyboard shortcuts (`?`)
 
----
+**GitHub access.** The app asks for `repo` (list your repositories, read their `.hit` files and commit changes) and `read:user` (your name and avatar). Nothing admin-, organisation- or workflow-specific. The token stays on the server in an AES-256-GCM encrypted, `HttpOnly` cookie and is never readable by page JavaScript; every GitHub call goes through `/api/github/*`. Signing out revokes the grant, and you can revoke it any time in [GitHub settings](https://github.com/settings/applications). Organisations may need to approve the app before their repositories appear.
 
-## hittable.sh — the same thing in your terminal
+**Localhost.** Remote requests go through the app's `/api/proxy` to avoid CORS. A server cannot reach your machine, so requests to `localhost` and `127.0.0.1` go through the [browser extension](https://hittable.vercel.app/docs/browser-extension) (Chrome, loaded unpacked from the latest release).
 
-`hittable.sh` is a terminal (TUI) API client written in Go. It opens a project directory,
-shows the whole tree, and runs the requests inside it. It reads and writes the same plain
-`.hit` JSON files and the same `hittable/env.json` as the web app, so one folder opens in
-either — edit a request in the browser, send it from the shell, commit the file.
+## Terminal app
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Pantho-Haque/hittable/main/install.sh | sh
+cd your-repo && hittable
 ```
 
-![The explorer: the whole project as one tree, single click opens, git status colours every row](public/docs/s1.png)
-
-Beyond requests it is a small editor: syntax highlighting, folding, local autocompletion,
-markdown preview, fuzzy file find and live grep, and an integrated shell on a real PTY.
-
-![The welcome screen beside the file tree, listing the shell commands: init, import, export, uninstall](public/docs/still-term.png)
-
-`ctrl+r` sends. The response panel shows status, timing and size, with the body
-highlighted and searchable.
-
-![Response panel: 200 OK, 199ms, 421B, with the JSON body highlighted](public/docs/s3.png)
-
-There is a full Git panel — status, commits, branches, stashes, blame — with click-to-stage
-rows and a diff pane that does inline or side-by-side.
+It reads and writes the same `.hit` files and `env.json` as the web app. Beyond requests it has syntax highlighting, folding, completion, markdown preview, fuzzy find and grep, an integrated shell, and a Git panel (status, commits, branches, stashes, blame, inline or side-by-side diffs). It also imports and exports Postman and Insomnia collections (`hittable -i`, `hittable -e`). Commit messages can be drafted by a small model that runs only on your machine, and only after you opt in with `hittable model enable`.
 
 ![The Git panel showing four changed files and the diff of a new .hit file](public/docs/s2.png)
 
-Press `c` in the Git panel and it drafts the commit message. That part is opt-in and
-entirely local: nothing is downloaded until you run `hittable model enable`, and nothing
-leaves the machine after that.
+See the [terminal app docs](https://hittable.vercel.app/docs/shellapp) and [`shellapp/README.md`](shellapp/README.md).
 
-**[Full documentation → `shellapp/README.md`](shellapp/README.md)**
+## Self-hosting
 
----
-
-## 🛠 Tech Stack
-
-| Component | Choice |
-| :--- | :--- |
-| **Framework** | Next.js 15 (App Router) |
-| **Language** | TypeScript 5 (Strict Mode) |
-| **Styling** | Vanilla CSS + Tailwind CSS 4 |
-| **Icons** | Lucide React |
-| **State Management** | React Context + Custom Hooks |
-| **Persistence** | Browser `localStorage` |
-
----
-
-## 🏗 Project Structure
-
-```bash
-hittable/
-├── app/
-│   ├── layout.tsx         # Global layout with SEO & Topbar
-│   ├── page.tsx           # High-conversion landing page
-│   └── hittable/          # Main application engine
-│       └── page.tsx       # State orchestrator
-├── browserExtension/      # Hittable Companion Chrome Extension
-│   ├── background.js      # CORS bypass proxy
-│   └── content.js         # DOM injection & detection
-├── components/
-│   ├── homepage/          # Landing page (PortfolioSection, TerminalDemo)
-│   ├── hittable/          # Core App UI (RequestForm, Selector, Menu)
-│   ├── RequestForm/       # Request internals (UrlBar, TabEditor, ResponsePanel)
-│   ├── notes/             # Markdown notes integration
-│   └── ui/                # Shared modals and micro-components
-├── utils/                 # Parsers (curl, JSON) and state modifiers
-└── hooks/                 # Custom React hooks (useExtension, etc.)
-```
-
----
-
-## 📚 Documentation
-
-The full developer documentation for the web app, the terminal app and the shared project format lives at **[hittable.vercel.app/docs](https://hittable.vercel.app/docs)**. The pages are plain markdown in [`content/docs/`](content/docs/); edit one and open a pull request.
-
-## 🏁 Getting Started
-
-### 1. Clone & Install
-```bash
-git clone https://github.com/Pantho-Haque/hittable.git
-cd hittable
-npm install
-```
-
-### 2. Run Development
-```bash
-npm run dev
-```
-
-### 3. Deploy
-One-click deployment to Vercel:
+One Next.js 16 app, no database. Deploy to Vercel or any Node 22.19+ host, or use the `Dockerfile`.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/Pantho-Haque/hittable)
 
----
+GitHub sign-in needs a GitHub OAuth App (GitHub → Settings → Developer settings → OAuth Apps) with the callback URL `https://<host>/api/github/callback`, and these variables:
 
-## ⌨️ Keyboard Shortcuts
-
-| Shortcut | Action |
+| Variable | |
 | :--- | :--- |
-| `Ctrl/Cmd + Enter` | **Send Request** |
-| `Ctrl/Cmd + S` | **Save to Collection** |
-| `Ctrl/Cmd + J` | **Beautify JSON** |
-| `Ctrl/Cmd + F` | **Search Response Payload** |
-| `Ctrl/Cmd + B` | **Toggle Sidebar** |
-| `Shift + T` | **Create New Untitled Route** |
-| `Esc` | **Close Modal** |
-| `Enter` (in modal) | **Confirm Action** |
+| `GITHUB_CLIENT_ID` | the OAuth app's client ID |
+| `GITHUB_CLIENT_SECRET` | the OAuth app's client secret |
+| `SESSION_SECRET` | at least 32 bytes, e.g. `openssl rand -base64 32` |
+| `APP_URL` | optional: the public origin, when a reverse proxy rewrites `Host` |
 
-> 💡 Press the **Info button** in the app to view the complete list of keybindings and extension instructions.
+Without them sign-in is unavailable and **Open a local folder** still works. The proxy's optional limits (`PROXY_*`) are listed in `.env.example`. Full guide: [Self-hosting](https://hittable.vercel.app/docs/self-hosting).
 
----
+## Development
 
-## 🗺 Roadmap
+```sh
+pnpm install
+pnpm dev          # http://localhost:3000
+pnpm lint
+pnpm typecheck
+pnpm test         # Vitest unit and component tests
+pnpm build        # production build
+pnpm start        # serve the build
+pnpm test:e2e     # Playwright, against a production build, a fake API and a fake GitHub
+```
 
-- [x] Collections & Route management
-- [x] Environment Variables (`<<VAR>>` syntax)
-- [x] curl command parsing & generation
-- [x] Import/Export collections
-- [x] Browser extension for CORS bypass
-- [x] Payload Search & Highlighting
-- [x] Route Notes & Documentation
-- [x] Clickable response links
-- [x] URL-based route selection
-- [ ] Response History
-- [ ] Auth presets (OAuth2, AWS Signature)
-- [ ] OpenAPI/Swagger import
+Node 22.19 or newer, pnpm. Commits follow Conventional Commits, checked by commitlint. See [Development](https://hittable.vercel.app/docs/development).
 
----
+## Project structure
 
-## 🤝 Contributing
+```
+app/                  Next.js routes: landing page, /hittable, /docs, /api/proxy, /api/github/*
+components/           workspace, request form and response panel, palette, docs, landing page
+context/ hooks/       workspace, shortcuts and notification state
+utils/                curl, codegen, JSONPath, JSON diff, share links, env resolution
+utils/server/github/  OAuth, encrypted session cookie, GitHub client, commits
+content/docs/         the documentation, one markdown file per page
+browserExtension/     the Chrome extension for localhost requests
+shellapp/             the Go terminal app
+hittable/             an example project folder
+tests/                Vitest (unit) and Playwright (e2e)
+```
 
-We love contributions! Whether it's adding a feature, fixing a bug, or improving the documentation:
+## Documentation
 
-1. **Fork** the repo.
-2. **Branch**: `git checkout -b feat/your-feature`.
-3. **Commit**: Keep messages descriptive.
-4. **Push**: Open a Pull Request.
+Everything is at **[hittable.vercel.app/docs](https://hittable.vercel.app/docs)**: [getting started](https://hittable.vercel.app/docs/getting-started), the [`.hit` format](https://hittable.vercel.app/docs/project-format), the [web app](https://hittable.vercel.app/docs/web-app), the [terminal app](https://hittable.vercel.app/docs/shellapp) and the [FAQ](https://hittable.vercel.app/docs/faq). The pages are markdown in [`content/docs/`](content/docs/); edit one and open a pull request.
 
----
+## Contributing
 
-## 📄 License
-
-MIT © [Pantho Haque](https://github.com/Pantho-Haque)
-
----
-
-<p align="center">
-  Built with ❤️ for the developer community.<br>
-  <strong>Don't forget to star ⭐ if you use it!</strong>
-</p>
+Issues and pull requests are welcome on [GitHub](https://github.com/Pantho-Haque/hittable/issues). Branch from `main`, keep commits conventional, and run `pnpm lint`, `pnpm typecheck` and `pnpm test` before opening a pull request.

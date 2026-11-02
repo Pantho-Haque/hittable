@@ -101,18 +101,19 @@ export default function CopyAsMenu({ formInput, env, secrets, onCopied }: Props)
             setOpen(true);
           }
         }}
-        className="flex h-full items-center gap-1 rounded-md border border-white/10 bg-(--surface-1) px-2 py-1.5 text-xs text-white/80 hover:bg-(--surface-2) hover:text-white focus-visible:outline-2 focus-visible:outline-(--brand)"
+        title="Copy as code, or share a link"
+        className="flex h-9 items-center gap-1.5 rounded-md border border-(--border-strong) px-2.5 text-xs font-medium text-(--text) transition-colors hover:bg-(--surface-2)"
       >
         {copied ? <Check className="h-3.5 w-3.5 text-(--brand)" aria-hidden /> : <Code2 className="h-3.5 w-3.5" aria-hidden />}
-        Copy as
-        <ChevronDown className="h-3 w-3" aria-hidden />
+        <span className="max-sm:sr-only">Copy as</span>
+        <ChevronDown className="h-3 w-3 text-(--muted)" aria-hidden />
       </button>
       {open && (
         <div
           role="menu"
           aria-label="Copy request as"
           onKeyDown={onMenuKey}
-          className="absolute right-0 top-full z-50 mt-1 min-w-44 rounded-md border border-white/10 bg-(--surface-1) py-1 shadow-lg"
+          className="absolute right-0 top-full z-50 mt-1 min-w-44 rounded-md border border-(--border-strong) bg-(--surface-1) py-1 shadow-xl shadow-black/40"
         >
           {CODE_LANGUAGES.map(({ id, label }, i) => (
             <button
@@ -124,12 +125,12 @@ export default function CopyAsMenu({ formInput, env, secrets, onCopied }: Props)
               role="menuitem"
               tabIndex={-1}
               onClick={() => pick(id, label)}
-              className="block w-full px-3 py-1.5 text-left text-xs text-white/80 hover:bg-(--surface-2) hover:text-white focus:bg-(--surface-2) focus:text-(--brand) focus:outline-none"
+              className="block w-full px-3 py-1.5 text-left text-xs text-(--text) hover:bg-(--surface-2) focus:bg-(--surface-2) focus:text-(--brand) focus:outline-none"
             >
               {label}
             </button>
           ))}
-          <div role="separator" className="my-1 border-t border-white/10" />
+          <div role="separator" className="my-1 border-t border-(--border)" />
           <button
             ref={(el) => {
               itemsRef.current[CODE_LANGUAGES.length] = el;
@@ -138,7 +139,7 @@ export default function CopyAsMenu({ formInput, env, secrets, onCopied }: Props)
             role="menuitem"
             tabIndex={-1}
             onClick={share}
-            className="block w-full px-3 py-1.5 text-left text-xs text-white/80 hover:bg-(--surface-2) hover:text-white focus:bg-(--surface-2) focus:text-(--brand) focus:outline-none"
+            className="block w-full px-3 py-1.5 text-left text-xs text-(--text) hover:bg-(--surface-2) focus:bg-(--surface-2) focus:text-(--brand) focus:outline-none"
           >
             Share link
           </button>

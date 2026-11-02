@@ -1,5 +1,5 @@
 import { THittableCurlJson } from "@/types";
-import { resolveEnv } from "./hittableCollectionModifier";
+import { resolveEnv } from "./resolveEnv";
 
 export type CodeLanguage = "curl" | "fetch" | "python" | "httpie";
 

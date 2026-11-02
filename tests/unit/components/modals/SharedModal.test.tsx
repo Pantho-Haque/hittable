@@ -3,17 +3,16 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { ModalActions, ModalInput, ModalShell } from "@/components/ui/SharedModal";
+import { ModalActions, ModalShell } from "@/components/ui/SharedModal";
 
 function Demo({ onConfirm = () => {}, backdropCloses = true }: { onConfirm?: () => void; backdropCloses?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
   return (
     <>
       <button onClick={() => setOpen(true)}>Open</button>
       {open && (
         <ModalShell title="Demo" subtitle="sub" onClose={() => setOpen(false)} isOnBlurPressClose={backdropCloses}>
-          <ModalInput value={value} onChange={setValue} placeholder="name" />
+          <input aria-label="name" />
           <ModalActions onCancel={() => setOpen(false)} onConfirm={onConfirm} confirmLabel="OK" />
         </ModalShell>
       )}

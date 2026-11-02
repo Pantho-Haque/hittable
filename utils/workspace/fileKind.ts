@@ -36,3 +36,13 @@ export async function classifyFile(name: string, file: Blob): Promise<FileView> 
   const head = new Uint8Array(await file.slice(0, 8192).arrayBuffer());
   return head.includes(0) ? { kind: "binary" } : { kind: "text" };
 }
+
+export type EditorKind = "hit" | "env" | "markdown" | "text";
+
+/** Which editor opens a file, by its name. */
+export function editorKind(name: string): EditorKind {
+  if (name.endsWith(".hit")) return "hit";
+  if (name === "env" || name === "env.json") return "env";
+  if (name.endsWith(".md")) return "markdown";
+  return "text";
+}

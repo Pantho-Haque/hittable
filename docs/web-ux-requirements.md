@@ -1,5 +1,11 @@
 # Hittable web app — UX upgrade requirements
 
+> **v3 note:** the browser-storage "Local" mode these rounds were written
+> against has been removed. Its parts here (collections sidebar, history,
+> Environment dialog, curl paste creating collection variables) are historical;
+> everything else carries over into folder and GitHub workspaces. The current
+> plan is `docs/github-workspace-requirements.md`.
+
 Status: **Round 1 implemented** (tests: see each FR). Round 2 ("beyond the alternatives") is appended once
 Round 1 ships and has been tested.
 
@@ -369,3 +375,68 @@ Round 2 appendix.
 - Hoppscotch shared requests: https://docs.hoppscotch.io/documentation/features/widgets
 - URL length limits: https://simonwillison.net/2025/Dec/23/url-limits-investigation/
 - Chrome Local Network Access: https://developer.chrome.com/blog/local-network-access
+
+---
+
+## v3.1 — Adjustable layout, a working HTML preview, a readable source
+
+### What users hit
+
+1. **Fixed panes.** Request, response, preview and source had fixed shares, and the explorer had a fixed width. On a long response the request editor took space it did not need, and the reverse.
+2. **A broken preview.** `https://google.com` showed a broken logo and no behaviour:
+   - Relative URLs resolved against the typed URL, not the one the server redirected to (`www.google.com`). Chromium's opaque-response blocking then refused the image.
+   - The sandbox blocked all scripts.
+3. **A hard-to-read source.** Every line had its own horizontal scrollbar. Everything was rendered at once. Folding was regex-based, and the line marked by Inspect was looked up in the raw HTML while the formatted HTML was shown.
+
+### How others solve it (research, 2026-11)
+
+- **Panes:**
+  - Chrome DevTools' `SplitWidget` flips vertical/horizontal, has show-both / main-only / sidebar-only modes, and persists them.
+  - VS Code's sash resets on double-click, and views snap shut below their minimum.
+  - Bruno added a response pane docked at the bottom (PR #4957).
+  - Users ask Insomnia for one (issue #8694).
+  - The WAI-ARIA window splitter pattern: `role=separator`, `aria-valuenow`, arrows, Enter to collapse or restore.
+  - `react-resizable-panels` (v4) implements this, but it is mid-churn: the v3→v4 rename, collapse bugs #707 and #709, and eight releases in two weeks.
+- **HTML preview:**
+  - Postman and Hoppscotch never run scripts (`sandbox=""`). Hoppscotch's PR to enable them was closed.
+  - Bruno runs JS in an Electron webview.
+  - Insomnia's PR #9942 moved to `<iframe sandbox="allow-scripts">`, noting that `allow-same-origin` must never be added because it lets the frame lift its own sandbox.
+  - Reported problems: pages that need same-origin storage or that frame-bust, and dark-theme bleed into unstyled HTML (Hoppscotch #6707).
+- **Source:**
+  - DevTools: a word-wrap toggle, pretty-print, and go-to-line.
+  - Bruno and Insomnia: CodeMirror with wrap.
+  - CodeMirror 6 renders only the viewport.
+
+### Requirements
+
+| ID | Requirement | Done by |
+| :--- | :--- | :--- |
+| FR-L1 | Every split resizes by drag (mouse, pen, touch): explorer, source control, request/response, preview/source. | `components/ui/Split.tsx` |
+| FR-L2 | Dragging a collapsible pane past half its minimum collapses it. A labelled **Show …** bar restores it. The explorer stays in step with <kbd>Ctrl/Cmd+B</kbd>. | Split, WorkspaceShell |
+| FR-L3 | Double-click resets a divider. | Split |
+| FR-L4 | Response beside or below the request; source beside or below the preview. Global and remembered. Phones always stack. | HitFileEditor, ResponsePanel |
+| FR-L5 | Sizes and collapsed state are remembered per divider, and a broken saved value falls back to the default. | Split (`hittable:split:<id>`) |
+| FR-P1 | The preview resolves relative URLs against the final URL after redirects (`response.url` from the proxy), else the request URL. | `utils/server/proxy.ts`, ResponsePanel |
+| FR-P2 | Page scripts run in an opaque-origin sandbox: `allow-scripts allow-popups allow-popups-to-escape-sandbox`, never `allow-same-origin`, `allow-modals`, `allow-forms` or top navigation. | `HtmlPreview.tsx` |
+| FR-P3 | **Scripts off** (remembered) blocks page scripts with a nonce CSP; the inspector still runs. | HtmlPreview |
+| FR-P4 | Links open in a new tab (`<base target="_blank">`); **Open in browser** is the fallback for frame-hostile pages. | HtmlPreview, ResponsePanel |
+| FR-P5 | Unstyled pages render light (`color-scheme: light`, which page CSS can override). | HtmlPreview |
+| FR-P6 | Inspect works with scripts on or off: an injected script outlines elements and posts the pick. The parent accepts only messages from that frame, of the right shape. | HtmlPreview |
+| FR-S1 | The source is one read-only CodeMirror view: one scroll area, only visible lines drawn, tag folding, collapse/expand all. | `HtmlSourceViewer.tsx` |
+| FR-S2 | Wrap toggle (remembered); pretty-printed or as received (remembered). Bodies over 2 MB are never formatted. | HtmlSourceViewer, ResponsePanel |
+| FR-S3 | Search (<kbd>Ctrl/Cmd+F</kbd> in the source, or a button) and go-to-line (<kbd>Ctrl/Cmd+Alt+G</kbd>). | HtmlSourceViewer |
+| FR-S4 | The line an inspected element marks is found in the text that is shown. | ResponsePanel |
+
+| ID | Non-functional | How |
+| :--- | :--- | :--- |
+| NFR-L1 | Accessible splitters: focusable `role=separator` with name, orientation, `aria-valuenow/min/max` and `aria-controls`. Arrows, Shift, Home/End, Enter. Visible focus. | Split, axe e2e |
+| NFR-L2 | A drag never stalls over the preview iframe: frames ignore the pointer while dragging. | `body.is-splitting-*` CSS, `layout.spec.ts` |
+| NFR-L3 | Collapsed panes stay mounted: the editor keeps its state and the preview does not reload. | Split |
+| NFR-S1 | A response page can never reach the app, its storage, its cookies or its API. | `security.spec.ts` |
+
+### Decisions
+
+- **Own splitter, not `react-resizable-panels`.** We need two panes per split, and our splitter is about 200 lines with unit and e2e tests. The library is churning: its API was renamed in v4 and the collapse and persistence bugs above are recent.
+- **Scripts on by default**, unlike Postman and Hoppscotch. Hittable users preview real pages. The isolation is the same one Insomnia's PR settled on, and the toggle is one click away.
+- Skipped: free docking (drag a pane to any edge). Two orientations per split cover what users asked other tools for; add docking if it comes up.
+

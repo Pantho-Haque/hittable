@@ -4,6 +4,41 @@ All notable changes to Hittable will be documented in this file.
 
 ## [Unreleased]
 
+### v3.2 — Request form
+- **One-row URL bar**: method and URL are a single field with one focus ring; Send, Save and Copy as sit on the same row (they wrapped to a second line). No corner brackets or glow. <kbd>Enter</kbd> in the URL sends; the URL no longer takes line breaks. Save shows a dot when there are unsaved changes.
+- **Params / Body / Headers**: tabs show counts (and a dot for a body); JSON / Table is a labelled toggle and Beautify is a **Format** button; key/value rows are a table with column headings; the body type is a segmented control.
+- **Open folder**: a second click while the folder picker is open is ignored (it raised "File picker already active"), and a refused or failed pick shows a message on the page instead of a console error.
+
+### v3.1 — Adjustable layout, a working HTML preview, a readable source (see docs/web-ux-requirements.md, "v3.1")
+- **Every divider moves**: explorer, source control, request/response, preview/source. Drag to resize (mouse, pen or touch). Drag past the minimum to collapse; a **Show …** bar restores. Double-click resets. Keyboard: arrows, Shift, Home/End, Enter. All remembered per browser.
+- **Response beside or below the request**, and **source beside or below the preview**: toggles in the toolbar and the preview header. Phones always stack.
+- **The HTML preview renders real pages.**
+  - Relative CSS, images and scripts resolve against the final URL after redirects; the proxy now returns `url`.
+  - Page scripts run in an opaque-origin sandbox that can never reach the app.
+  - **Scripts off** blocks them with a CSP.
+  - Links open in a new tab, with **Open in browser** for pages that refuse frames.
+  - Unstyled pages render light.
+  - `<header>` is no longer mistaken for `<head>`.
+- **Inspect** works with scrolling and with scripts on or off, and marks the right line (it was looked up in the raw HTML but shown in the formatted).
+- **The source view** is a read-only CodeMirror editor:
+  - One scroll area, no scrollbar per line, and only the visible lines drawn.
+  - Tag folding and collapse/expand all.
+  - Wrap and pretty/as-received toggles, both remembered.
+  - Search, and go-to-line (<kbd>Ctrl/Cmd+Alt+G</kbd>).
+- The request editor fills its pane (it was capped at 60% of the screen).
+- Tests: `E2E_PORT` overrides the e2e server port.
+
+### v3 — GitHub workspaces (see docs/github-workspace-requirements.md)
+- **Removed: Local mode.** The browser-storage collections (sidebar, history, notes modal, web import/export, auth presets, Info and Environment dialogs) are gone, with their code, tests and docs. A one-time banner on `/hittable` offers to download old collections as Postman v2.1 files (secrets never included).
+- **Sign in with GitHub** (OAuth App, `repo read:user`): hand-rolled OAuth with `state` + PKCE S256; the token lives only in an AES-256-GCM encrypted httpOnly cookie and every GitHub call goes through allow-listed `/api/github/*` routes (CSRF: Origin check + `X-Hittable` header). Sign-out revokes the grant.
+- **`/hittable` launcher**: open a local folder (Chrome/Edge) or pick a GitHub repository; folder workspace at `/hittable/folder`.
+- **GitHub repository workspace** (`/hittable/gh/{owner}/{repo}`): repo picker (search, owner filter, recent, Private/Fork/Archived/Read-only badges, org-access hint); branch switcher with "create branch from current"; every edit autosaves to a working copy in IndexedDB that survives reloads; M/A/D/C decorations; a Source Control panel with diffs (`@codemirror/merge`, inline or side by side), per-file and all discard, prefilled commit messages, **Commit to branch** via `createCommitOnBranch` (optimistic locking) or **new branch + pull request**; protected branches fall back to the PR path. Remote changes are polled with ETags: non-overlapping ones advance quietly, overlapping files are marked conflict with Keep mine / Take theirs / Compare. "Initialize Hittable here" for repos without `hittable/`. `hittable/env.local.json` stays local and is never committed; `.github/workflows/*`, binaries, LFS pointers and files over 4 MB are read-only. A send does not write its response into a repository file (no accidental commits of response data); local folders keep saving the last response. Signing out with uncommitted changes asks whether to keep or discard them.
+- **Share links** opened with nothing open are remembered for the tab and come back once a folder or repository opens; the preview can open a local folder directly.
+- Fixed: Ctrl/Cmd+Enter with focus in the file tree reopened the file and aborted the request instead of sending.
+- **Workspace layer** is storage-agnostic (`services/workspace/backend.ts`), shared by folders and repositories; the Runner takes a lean `DataSource` (no global data context). Folder mode now blocks Send on JSON errors and no longer always reports headers as unsaved.
+- **New theme and landing page**: near-black base, one signal-cyan accent kept apart from method and git colours, "request ↔ commit" motif; method colours and the editor theme follow the tokens.
+- Removed unused dependencies (`@radix-ui/react-accordion`, `@tanstack/eslint-plugin-query`) and the résumé fetch on the home page.
+
 ### UX upgrade — Round 2: beyond the alternatives
 - **JSONPath filter** on JSON responses (`$.items[*].id`, `$..id`, slices, negative indexes), with invalid / no-result feedback; search and copy use the filtered result.
 - **Compare** with the previous response for the same request (the saved one, the last send, or history): added / removed / changed paths with before → after, changed headers, and an ignore list for paths and header names. Rare elsewhere, paid in Kreya.

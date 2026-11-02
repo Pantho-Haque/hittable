@@ -1,5 +1,5 @@
 import { THittableCurlJson, THittableEnv } from "@/types";
-import { resolveEnv } from "./hittableCollectionModifier";
+import { resolveEnv } from "./resolveEnv";
 
 const LOCAL_HOSTNAMES = ["localhost", "127.0.0.1", "0.0.0.0"];
 

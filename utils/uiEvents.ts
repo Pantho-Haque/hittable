@@ -5,9 +5,8 @@ import { useEffect, useRef } from "react";
 export const OPEN_TOOL_EVENT = "hittable:open-tool";
 export const COPY_CURL_EVENT = "hittable:copy-curl";
 
-export type ToolName =
-  | "env" | "import" | "export" | "history" | "notes" | "auth" | "info" | "shortcuts"
-  | "palette" | "new-request";
+// "env" opens hittable/env.json in the workspace (the unknown-variable note).
+export type ToolName = "env" | "shortcuts" | "palette";
 
 type OpenToolDetail = { name: ToolName; target?: string };
 

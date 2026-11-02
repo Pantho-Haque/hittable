@@ -1,11 +1,6 @@
 "use client";
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import EnvModal from "@/components/modals/EnvModal";
-import ExportModal from "@/components/modals/ExportModal";
-import { useDataContext } from "@/context/dataContext";
-import { useWorkspace } from "@/context/workspaceContext";
 import { useToolListener } from "@/utils/uiEvents";
 
 // The dialog and its search code stay out of the first load (NFR-5); they
@@ -23,10 +18,6 @@ function Palette() {
   useEffect(() => {
     openRef.current = open;
   }, [open]);
-  const { mode } = useWorkspace();
-  const { collections } = useDataContext();
-  const c = useSearchParams().get("c") ?? "";
-  const collection = mode === "local" ? collections.find((x) => x.collectionName === c) : undefined;
 
 
   // From Ctrl+K until the dialog's input is ready (it is loaded lazily), typed
@@ -88,18 +79,9 @@ function Palette() {
 
   return (
     <>
-      {/* Environment and Export for the open collection, which the sidebar
-          may not have mounted (collapsed rail, or drilled into the collection).
-          Their dialogs portal to <body>, so only the triggers stay hidden. */}
-      {collection && (
-        <div hidden>
-          <EnvModal collectionName={collection.collectionName} />
-          <ExportModal exportString={JSON.stringify(collection)} collectionName={collection.collectionName} />
-        </div>
-      )}
       {open && (
         <Suspense fallback={null}>
-          <PaletteDialog onClose={closePalette} collectionName={collection?.collectionName ?? ""} typedSoFar={typedSoFar} takeTyped={takeTyped} />
+          <PaletteDialog onClose={closePalette} typedSoFar={typedSoFar} takeTyped={takeTyped} />
         </Suspense>
       )}
     </>
@@ -107,10 +89,5 @@ function Palette() {
 }
 
 export default function CommandPalette() {
-  // useSearchParams needs a Suspense boundary to prerender.
-  return (
-    <Suspense fallback={null}>
-      <Palette />
-    </Suspense>
-  );
+  return <Palette />;
 }

@@ -6,6 +6,8 @@ import { useEffect } from "react";
 import { WorkspaceProvider, useWorkspace } from "@/context/workspaceContext";
 import { NotificationProvider } from "@/context/notifyContext";
 import DirectoryTree from "@/components/workspace/DirectoryTree";
+import { createFolderBackend } from "@/services/workspace/folderBackend";
+import type { WorkspaceBackend } from "@/services/workspace/backend";
 import { FakeDir, FakeFile, asDir } from "../../helpers/fakeFs";
 
 vi.mock("@/services/workspace/HandleStore", () => ({
@@ -17,18 +19,21 @@ vi.mock("@/services/workspace/HandleStore", () => ({
 
 let root: FakeDir;
 
-function Opener() {
-  const { openFolder, activeFile } = useWorkspace();
-  useEffect(() => { openFolder(); }, [openFolder]);
+function Opener({ backend }: { backend?: Partial<WorkspaceBackend> }) {
+  const { openFolder, openBackend, activeFile } = useWorkspace();
+  useEffect(() => {
+    if (backend) void openBackend({ ...createFolderBackend(asDir(root)), ...backend });
+    else void openFolder();
+  }, [openFolder, openBackend, backend]);
   return <output aria-label="open file">{activeFile?.path.join("/") ?? ""}</output>;
 }
 
-async function mount() {
+async function mount(backend?: Partial<WorkspaceBackend>) {
   window.showDirectoryPicker = vi.fn(async () => asDir(root)) as unknown as typeof window.showDirectoryPicker;
   render(
     <WorkspaceProvider>
       <NotificationProvider>
-        <Opener />
+        <Opener backend={backend} />
         <DirectoryTree />
       </NotificationProvider>
     </WorkspaceProvider>,
@@ -280,5 +285,69 @@ describe("DirectoryTree (explorer)", () => {
     await user.pointer({ keys: "[MouseRight]", target: row("users") });
     expect(menuButton("New File")).toBeInTheDocument();
     expect(menuButton("New Folder")).toBeInTheDocument();
+  });
+
+  describe("git status (GitHub workspaces)", () => {
+    const status = { "hittable/users/list.hit": "M", "hittable/users/create.hit": "C", "hittable/env.json": "A", "README.md": "D" } as const;
+
+    it("files show their status letter, with a label for screen readers", async () => {
+      const user = await mount({ status: () => ({ ...status }) });
+      await user.click(row("users"));
+      expect(within(row("list.hit")).getByText("M")).toHaveAttribute("title", "Modified");
+      expect(within(row("create.hit")).getByText("C")).toHaveAttribute("title", "Conflict");
+      expect(within(row("env.json")).getByText("A")).toHaveAttribute("title", "Added");
+      expect(item("list.hit")).toHaveAccessibleDescription("Modified");
+    });
+
+    it("a deleted file is struck through, not only coloured", async () => {
+      await mount({ status: () => ({ ...status }) });
+      expect(within(row("README.md")).getByText("D")).toBeInTheDocument();
+      expect(within(row("README.md")).getByText("README.md")).toHaveClass("line-through");
+    });
+
+    it("folders with a changed descendant show a dot; unchanged ones don't", async () => {
+      await mount({ status: () => ({ "hittable/users/list.hit": "M" }) });
+      expect(within(row("hittable")).getByTitle("Contains changes")).toBeInTheDocument();
+      expect(within(row("users")).getByTitle("Contains changes")).toBeInTheDocument();
+      expect(within(row("notes")).queryByTitle("Contains changes")).not.toBeInTheDocument();
+      expect(item("users")).toHaveAccessibleDescription("Contains changes");
+    });
+
+    it("a folder workspace shows no decorations", async () => {
+      await mount();
+      expect(within(screen.getByRole("tree")).queryByText(/^[MADC]$/)).not.toBeInTheDocument();
+      expect(screen.queryByTitle("Contains changes")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("read-only workspace", () => {
+    it("hides New File and New Folder, and offers no menu, rename or delete", async () => {
+      const user = await mount({ readOnly: true });
+      expect(screen.queryByRole("button", { name: "New File" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "New Folder" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
+      await user.pointer({ keys: "[MouseRight]", target: row("README.md") });
+      expect(screen.queryByRole("button", { name: "Rename" })).not.toBeInTheDocument();
+      await user.click(row("README.md"));
+      await user.keyboard("{F2}{Delete}");
+      expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+      // files still open
+      expect(screen.getByLabelText("open file")).toHaveTextContent("README.md");
+    });
+  });
+
+  // Ctrl/Cmd+Enter is the global "send"; the tree used to treat it as Enter,
+  // reopening the file and aborting the request that had just started.
+  it("Ctrl/Cmd+Enter in the tree does not reopen the file", async () => {
+    const user = await mount();
+    await user.click(row("users")); // expand hittable/users
+    await user.click(row("create.hit"));
+    expect(screen.getByLabelText("open file")).toHaveTextContent("create.hit");
+    await user.keyboard("{ArrowDown}"); // the keyboard selection is now another row…
+    await user.keyboard("{Control>}{Enter}{/Control}");
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+    // …which the bug would have opened; the open file stays as it was.
+    expect(screen.getByLabelText("open file")).toHaveTextContent("create.hit");
   });
 });

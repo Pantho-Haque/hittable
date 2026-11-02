@@ -1,8 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import pako from "pako";
 import { compressString, decompressString } from "@/utils/compressString";
-import { formatJson, formatWithErrorHandleing } from "@/utils/formatJson";
-import { parseStringToJson } from "@/utils/JsonStringParsing";
+import { formatJson } from "@/utils/formatJson";
 import { getType, valueMatchesSearch, countMatches, getParamsfromUrl, modifyUrlForNewParams } from "@/utils/responsePanelUtils";
 import { formatHtml, findElementSourceLine } from "@/utils/htmlFormatter";
 import { cn } from "@/utils/cn";
@@ -56,21 +55,6 @@ describe("formatJson", () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     expect(formatJson(cyclic).error).toBe("Unable to stringify JSON value");
-  });
-  it("formatWithErrorHandleing sets and clears the error", () => {
-    const setError = vi.fn();
-    expect(formatWithErrorHandleing('{"a":1}', setError)).toBe('{\n\t"a": 1\n}');
-    expect(setError).toHaveBeenLastCalledWith(null);
-    formatWithErrorHandleing("{", setError);
-    expect(setError).toHaveBeenLastCalledWith(expect.any(String));
-  });
-});
-
-describe("parseStringToJson", () => {
-  it("parses JSON, empty text, and 'Key: Value' lines", () => {
-    expect(parseStringToJson('{"a":"1"}')).toEqual({ a: "1" });
-    expect(parseStringToJson("  ")).toEqual({});
-    expect(parseStringToJson("Content-Type: text/html\nX-Id: 7\nbroken line")).toEqual({ "Content-Type": "text/html", "X-Id": "7" });
   });
 });
 

@@ -9,20 +9,45 @@ One repository, three deliverables:
 
 ```
 hittable/
-├── app/  components/  context/  hooks/  services/  utils/  types/  styles/
-│                      the Next.js web app (pnpm)
-├── browserExtension/  the Chrome extension: manifest.json, background.js, content.js
-├── shellapp/          the Go terminal app (its own go.mod)
-│   ├── cmd/hittable/  entry point and CLI commands
-│   ├── internal/      .hit schema, env interpolation, HTTP, document store, git wrapper,
-│   │                  collection import/export, commit-message drafting, model host
-│   └── ui/            the Bubble Tea UI: screens, components, theme
-├── content/docs/      these pages, one markdown file each
-├── hittable/          a live example project folder
-└── install.sh         the terminal app installer
+├── app/                   Next.js App Router
+│   ├── page.tsx           landing page
+│   ├── hittable/          the web app at /hittable
+│   ├── docs/              these docs, rendered from content/docs
+│   └── api/
+│       ├── proxy/         the request proxy
+│       └── github/        OAuth (login, callback, logout, session) and the repo routes:
+│                          repos, branches, head, tree, blob, commit, compare, pulls
+├── components/
+│   ├── workspace/         explorer, Runner host, text, markdown and code editors
+│   ├── RequestForm/       URL bar, tab editor, Copy as menu, response panel and its tools
+│   ├── palette/           command palette
+│   ├── modals/            shortcuts cheatsheet, extension status
+│   ├── hittable/          share-link preview
+│   ├── notes/  ui/  docs/  homepage/
+├── context/               workspace, shortcuts and notification providers
+├── hooks/                 useExtension, useKeypress, useNotify
+├── services/              the local-folder (File System Access) service, handle store, landing-page data
+├── utils/                 send pipeline, curl converter, codegen, JSONPath, JSON diff, share links,
+│   │                      env resolution, production guard, docs pipeline
+│   ├── server/github/     OAuth, encrypted session cookie, GitHub client, commit, guards
+│   ├── server/proxy.ts    the proxy's guards and limits
+│   └── workspace/         file kinds, editor languages, tree helpers
+├── constants/  types/  styles/  config/
+├── tests/unit/            Vitest
+├── tests/e2e/             Playwright, with a fake upstream API and a fake GitHub in fixtures/
+├── browserExtension/      the Chrome extension: manifest.json, background.js, content.js
+├── shellapp/              the Go terminal app (its own go.mod)
+│   ├── cmd/hittable/      entry point and CLI commands
+│   ├── internal/          .hit schema, env interpolation, HTTP, document store, git wrapper,
+│   │                      collection import/export, commit-message drafting, model host
+│   └── ui/                the Bubble Tea UI: screens, components, theme
+├── content/docs/          these pages, one markdown file each
+├── docs/                  requirement specs, such as github-workspace-requirements.md
+├── hittable/              a live example project folder
+└── install.sh             the terminal app installer
 ```
 
-`shellapp/CLAUDE.md` is the terminal app's full specification and changelog; `shellapp/README.md` the user-facing version. `IMPORT_EXPORT_FORMATS.md` is the format reference the importers follow.
+`shellapp/CLAUDE.md` is the terminal app's full specification and changelog; `shellapp/README.md` the user-facing version. `IMPORT_EXPORT_FORMATS.md` is the format reference the importers follow. `docs/github-workspace-requirements.md` is the v3 spec for the GitHub workspace.
 
 ## Web app
 
@@ -36,9 +61,11 @@ pnpm build && pnpm test:e2e   # Playwright against the production build, tests/e
 pnpm build && pnpm start
 ```
 
-Node 22.19 or newer. The E2E suite starts its own fake upstream API and a production server on port 3100 (run `pnpm exec playwright install chromium webkit` once). It covers Chrome, Safari (desktop and iPhone) and phone layouts locally; CI adds Firefox, which Playwright cannot start on macOS 27 yet. CI (`.github/workflows/ci.yml`) runs all of the above for every push and pull request.
+Node 22.19 or newer. To try GitHub sign-in locally, create a development OAuth app with the callback `http://localhost:3000/api/github/callback` and set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` and `SESSION_SECRET` in `.env.local` (see [Self-hosting](/docs/self-hosting#github-sign-in)). Without them, everything except sign-in works.
 
-Conventions: TypeScript strict, the `@/` alias points at the repository root, components are re-exported from `components/index.ts`, interactive components carry `"use client"`, icons come from `lucide-react`, styling is Tailwind utility classes with a few `@apply` helpers in `styles/`. There is no light theme.
+The E2E suite starts its own fake upstream API, a fake GitHub (OAuth, REST and GraphQL) and a production server on port 3100, so no test calls real GitHub. Run `pnpm exec playwright install chromium webkit` once. It covers Chrome, Safari (desktop and iPhone) and phone layouts locally; CI adds Firefox. CI (`.github/workflows/ci.yml`) runs all of the above for every push and pull request.
+
+Conventions: TypeScript strict, the `@/` alias points at the repository root, interactive components carry `"use client"`, icons come from `lucide-react`, styling is Tailwind utility classes with design tokens and a few `@apply` helpers in `styles/`. Code under `utils/server/` runs only on the server; the GitHub token and client secret must never reach a client component.
 
 To add a docs page, drop `content/docs/<slug>.md` with a `title:` and `description:` frontmatter and add the slug to a group in `constants/docs.ts`. Pages left out of the manifest still render, under a trailing "More" group. Headings become the sidebar search index and the on-page table of contents; fenced code gets a copy button; tables scroll horizontally.
 
@@ -73,7 +100,7 @@ Load `browserExtension/` unpacked from `chrome://extensions` with Developer mode
 | What | Trigger | Output |
 | :--- | :--- | :--- |
 | Browser extension | tag `ext-v*` | `hittable-extension.zip` on a GitHub release, marked latest (the site's download link points at `releases/latest`) |
-| Terminal app | tag `sh-v*` | six static binaries (darwin, linux, windows × amd64, arm64), `checksums.txt`, release notes with the install one-liner; never marked latest — `install.sh` and `hittable update` look up the newest `sh-v*` tag |
+| Terminal app | tag `sh-v*` | six static binaries (darwin, linux, windows × amd64, arm64), `checksums.txt`, release notes with the install one-liner; never marked latest; `install.sh` and `hittable update` look up the newest `sh-v*` tag |
 | Web app | push to `main` | Vercel |
 
 The terminal release runs `go vet` and `go test` first. A release that does not pass its own tests is not a release.

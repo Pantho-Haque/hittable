@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Eye, Pencil, Columns2 } from "lucide-react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import type { NoteId } from "@/types";
 
 marked.setOptions({
   gfm: true,
@@ -12,7 +11,7 @@ marked.setOptions({
 });
 
 interface Props {
-  selectedId: NoteId | null;
+  selectedId: string | null;
   selectedTitle: string | null;
   content: string;
   isUnsaved: boolean;

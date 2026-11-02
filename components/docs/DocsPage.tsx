@@ -13,9 +13,9 @@ export default function DocsPage({ doc, prev, next }: { doc: Doc; prev?: DocMeta
       <article className="min-w-0 flex-1 py-10 lg:py-12">
         <header className="mb-8">
           {doc.group && (
-            <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-400/70">{doc.group}</div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-(--brand)">{doc.group}</div>
           )}
-          <h1 className="text-3xl font-bold tracking-tight text-slate-50 sm:text-4xl">{doc.title}</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-(--text) sm:text-4xl">{doc.title}</h1>
           {doc.description && <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-white/55">{doc.description}</p>}
         </header>
 
@@ -30,7 +30,7 @@ export default function DocsPage({ doc, prev, next }: { doc: Doc; prev?: DocMeta
               href={`${DOCS_REPO_EDIT_BASE}${doc.slug}.md`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 hover:text-cyan-300 transition-colors"
+              className="inline-flex items-center gap-1.5 hover:text-(--brand) transition-colors"
             >
               <Pencil size={12} /> Edit this page
             </a>
@@ -41,7 +41,7 @@ export default function DocsPage({ doc, prev, next }: { doc: Doc; prev?: DocMeta
                 <div className="mb-1 flex items-center gap-1 text-[11px] uppercase tracking-[0.2em] text-white/50">
                   <ArrowLeft size={12} /> Previous
                 </div>
-                <div className="text-sm text-slate-100 group-hover:text-cyan-300 transition-colors">{prev.title}</div>
+                <div className="text-sm text-(--text) group-hover:text-(--brand) transition-colors">{prev.title}</div>
               </Link>
             ) : (
               <span />
@@ -51,7 +51,7 @@ export default function DocsPage({ doc, prev, next }: { doc: Doc; prev?: DocMeta
                 <div className="mb-1 flex items-center justify-end gap-1 text-[11px] uppercase tracking-[0.2em] text-white/50">
                   Next <ArrowRight size={12} />
                 </div>
-                <div className="text-sm text-slate-100 group-hover:text-cyan-300 transition-colors">{next.title}</div>
+                <div className="text-sm text-(--text) group-hover:text-(--brand) transition-colors">{next.title}</div>
               </Link>
             )}
           </div>

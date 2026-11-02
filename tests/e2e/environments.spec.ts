@@ -1,31 +1,15 @@
-import {
-  test,
-  expect,
-  API,
-  collection,
-  dialog,
-  openRoute,
-  response,
-  route,
-  send,
-  statusBadge,
-  urlInput,
-} from "./fixtures/test";
-import { seedPrivateFolder, readFile, node, expand, openWorkspace } from "./fixtures/directory";
+import { test, expect, API, dialog, openRequest, response, send, statusBadge, urlInput, FOLDER_ONLY } from "./fixtures/test";
+import { readFile, openFile } from "./fixtures/directory";
 
-// Round 2: the production guard (FR-16) and git-safe secrets (FR-17).
+// Round 2: the production guard (FR-16) and git-safe secrets (FR-17), both
+// driven by hittable/env.json in a workspace.
+test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
+
+const PROD = { HITTABLE_PRODUCTION: "true" };
 
 test.describe("production guard (FR-16)", () => {
-  const prodShop = () =>
-    collection(
-      "Shop",
-      [route("create", `curl -X POST ${API}/echo -H 'Content-Type: application/json' -d '{"a":1}'`), route("list", `curl -X GET ${API}/users`)],
-      { HITTABLE_PRODUCTION: "true" },
-    );
-
-  test("a POST waits for confirmation: Cancel sends nothing, Send sends once", async ({ page, seed }) => {
-    await seed({ collections: [prodShop()] });
-    await openRoute(page, "Shop", "create");
+  test("a POST waits for confirmation: Cancel sends nothing, Send sends once", async ({ page }) => {
+    await openRequest(page, { method: "POST", url: `${API}/echo`, headers: { "Content-Type": "application/json" }, body: '{"a":1}', env: PROD });
     await expect(page.getByText("PRODUCTION", { exact: true })).toBeVisible();
     let proxied = 0;
     page.on("request", (r) => r.url().endsWith("/api/proxy") && proxied++);
@@ -43,42 +27,37 @@ test.describe("production guard (FR-16)", () => {
     expect(proxied).toBe(1);
   });
 
-  test("a GET is not asked about", async ({ page, seed }) => {
-    await seed({ collections: [prodShop()] });
-    await openRoute(page, "Shop", "list");
+  test("a GET is not asked about", async ({ page }) => {
+    await openRequest(page, { url: `${API}/users`, env: PROD });
     await send(page);
     await expect(statusBadge(page)).toHaveText("200 OK");
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
-  test("the Environment toggle marks a collection as production", async ({ page, seed }) => {
-    await seed({ collections: [collection("Shop", [route("list", `curl -X GET ${API}/users`)])] });
-    await openRoute(page, "Shop", "list");
+  test("marking env.json as production turns the guard on for the open request", async ({ page }) => {
+    await openRequest(page, { method: "DELETE", url: `${API}/users/1` });
     await expect(page.getByText("PRODUCTION", { exact: true })).toHaveCount(0);
-    await page.keyboard.press("ControlOrMeta+k");
-    await page.keyboard.type("environment");
-    await page.keyboard.press("Enter");
-    const env = dialog(page, /Environment/);
-    await env.getByLabel(/Production environment/).check();
-    await env.getByRole("button", { name: /Save/ }).click();
+    await openFile(page, "hittable/env.json");
+    const env = page.getByRole("textbox", { name: "Edit env.json" });
+    await env.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.insertText(JSON.stringify(PROD));
+    await expect.poll(async () => JSON.parse(await readFile(page, "hittable/env.json"))).toEqual(PROD);
+    await openFile(page, "hittable/req.hit");
     await expect(page.getByText("PRODUCTION", { exact: true })).toBeVisible();
-    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("hittable")!));
-    expect(stored[0].env.HITTABLE_PRODUCTION).toBe("true");
+    await send(page);
+    await expect(dialog(page, "Send DELETE to production?")).toBeVisible();
   });
 });
 
 test.describe("git-safe secrets (FR-17)", () => {
-  test.skip(({ browserName }) => browserName !== "chromium", "Directory mode needs the File System Access API (Chromium only)");
-
   test("env.local.json overrides env.json and is listed in hittable/.gitignore", async ({ page }) => {
-    await seedPrivateFolder(page, {
-      "hittable/env.json": JSON.stringify({ BASE: API, TOKEN: "placeholder" }),
-      "hittable/env.local.json": JSON.stringify({ TOKEN: "from-local" }),
-      "hittable/me.hit": JSON.stringify({ method: "GET", url: "<<BASE>>/echo", headers: { Authorization: "Bearer <<TOKEN>>" }, params: {}, body: "", response: null }),
+    await openRequest(page, {
+      url: "<<BASE>>/echo",
+      headers: { Authorization: "Bearer <<TOKEN>>" },
+      env: { BASE: API, TOKEN: "placeholder" },
+      envLocal: { TOKEN: "from-local" },
     });
-    await openWorkspace(page);
-    await expand(page, "hittable");
-    await node(page, "hittable/me.hit").click();
     await send(page);
     await expect(statusBadge(page)).toHaveText("200 OK");
     await expect(response(page).getByText('"Bearer from-local"')).toBeVisible();

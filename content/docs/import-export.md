@@ -1,23 +1,16 @@
 ---
 title: Import and export
-description: Move collections between Hittable, Postman and Insomnia. What maps, how variables translate, and what has no equivalent and is dropped.
+description: Move collections between Hittable, Postman and Insomnia with the terminal app. What maps, how variables translate, and what has no equivalent and is dropped.
 ---
 
-Both apps speak the same three formats:
+Postman and Insomnia conversion lives in the terminal app. The web app has no importer; import once from the terminal, commit the `hittable/` folder, and the web app opens the result like any other `.hit` files.
 
-| Format | Detected by | Extension |
+| Format | Detected by | Export file |
 | :--- | :--- | :--- |
-| Hittable native | a compressed, URL-safe base64 string (web only) or a `collectionName` + `items` object | `.txt` |
-| Postman Collection v2.1 | `info.schema` containing `getpostman.com` | `.postman_collection.json` |
-| Insomnia export v4 | `_type: "export"` with a `resources` array, or a bare array of `_type` resources | `.insomnia.json` |
+| Postman Collection v2.1 | `info.schema` containing `getpostman.com` | `<folder>.postman_collection.json` |
+| Insomnia export v4 | `_type: "export"` with a `resources` array, or a bare array of `_type` resources | `<folder>.insomnia.json` |
 
-## In the web app
-
-**Import** (the import icon in the tool rail): paste the JSON or the Hittable string into the box and the format is detected. A collection whose name already exists is imported as `Name - 1`, `Name - 2` and so on. Every Postman import ends with a reminder that scripts and advanced auth types were skipped; every Insomnia import, that plugins, certificates and cookie jars were.
-
-**Export**: a collection's `⋮` menu → **Export**, then pick **Hittable native** (copy the string), **Postman Collection v2.1** or **Insomnia export** (copy, or download the `.json`). Saved responses are stripped. Secrets are not resolved: they stay as variable references in the target syntax.
-
-## In the terminal app
+## Commands
 
 ```sh
 hittable -i collection.json          # import a Postman or Insomnia export, then open
@@ -26,7 +19,7 @@ hittable -e insomnia                 # export hittable/ as <folder>.insomnia.jso
 hittable -e postman -o api.json      # pick the file name
 ```
 
-Import puts the collection under `hittable/<Collection name>/`, folders as directories, requests as `.hit` files, and merges variables into `hittable/env.json` without overwriting keys that already exist. It prints a report: requests, folders, variables, and everything that was dropped. Export walks `hittable/` recursively. The round trip is tested.
+Import puts the collection under `hittable/<Collection name>/`, folders as directories, requests as `.hit` files, and merges variables into `hittable/env.json` without overwriting keys that already exist. It prints a report: requests, folders, variables, and everything that was dropped. Export walks `hittable/` recursively. The round trip is tested. The full flag list is in the [CLI reference](/docs/shellapp-cli).
 
 ## Variable syntax
 
@@ -43,7 +36,7 @@ Collection, folder and environment variables are collected into Hittable's flat 
 
 | Postman | Hittable |
 | :--- | :--- |
-| `item` with `request` | a request (`.hit` file, or a route) |
+| `item` with `request` | a request (`.hit` file) |
 | `item` with nested `item` | a folder |
 | `url` as a string or as an object with `host`, `path`, `query` | `url` plus `params` from the query |
 | `header[]` | `headers`, disabled rows skipped |
@@ -54,7 +47,7 @@ Collection, folder and environment variables are collected into Hittable's flat 
 | `auth` bearer, basic, apikey | the equivalent `Authorization` or custom header, with inheritance from folder and collection and `noauth` honoured |
 | items marked `disabled: true` | skipped |
 
-Dropped on import, and reported: pre-request and test scripts; OAuth1, OAuth2, AWS Signature v4, Digest, EdgeGrid, Hawk and NTLM auth; certificate, protocol-profile and proxy configuration. Dropped on export: notes, history, and auth presets (only the resulting headers are exported).
+Dropped on import, and reported: pre-request and test scripts; OAuth1, OAuth2, AWS Signature v4, Digest, EdgeGrid, Hawk and NTLM auth; certificate, protocol-profile and proxy configuration. Saved responses and notes are not exported.
 
 ## Insomnia mapping
 
@@ -67,10 +60,6 @@ Dropped on import, and reported: pre-request and test scripts; OAuth1, OAuth2, A
 
 Dropped on import, and reported: plugin configuration, cookie jars, client certificates, WebSocket, gRPC and socket.io requests, mock routes, unit tests and API specs.
 
-## Hittable native (web)
-
-The string is the collection JSON run through `pako.deflate`, base64-encoded, then made URL-safe (`+` → `-`, `/` → `_`, padding removed). Importing accepts both the current nested `items` form and the older flat `curls` form, which is upgraded on the way in. A corrupt string fails with **Invalid or corrupted import data**.
-
 ## Format reference
 
-The confirmed schemas with field-level notes live in the repository at `IMPORT_EXPORT_FORMATS.md`, and the implementations in `utils/importers/` (web) and `shellapp/internal/collection/` (terminal).
+The confirmed schemas with field-level notes live in the repository at `IMPORT_EXPORT_FORMATS.md`, and the implementation in `shellapp/internal/collection/`.

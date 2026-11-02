@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/test";
+import { test, expect, openLauncher } from "./fixtures/test";
 
 test.describe("landing page", () => {
   test("loads with its hero, sections and no console errors", async ({ page }) => {
@@ -7,20 +7,22 @@ test.describe("landing page", () => {
     const res = await page.goto("/");
     expect(res?.status()).toBe(200);
     await expect(page).toHaveTitle(/Hittable/);
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Built for developers who move fast." })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Stay in the flow." })).toBeVisible();
-    await expect(page.getByText("Send request")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "API requests that live in your repo." })).toBeVisible();
+    for (const name of ["From sign-in to commit", "A full client, in plain files", "Permissions and privacy", "The same files in your terminal", "Keyboard first"]) {
+      await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
+    }
     await page.waitForLoadState("networkidle");
     // Third-party images can fail offline; anything the app itself logs cannot.
     expect(errors.filter((e) => !/Failed to load resource/.test(e))).toEqual([]);
   });
 
-  test("Launch App opens the client", async ({ page }) => {
+  test("the hero's two ways in: GitHub sign-in and a local folder", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("link", { name: "Launch App" }).first().click();
+    const hero = page.getByRole("main");
+    await expect(hero.getByRole("link", { name: "Sign in with GitHub" })).toHaveAttribute("href", "/api/github/login?next=/hittable");
+    await hero.getByRole("link", { name: "Open a local folder" }).click();
     await expect(page).toHaveURL(/\/hittable$/);
-    await expect(page.getByRole("complementary", { name: "Collections" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Open a workspace" })).toBeVisible();
   });
 
   test("top bar links go to sections, docs and the app", async ({ page }) => {
@@ -35,8 +37,25 @@ test.describe("landing page", () => {
     await expect(page).toHaveURL(/#features$/);
     await expect(page.locator("#features")).toBeInViewport();
 
-    await nav.getByRole("link", { name: "Open App" }).click();
+    await nav.getByRole("link", { name: "Open app" }).click();
     await expect(page).toHaveURL(/\/hittable$/);
+  });
+
+  test("signed out, the top bar offers sign-in that comes back to the same page", async ({ page }) => {
+    await page.goto("/docs/faq");
+    await expect(page.getByRole("banner").getByRole("link", { name: "Sign in with GitHub" })).toHaveAttribute(
+      "href",
+      "/api/github/login?next=%2Fdocs%2Ffaq",
+    );
+  });
+
+  test("in the app the top bar has the search button instead of Open app", async ({ page }) => {
+    await openLauncher(page);
+    const bar = page.getByRole("banner");
+    await expect(bar.getByRole("button", { name: "Search and commands" })).toContainText("Search…");
+    await expect(bar.getByRole("link", { name: "Open app" })).toHaveCount(0);
+    await bar.getByRole("button", { name: "Search and commands" }).click();
+    await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
   });
 
   test("external links open in a new tab without leaking the opener", async ({ page }) => {
@@ -58,7 +77,7 @@ test.describe("landing page", () => {
 });
 
 test.describe("static routes and headers", () => {
-  for (const path of ["/", "/hittable", "/docs", "/docs/web-app"]) {
+  for (const path of ["/", "/hittable", "/hittable/folder", "/docs", "/docs/web-app"]) {
     test(`${path} sends the security headers`, async ({ request }) => {
       const res = await request.get(path);
       expect(res.status()).toBe(200);

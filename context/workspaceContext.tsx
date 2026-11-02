@@ -9,14 +9,18 @@ import {
   useCallback,
   useRef,
 } from "react";
-import { TDirectoryNode, TWorkspaceMode, TEnvFile } from "@/types";
+import type { TEnvFile } from "@/types";
 import {
-  pickFolder,
-  scaffoldHittable,
-  validateHittable,
-  readEnvFile,
-  LOCAL_ENV_FILE,
-} from "@/services/workspace/DirectoryService";
+  ENV_PATH,
+  findNode,
+  isReservedPath,
+  readEnv,
+  type FileStatus,
+  type WorkspaceBackend,
+  type WsNode,
+} from "@/services/workspace/backend";
+import { createFolderBackend } from "@/services/workspace/folderBackend";
+import { pickFolder, scaffoldHittable } from "@/services/workspace/DirectoryService";
 import {
   saveDirectoryHandle,
   loadDirectoryHandle,
@@ -24,48 +28,59 @@ import {
   verifyPermission,
 } from "@/services/workspace/HandleStore";
 import { serializeHitFile } from "@/utils/workspace/hitFileParser";
-import { classifyFile, type FileView } from "@/utils/workspace/fileKind";
-import { buildTree } from "@/utils/workspace/directoryTreeHelpers";
+import { NotificationContext } from "@/context/notifyContext";
+import { classifyFile, editorKind, type EditorKind, type FileView } from "@/utils/workspace/fileKind";
+import { useToolListener } from "@/utils/uiEvents";
 
-type ActiveFileState = {
-  path: string[];
-  handle: FileSystemFileHandle;
-  kind: "hit" | "env" | "markdown" | "text";
-} | null;
+export type ActiveFile = { path: string[]; kind: EditorKind } | null;
 
 type WorkspaceContextType = {
-  mode: TWorkspaceMode;
-  setMode: (mode: TWorkspaceMode) => void;
-  directoryHandle: FileSystemDirectoryHandle | null;
-  hittableDir: FileSystemDirectoryHandle | null;
-  tree: TDirectoryNode[];
-  activeFile: ActiveFileState;
+  /** Which kind of workspace is open, or null on the launcher. */
+  backendKind: WorkspaceBackend["kind"] | null;
+  /** Folder name, or owner/repo. */
+  label: string;
+  readOnly: boolean;
+  /** path.join("/") → git status; empty for folders. */
+  status: Record<string, FileStatus>;
+  tree: WsNode[];
+  activeFile: ActiveFile;
   rawTextContent: string;
+  /** env.json with env.local.json layered on top. */
   envContent: TEnvFile;
   isRefreshing: boolean;
   isFileLoaded: boolean;
   /** What the open file is: editable text, an image, a binary or too large to edit. */
   fileView: FileView;
+  /** Why the open file can't be edited although the workspace can (e.g. a GitHub workflow), or null. */
+  fileNotice: string | null;
   fileSize: number;
   /** An object URL for the open image, to show it. */
   fileUrl: string | null;
   connectingStage: TConnectingStage | null;
-  openFolder: () => Promise<void>;
-  disconnectFolder: () => void;
+  /** Show any backend (e.g. a GitHub repository). */
+  openBackend: (backend: WorkspaceBackend) => Promise<void>;
+  /** Pick a folder on disk and open it. False when cancelled or failed. */
+  openFolder: () => Promise<boolean>;
+  /** Reopen the last folder. `prompt` asks for permission (needs a user gesture). */
+  reconnectFolder: (prompt?: boolean) => Promise<boolean>;
+  closeWorkspace: () => void;
   refreshTree: () => Promise<void>;
+  /** List a directory the backend left unloaded (large GitHub trees). */
+  loadDirectory: (path: string[]) => Promise<void>;
   refreshEnv: () => Promise<void>;
-  setActiveFile: (file: { path: string[]; handle: FileSystemFileHandle } | null) => void;
+  setActiveFile: (path: string[] | null) => void;
   updateRawTextContent: (content: string) => void;
-  saveRawTextContent: (content?: string) => void;
-  deleteEntry: (parentHandle: FileSystemDirectoryHandle, name: string) => Promise<void>;
-  renameEntry: (parentHandle: FileSystemDirectoryHandle, oldName: string, newName: string, kind: "file" | "directory") => Promise<void>;
-  createEntry: (parentHandle: FileSystemDirectoryHandle, name: string, kind: "file" | "directory") => Promise<void>;
+  saveRawTextContent: (content?: string) => Promise<void> | void;
+  /** A .hit file without `text` gets a blank request. Fails when the name is taken or reserved. */
+  createEntry: (path: string[], kind: "file" | "directory", text?: string) => Promise<void>;
+  renameEntry: (path: string[], newName: string) => Promise<void>;
+  deleteEntry: (path: string[]) => Promise<void>;
 } | null;
 
 /**
  * Opening a workspace is a multi-second job (scaffolding, then a full recursive
  * walk of the folder). The stage is surfaced so the UI can say which part is
- * running rather than showing an unexplained pause in local mode.
+ * running rather than showing an unexplained pause.
  */
 export type TConnectingStage = "preparing" | "scanning" | "reconnecting";
 
@@ -79,170 +94,191 @@ export function connectingLabel(stage: TConnectingStage): string {
   return CONNECTING_LABELS[stage];
 }
 
+const BLANK_HIT = serializeHitFile({ method: "GET", url: "", headers: {}, params: {}, body: "", response: null });
+
+const key = (path: string[]) => path.join("/");
+const within = (path: string[], root: string[]) => key(path) === key(root) || key(path).startsWith(key(root) + "/");
+
+function writable(b: WorkspaceBackend | null) {
+  if (!b) throw new Error("No workspace is open");
+  if (b.readOnly) throw new Error("This workspace is read-only");
+  return b;
+}
+
+function refuseReserved(path: string[]) {
+  if (isReservedPath(path)) throw new Error(`"${path[path.length - 1]}" is a reserved name`);
+}
+
 const WorkspaceContext = createContext<WorkspaceContextType>(null);
 
-const MODE_STORAGE_KEY = "hittable-workspace-mode";
+/** A picker or file error as a sentence the user can act on. */
+function errorText(err: unknown): string {
+  const e = err as Error;
+  if (e?.name === "NotAllowedError" || e?.name === "SecurityError") return "The browser didn't allow access to that folder. Try again, or pick another folder.";
+  if (e?.name === "NotFoundError") return "The folder is no longer there.";
+  return e?.message || String(err);
+}
 
 export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
-  const [mode, setModeState] = useState<TWorkspaceMode>("local");
-  const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  const [hittableDir, setHittableDir] = useState<FileSystemDirectoryHandle | null>(null);
-  const [tree, setTree] = useState<TDirectoryNode[]>([]);
-  const [activeFile, setActiveFileState] = useState<ActiveFileState>(null);
+  // Optional: unit tests mount the workspace without the toast layer.
+  const notify = useContext(NotificationContext)?.notify;
+  const notifyRef = useRef(notify);
+  useEffect(() => { notifyRef.current = notify; });
+  const [backend, setBackend] = useState<WorkspaceBackend | null>(null);
+  const [tree, setTree] = useState<WsNode[]>([]);
+  const [status, setStatus] = useState<Record<string, FileStatus>>({});
+  const [activeFile, setActiveFileState] = useState<ActiveFile>(null);
   const [rawTextContent, setRawTextContent] = useState("");
   const [envContent, setEnvContent] = useState<TEnvFile>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFileLoaded, setIsFileLoaded] = useState(false);
   const [fileView, setFileView] = useState<FileView>({ kind: "text" });
   const fileViewRef = useRef<FileView>({ kind: "text" });
+  const [fileNotice, setFileNotice] = useState<string | null>(null);
+  const fileNoticeRef = useRef<string | null>(null);
   const [fileSize, setFileSize] = useState(0);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [connectingStage, setConnectingStage] = useState<TConnectingStage | null>(null);
 
+  const backendRef = useRef<WorkspaceBackend | null>(null);
+  const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
   const hasLoadedRef = useRef(false);
-  const activeFileRef = useRef<ActiveFileState>(null);
+  const activeFileRef = useRef<ActiveFile>(null);
   const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
   // The newest unwritten content per file. A burst of keystrokes becomes one
   // write of the latest text, not one full-file write per key.
-  const pendingWritesRef = useRef(new Map<FileSystemFileHandle, string>());
-  const hittableDirRef = useRef<FileSystemDirectoryHandle | null>(null);
+  const pendingWritesRef = useRef(new Map<string, string>());
 
   activeFileRef.current = activeFile;
-  hittableDirRef.current = hittableDir;
 
-  const setMode = useCallback((newMode: TWorkspaceMode) => {
-    setModeState(newMode);
-    try {
-      localStorage.setItem(MODE_STORAGE_KEY, newMode);
-    } catch { /* ignore */ }
-  }, []);
-
-  const getFileKind = (name: string): "hit" | "env" | "markdown" | "text" => {
-    if (name.endsWith(".hit")) return "hit";
-    if (name === "env" || name === "env.json") return "env";
-    if (name.endsWith(".md")) return "markdown";
-    return "text";
-  };
-
-  const setActiveFileWithKind = useCallback((file: { path: string[]; handle: FileSystemFileHandle } | null) => {
-    if (!file) {
-      setActiveFileState(null);
-      setIsFileLoaded(false);
-      hasLoadedRef.current = false;
-      return;
-    }
-    const name = file.path[file.path.length - 1];
+  const setActiveFile = useCallback((path: string[] | null) => {
     setIsFileLoaded(false);
     hasLoadedRef.current = false;
-    setActiveFileState({ ...file, kind: getFileKind(name) });
+    setActiveFileState(path ? { path, kind: editorKind(path[path.length - 1]) } : null);
+  }, []);
+
+  const syncStatus = useCallback((b: WorkspaceBackend) => {
+    if (backendRef.current === b) setStatus(b.status?.() ?? {});
   }, []);
 
   const refreshTree = useCallback(async () => {
-    const handle = directoryHandle || hittableDir;
-    if (!handle) return;
+    const b = backendRef.current;
+    if (!b) return;
     setIsRefreshing(true);
     try {
-      const newTree = await buildTree(handle);
-      setTree(newTree);
+      const next = await b.listTree();
+      if (backendRef.current === b) setTree(next);
+      syncStatus(b);
     } finally {
       setIsRefreshing(false);
     }
-  }, [directoryHandle, hittableDir]);
+  }, [syncStatus]);
+
+  const loadDirectory = useCallback(async (path: string[]) => {
+    const b = backendRef.current;
+    const node = findNode(tree, path);
+    if (!b?.loadDirectory || node?.kind !== "directory" || node.children) return;
+    try {
+      await b.loadDirectory(path);
+      await refreshTree();
+    } catch (err) {
+      console.error("Could not list the folder:", err);
+    }
+  }, [tree, refreshTree]);
 
   const refreshEnv = useCallback(async () => {
-    if (!hittableDirRef.current) return;
-    const env = await readEnvFile(hittableDirRef.current);
-    setEnvContent(env);
+    const b = backendRef.current;
+    if (!b) return;
+    const env = await readEnv(b);
+    if (backendRef.current === b) setEnvContent(env);
   }, []);
 
+  const reset = useCallback((b: WorkspaceBackend | null) => {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = undefined;
+    backendRef.current = b;
+    pendingWritesRef.current.clear();
+    setBackend(b);
+    setTree([]);
+    setStatus({});
+    setEnvContent({});
+    setActiveFile(null);
+  }, [setActiveFile]);
+
+  const openBackend = useCallback(async (b: WorkspaceBackend) => {
+    reset(b);
+    const [nextTree, env] = await Promise.all([b.listTree(), readEnv(b)]);
+    if (backendRef.current !== b) return;
+    setTree(nextTree);
+    setEnvContent(env);
+    syncStatus(b);
+    unsubscribeRef.current = b.subscribe?.(() => {
+      syncStatus(b);
+      void refreshTree();
+    });
+  }, [reset, syncStatus, refreshTree]);
+
+  useEffect(() => () => unsubscribeRef.current?.(), []);
+
+  const openFolderHandle = useCallback(async (handle: FileSystemDirectoryHandle, firstStage: TConnectingStage) => {
+    setConnectingStage(firstStage);
+    try {
+      await scaffoldHittable(handle);
+      await saveDirectoryHandle(handle);
+      setConnectingStage((s) => (s === "preparing" ? "scanning" : s));
+      await openBackend(createFolderBackend(handle));
+      return true;
+    } catch (err) {
+      reset(null);
+      notifyRef.current?.({ mode: "error", title: "Couldn't open the folder", desc: errorText(err), timeout: 6000 });
+      return false;
+    } finally {
+      setConnectingStage(null);
+    }
+  }, [openBackend, reset]);
+
+  const pickingRef = useRef(false);
   const openFolder = useCallback(async () => {
     // The OS picker is modal, so the loader only covers the work that follows
     // it — otherwise a cancelled picker would leave a spinner on screen.
+    // A second click while it is open would throw "File picker already active".
+    if (pickingRef.current) return false;
+    pickingRef.current = true;
     let handle: FileSystemDirectoryHandle;
     try {
       handle = await pickFolder();
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        console.error("Failed to open folder:", err);
+      const name = (err as Error).name;
+      if (name !== "AbortError" && !/already active/i.test((err as Error).message ?? "")) {
+        notifyRef.current?.({ mode: "error", title: "Couldn't open the folder", desc: errorText(err), timeout: 6000 });
       }
-      return;
-    }
-
-    setConnectingStage("preparing");
-    try {
-      const hittable = await scaffoldHittable(handle);
-      await saveDirectoryHandle(handle);
-      setDirectoryHandle(handle);
-      setHittableDir(hittable);
-      setTree([]);
-      setActiveFileState(null);
-      setRawTextContent("");
-      setIsFileLoaded(false);
-      hasLoadedRef.current = false;
-      setConnectingStage("scanning");
-      const newTree = await buildTree(handle);
-      setTree(newTree);
-      const env = await readEnvFile(hittable);
-      setEnvContent(env);
-      setMode("directory");
-    } catch (err) {
-      console.error("Failed to open folder:", err);
+      return false;
     } finally {
-      setConnectingStage(null);
+      pickingRef.current = false;
     }
-  }, [setMode]);
+    return openFolderHandle(handle, "preparing");
+  }, [openFolderHandle]);
 
-  const disconnectFolder = useCallback(() => {
-    removeDirectoryHandle();
-    setDirectoryHandle(null);
-    setHittableDir(null);
-    setTree([]);
-    setActiveFileState(null);
-    setRawTextContent("");
-    setIsFileLoaded(false);
-    hasLoadedRef.current = false;
-    setMode("local");
-  }, [setMode]);
+  const reconnectFolder = useCallback(async (prompt = false) => {
+    const handle = await loadDirectoryHandle();
+    if (!handle) return false;
+    if (!(await verifyPermission(handle, prompt))) {
+      // Refused when asked: forget it. Not asked yet: keep it for the launcher's Reconnect.
+      if (prompt) await removeDirectoryHandle();
+      return false;
+    }
+    return openFolderHandle(handle, "reconnecting");
+  }, [openFolderHandle]);
 
-  useEffect(() => {
-    const tryReconnect = async () => {
-      let savedMode: TWorkspaceMode = "local";
-      try {
-        savedMode = (localStorage.getItem(MODE_STORAGE_KEY) as TWorkspaceMode) || "local";
-      } catch { /* ignore */ }
-
-      if (savedMode !== "directory") return;
-
-      const savedHandle = await loadDirectoryHandle();
-      if (!savedHandle) return;
-      const hasPermission = await verifyPermission(savedHandle);
-      if (!hasPermission) {
-        removeDirectoryHandle();
-        setMode("local");
-        return;
-      }
-      setConnectingStage("reconnecting");
-      try {
-        const hittable = await validateHittable(savedHandle);
-        setDirectoryHandle(savedHandle);
-        setHittableDir(hittable);
-        const newTree = await buildTree(savedHandle);
-        setTree(newTree);
-        const env = await readEnvFile(hittable);
-        setEnvContent(env);
-        setMode("directory");
-      } catch {
-        removeDirectoryHandle();
-        setMode("local");
-      } finally {
-        setConnectingStage(null);
-      }
-    };
-    tryReconnect();
-  }, [setMode]);
+  const closeWorkspace = useCallback(() => {
+    if (backendRef.current?.kind === "folder") void removeDirectoryHandle();
+    reset(null);
+  }, [reset]);
 
   useEffect(() => {
-    if (!activeFile) {
+    if (!activeFile || !backend) {
+      fileNoticeRef.current = null;
+      setFileNotice(null);
       setRawTextContent("");
       setIsFileLoaded(false);
       hasLoadedRef.current = false;
@@ -255,29 +291,36 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
 
     let url: string | null = null;
     const loadFile = async () => {
+      const notice = () => {
+        fileNoticeRef.current = backend.readOnlyReason?.(activeFile.path) ?? null;
+        setFileNotice(fileNoticeRef.current);
+      };
+      fileNoticeRef.current = null;
       try {
-        const file = await activeFile.handle.getFile();
-        const view = await classifyFile(activeFile.path[activeFile.path.length - 1], file);
+        const blob = new Blob([(await backend.readFile(activeFile.path)) as Uint8Array<ArrayBuffer>]);
+        const view = await classifyFile(activeFile.path[activeFile.path.length - 1], blob);
         if (cancelled) return;
         fileViewRef.current = view;
         setFileView(view);
-        setFileSize(file.size);
-        if (view.kind === "image") url = URL.createObjectURL(file);
+        setFileSize(blob.size);
+        if (view.kind === "image") url = URL.createObjectURL(blob);
         setFileUrl(url);
         // Images, binaries and huge files never enter the editor.
-        const content = view.kind === "text" ? await file.text() : "";
+        const content = view.kind === "text" ? await blob.text() : "";
         if (cancelled) return;
+        notice();
         setRawTextContent(content);
-        setIsFileLoaded(true);
-        hasLoadedRef.current = true;
       } catch (err) {
-        if (!cancelled) {
-          console.error("Failed to load file:", err);
-          setRawTextContent("");
-          setIsFileLoaded(true);
-          hasLoadedRef.current = true;
-        }
+        if (cancelled) return;
+        console.error("Failed to load file:", err);
+        // Never let an empty editor overwrite a file that failed to load.
+        notice();
+        fileNoticeRef.current ??= "This file could not be loaded.";
+        setFileNotice(fileNoticeRef.current);
+        setRawTextContent("");
       }
+      setIsFileLoaded(true);
+      hasLoadedRef.current = true;
     };
     loadFile();
 
@@ -285,7 +328,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [activeFile]);
+  }, [activeFile, backend]);
 
   const updateRawTextContent = useCallback((content: string) => {
     setRawTextContent(content);
@@ -293,85 +336,85 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
 
   const saveRawTextContent = useCallback((content = rawTextContent) => {
     const file = activeFileRef.current;
-    const workspaceDir = hittableDirRef.current;
-    if (!file || !hasLoadedRef.current) return;
+    const b = backendRef.current;
+    if (!file || !b || b.readOnly || fileNoticeRef.current || !hasLoadedRef.current) return;
     // Never write back a file the editor did not load as text.
     if (fileViewRef.current.kind !== "text") return;
     // Capture the destination before awaiting, and serialize writes instead of
     // dropping keystrokes that arrive while a previous write is in flight.
     const pending = pendingWritesRef.current;
-    const queued = pending.has(file.handle);
-    pending.set(file.handle, content);
+    const k = key(file.path);
+    const queued = pending.has(k);
+    pending.set(k, content);
     if (queued) return writeQueueRef.current; // the queued write will carry this text
     writeQueueRef.current = writeQueueRef.current.then(async () => {
-      const latest = pending.get(file.handle);
-      pending.delete(file.handle);
-      if (latest === undefined) return;
-      const writable = await file.handle.createWritable();
-      await writable.write(latest);
-      await writable.close();
+      const latest = pending.get(k);
+      pending.delete(k);
+      if (latest === undefined || backendRef.current !== b) return;
+      await b.writeFile(file.path, latest);
+      syncStatus(b);
       // env.local.json layers over env.json, so saving either re-reads both.
-      const envFile = file.kind === "env" || file.path[file.path.length - 1] === LOCAL_ENV_FILE;
-      if (envFile && workspaceDir && workspaceDir === hittableDirRef.current) {
-        const env = await readEnvFile(workspaceDir);
-        setEnvContent(env);
-      }
+      const name = file.path[file.path.length - 1];
+      if (file.kind === "env" || name === "env.local.json") await refreshEnv();
     }).catch((err) => {
       console.error("Failed to save file:", err);
     });
     return writeQueueRef.current;
-  }, [rawTextContent]);
+  }, [rawTextContent, syncStatus, refreshEnv]);
 
-  const deleteEntry = useCallback(async (parentHandle: FileSystemDirectoryHandle, name: string) => {
-    await parentHandle.removeEntry(name, { recursive: true });
+  const createEntry = useCallback(async (path: string[], kind: "file" | "directory", text?: string) => {
+    const b = writable(backendRef.current);
+    refuseReserved(path);
+    if (kind === "directory") await b.createDirectory(path);
+    else await b.createFile(path, text ?? (path[path.length - 1].endsWith(".hit") ? BLANK_HIT : ""));
     await refreshTree();
   }, [refreshTree]);
 
-  const renameEntry = useCallback(async (
-    parentHandle: FileSystemDirectoryHandle,
-    oldName: string,
-    newName: string,
-    kind: "file" | "directory"
-  ) => {
-    const { renameEntry: rename } = await import("@/utils/workspace/fsHelpers");
-    await rename(parentHandle, oldName, newName, kind);
+  const renameEntry = useCallback(async (path: string[], newName: string) => {
+    const b = writable(backendRef.current);
+    const to = [...path.slice(0, -1), newName];
+    refuseReserved(path);
+    refuseReserved(to);
+    await b.rename(path, to);
+    const open = activeFileRef.current;
+    if (open && within(open.path, path)) setActiveFile(null);
     await refreshTree();
-  }, [refreshTree]);
+  }, [refreshTree, setActiveFile]);
 
-  const createEntry = useCallback(async (
-    parentHandle: FileSystemDirectoryHandle,
-    name: string,
-    kind: "file" | "directory"
-  ) => {
-    const { createFile, createDirectory, fileExists, directoryExists } = await import("@/utils/workspace/fsHelpers");
-    // createFile truncates an existing file, so never create over a name in use.
-    if ((await fileExists(parentHandle, name)) || (await directoryExists(parentHandle, name))) {
-      throw new Error(`"${name}" already exists`);
+  const deleteEntry = useCallback(async (path: string[]) => {
+    const b = writable(backendRef.current);
+    refuseReserved(path);
+    await b.remove(path);
+    const open = activeFileRef.current;
+    if (open && within(open.path, path)) setActiveFile(null);
+    await refreshTree();
+  }, [refreshTree, setActiveFile]);
+
+  // The Runner's "set it in Environment" link: open hittable/env.json,
+  // creating it when it is missing and the workspace can be written.
+  const openEnv = useCallback(async () => {
+    const b = backendRef.current;
+    if (!b) return;
+    try {
+      if (!findNode(tree, ENV_PATH)) {
+        if (b.readOnly) return;
+        await b.createFile(ENV_PATH, "{}\n");
+        await refreshTree();
+      }
+      setActiveFile(ENV_PATH);
+    } catch (err) {
+      console.error("Could not open env.json:", err);
     }
-    if (kind === "file") {
-      const ext = name.split(".").pop();
-      const content = ext === "hit" ? serializeHitFile({
-        method: "GET",
-        url: "",
-        headers: {},
-        params: {},
-        body: "",
-        response: null,
-      }) : "";
-      await createFile(parentHandle, name, content);
-    } else {
-      await createDirectory(parentHandle, name);
-    }
-    await refreshTree();
-  }, [refreshTree]);
+  }, [tree, refreshTree, setActiveFile]);
+  useToolListener("env", () => void openEnv(), backend ? undefined : "");
 
   return (
     <WorkspaceContext.Provider
       value={{
-        mode,
-        setMode,
-        directoryHandle,
-        hittableDir,
+        backendKind: backend?.kind ?? null,
+        label: backend?.label ?? "",
+        readOnly: backend?.readOnly ?? false,
+        status,
         tree,
         activeFile,
         rawTextContent,
@@ -379,19 +422,23 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
         isRefreshing,
         isFileLoaded,
         fileView,
+        fileNotice,
         fileSize,
         fileUrl,
         connectingStage,
+        openBackend,
         openFolder,
-        disconnectFolder,
+        reconnectFolder,
+        closeWorkspace,
         refreshTree,
+        loadDirectory,
         refreshEnv,
-        setActiveFile: setActiveFileWithKind,
+        setActiveFile,
         updateRawTextContent,
         saveRawTextContent,
-        deleteEntry,
-        renameEntry,
         createEntry,
+        renameEntry,
+        deleteEntry,
       }}
     >
       {children}

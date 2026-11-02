@@ -2,8 +2,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import ResponsePanel from "@/components/RequestForm/ResponsePanel";
-import { mountData } from "../../helpers/dataHarness";
+import { mountRunner } from "../../helpers/runnerHarness";
 import type { TResponseJson } from "@/types";
 
 // FR-13 (JSONPath filter) and FR-14 (compare with the previous response).
@@ -11,17 +10,18 @@ import type { TResponseJson } from "@/types";
 /** user.type reads `[` and `{` as key descriptors; double them to type them. */
 const typed = (s: string) => s.replace(/[[{]/g, "$&$&");
 
-function setup(res?: TResponseJson) {
+function setup(response?: TResponseJson) {
   const user = userEvent.setup();
-  const r = mountData(<ResponsePanel />);
-  if (res !== undefined) act(() => r.ctx().setProxyResponse(res));
-  return { user, ...r, respond: (next: TResponseJson) => act(() => r.ctx().setProxyResponse(next)) };
+  const r = mountRunner({ response });
+  return { user, ...r, respond: (next: TResponseJson) => act(() => r.respond(next)) };
 }
 
 const json = (data: unknown, extra: Partial<NonNullable<TResponseJson>> = {}): TResponseJson => ({
   status: 200, statusText: "OK", ok: true, data, headers: { "content-type": "application/json" }, ...extra,
 });
 
+// The request editor has a Body tab too, so tab queries are scoped to the panel.
+const panel = () => screen.getByRole("region", { name: "Response" });
 const filterButton = () => screen.getByRole("button", { name: /Filter with JSONPath/ });
 const filterInput = () => screen.getByRole("textbox", { name: "JSONPath filter" });
 const compareButton = () => screen.getByRole("button", { name: "Compare with previous response" });
@@ -32,7 +32,6 @@ const changedPaths = () =>
     .map((li) => li.querySelector("code")!.textContent);
 
 beforeEach(() => {
-  localStorage.clear();
   Element.prototype.scrollIntoView = () => {};
 });
 
@@ -165,9 +164,9 @@ describe("Compare with the previous response", () => {
     const { user, respond } = setup(json({ a: 1 }));
     respond(json({ a: 2 }));
     await user.click(compareButton());
-    expect(screen.queryByRole("tab", { name: /body/i })).not.toBeInTheDocument();
+    expect(within(panel()).queryByRole("tab", { name: /body/i })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close compare" }));
-    expect(screen.getByRole("tab", { name: /body/i })).toBeInTheDocument();
+    expect(within(panel()).getByRole("tab", { name: /body/i })).toBeInTheDocument();
     expect(compareButton()).toHaveFocus();
     await user.click(compareButton());
     respond(json({ a: 3 }));
@@ -183,36 +182,12 @@ describe("Compare with the previous response", () => {
   });
 
   it("opening another request starts over", () => {
-    const { ctx, respond } = setup(json({ a: 1 }));
+    const { setRequestKey, respond } = setup(json({ a: 1 }));
     respond(json({ a: 2 }));
     expect(compareButton()).toHaveAttribute("aria-disabled", "false");
-    act(() => {
-      ctx().setSelectorResponse({
-        collectionName: "Users", folderPath: ["Admin"], curlName: "Create user",
-        curlJson: { method: "POST", url: "https://x/admin/users", headers: "{}", body: "", params: "{}" },
-      });
-    });
-    // The new route's saved response lands a render later, as in the app.
+    act(() => setRequestKey("hittable/users/create.hit"));
+    // The new file's saved response lands a render later, as in the app.
     respond(json({ a: 3 }));
     expect(compareButton()).toHaveAttribute("aria-disabled", "true");
-  });
-
-  it("local mode falls back to the newest history entry with the same method and URL", async () => {
-    const hist = (data: unknown) => ({
-      id: String(Math.random()), timestamp: 1, method: "GET", url: "https://<<HOST>>/users",
-      curlJson: { method: "GET", url: "https://<<HOST>>/users", headers: "{}", body: "", params: "{}" },
-      responseJson: json(data),
-    });
-    // Newest first: the entry for the response on screen, then the one before it.
-    localStorage.setItem("hittable_history", JSON.stringify([hist({ v: 2 }), hist({ v: 1 }), hist({ v: 0 })]));
-    const user = userEvent.setup();
-    const { ctx } = mountData(<ResponsePanel />);
-    act(() => {
-      ctx().setFormInput((f) => ({ ...f, method: "GET", url: "https://<<HOST>>/users" }));
-      ctx().setProxyResponse(json({ v: 2 }));
-    });
-    await user.click(compareButton());
-    expect(within(compareView()).getByText("1")).toBeInTheDocument();
-    expect(within(compareView()).getByText("2")).toBeInTheDocument();
   });
 });

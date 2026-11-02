@@ -1,36 +1,72 @@
-/* The app's navy palette (see styles/workspace.css and the /hittable chrome).
-   The landing page and docs use it through arbitrary-value utilities such as
-   bg-(--ink-900), so every surface matches the app.
+/* Hittable palette: "API client meets version control".
+   A neutral near-black base so the semantic colours keep their meaning:
+   HTTP methods (GET green, DELETE red, ...) and git status (A green,
+   M amber, D red). The one accent, a signal cyan, sits outside both sets and
+   is used for focus, links and the primary action only.
+
+   Used everywhere through arbitrary-value utilities such as bg-(--ink-900);
+   no hex in components (tests/unit/designTokens.test.ts).
 
    This lives in its own file, imported from app/layout.tsx rather than from
    app.css: Turbopack's incremental build does not re-process edits to the
    Tailwind entry stylesheet until a cold start, while a plain stylesheet
-   updates on save. */
+   updates on save.
+
+   Contrast (WCAG 2.x), all text pairs >= 4.5:1:
+     --text on ink-900 15.7, on ink-500 12.4
+     --muted on ink-900 8.1, on ink-500 6.3
+     --brand on ink-900 10.7; --ink-950 on --brand 11.1
+     --success 11.1, --info 9.2, --warning 11.6, --danger 7.0 on ink-900
+     (5.5+ on ink-500, the lightest surface text sits on). */
 :root {
-  --ink-950: #060d18; /* top bar */
-  --ink-900: #091728; /* page background — sampled from the app’s main pane */
-  --ink-800: #0d2038; /* cards, panels: one step above the page */
-  --ink-700: #0c1422; /* editor / code background */
-  --ink-600: #101c2d; /* toolbars, raised chips */
-  --ink-500: #0e1f35; /* hover, selection */
-  --ink-400: #1e3a5f; /* strong borders */
-  --brand: #00e5cc;   /* accent (teal) */
+  color-scheme: dark;
 
-  /* Workspace surfaces, deepest first. Components use these through
-     arbitrary-value utilities (bg-(--surface-1)); no hex in components. */
-  --surface-0: #080f1a; /* app chrome behind panels */
-  --surface-1: #0a1628; /* panels, inputs */
-  --surface-2: #0e1f35; /* raised: hover, selected, chips */
-  --surface-3: #101c2d; /* toolbars */
+  --ink-950: #08090b; /* top bar */
+  --ink-900: #0d0e11; /* page background */
+  --ink-800: #15171b; /* cards, panels: one step above the page */
+  --ink-700: #101215; /* editor / code background */
+  --ink-600: #1a1d22; /* toolbars, raised chips */
+  --ink-500: #22262c; /* hover, selection */
+  --ink-400: #363c46; /* strong borders */
+  --brand: #37d4e0;   /* the accent: signal cyan */
 
-  /* Status. Text on --surface-1 meets WCAG AA (4.5:1) in each. */
+  /* Workspace surfaces, deepest first. */
+  --surface-0: #0a0b0d; /* app chrome behind panels */
+  --surface-1: #101215; /* panels, inputs */
+  --surface-2: #1a1d22; /* raised: hover, selected, chips */
+  --surface-3: #15171b; /* toolbars */
+
+  /* Status. Text in each meets AA on every surface above. */
   --success: #4ade80;
-  --info: #7dd3fc;
+  --info: #8ab4ff;
   --warning: #fbbf24;
   --danger: #f87171;
-  --muted: #94a3b8;
+  --muted: #a0a8b4;
+
+  /* Text and lines. */
+  --text: #e6e8eb;
+  --text-muted: var(--muted);
+  --border: #ffffff14;        /* hairlines */
+  --border-strong: #ffffff26; /* controls, framed panels */
+  --accent-soft: #37d4e01f;   /* tinted fills behind accent text */
+  --accent-ink: var(--ink-950); /* text on a --brand fill */
+
+  /* Git status (Source Control, diff gutters). */
+  --git-added: var(--success);
+  --git-modified: var(--warning);
+  --git-deleted: var(--danger);
+
+  /* HTTP methods. GET is green, so it never reads as the accent. */
+  --method-get: #4ade80;
+  --method-post: #fbbf24;
+  --method-put: #60a5fa;
+  --method-patch: #c084fc;
+  --method-delete: #f87171;
+  --method-head: var(--muted);
+  --method-options: var(--muted);
 }
 
-/* The top bar is translucent; without this it blends with a white body and
-   turns grey. Also keeps overscroll and route transitions navy. */
-html, body { background: var(--ink-900); }
+/* The top bar is translucent; without this it blends with a white body. Also
+   keeps overscroll and route transitions dark. */
+html, body { background: var(--ink-900); color: var(--text); }
+::selection { background: #37d4e04d; color: var(--text); }

@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { SHORTCUTS, SHORTCUT_GROUPS, shortcutById } from "@/constants/shortcuts";
-import { KEYBINDINGS } from "@/constants";
 
 const keys = (id: string) => shortcutById(id)?.keys.join("+");
 
@@ -19,9 +18,10 @@ describe("shortcut registry", () => {
     expect(keys("beautify")).toBe("Shift+Alt+F");
     expect(keys("cancel")).toBe("Esc");
     expect(keys("toggle-sidebar")).toBe("Ctrl/Cmd+B");
-    expect(keys("new-route")).toBe("Shift+T");
     expect(keys("search-response")).toBe("Ctrl/Cmd+F");
     expect(keys("wrap")).toBe("Alt+Z");
+    expect(keys("source-goto-line")).toBe("Ctrl/Cmd+Alt+G");
+    expect(keys("pane-collapse")).toBe("Enter");
   });
 
   it("binds nothing to a core browser shortcut", () => {
@@ -32,7 +32,7 @@ describe("shortcut registry", () => {
     }
   });
 
-  it("is what the old KEYBINDINGS export now points to", () => {
-    expect(KEYBINDINGS).toBe(SHORTCUTS);
+  it("groups the explorer toggle under Explorer", () => {
+    expect(shortcutById("toggle-sidebar")?.group).toBe("Explorer");
   });
 });

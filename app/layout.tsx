@@ -4,7 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 
 import "@/styles/app.css";
 import "@/styles/theme.css";
-import { Topbar } from "@/components";
+import Topbar from "@/components/homepage/TopBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,9 +17,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hittable | API Testing Client for Developers",
-  description: "A professional, minimalist, and keyboard-driven API testing client. Import curl, manage collections, and test endpoints without the bloat. The modern alternative to Postman and Insomnia.",
-  keywords: ["Hittable", "API Client", "API Testing Tool", "Postman Alternative", "Insomnia Alternative", "HTTP Client", "CORS-free API test", "Software Development Tool"],
+  title: "Hittable | API client for requests that live in your repo",
+  description: "Open-source API client for the browser. Sign in with GitHub and your API requests are plain .hit files in your repository: send them, edit them and commit them back. Or open a local folder. No database, no cloud workspace.",
+  keywords: ["Hittable", "API client", "HTTP client", "GitHub", "API requests in git", "open source", "Postman alternative", "Insomnia alternative", "terminal API client"],
   authors: [{ name: "Pantho Haque", url: "https://panthohaque.vercel.app" }],
   creator: "Pantho Haque",
   publisher: "Pantho Haque",
@@ -34,15 +34,15 @@ export const metadata: Metadata = {
   },
   manifest: '/manifest.json',
   openGraph: {
-    title: 'Hittable | API Testing Client for Developers',
-    description: 'Minimalist, keyboard-driven API testing client for modern developers.',
+    title: 'Hittable: API requests that live in your repo',
+    description: 'Your API requests as .hit files in your GitHub repo: send, edit and commit them back. Open source.',
     url: 'https://hittable.vercel.app/',
     siteName: 'Hittable',
     images: [
       {
-        url: '/assets/images/logo.png', // Ideally a PNG/JPG for better social sharing, but using logo for now
-        width: 1200,
-        height: 630,
+        url: '/assets/images/logo.png',
+        width: 334,
+        height: 336,
         alt: 'Hittable Logo',
       },
     ],
@@ -50,10 +50,9 @@ export const metadata: Metadata = {
     type: 'website',
   },
   twitter: {
-    card: 'summary_large_image',
-    title: 'Hittable | API Testing Client for Developers',
-    description: 'Minimalist, keyboard-driven API testing client for modern developers.',
-    creator: '@xxxxx', // Assuming this is the handle
+    card: 'summary',
+    title: 'Hittable: API requests that live in your repo',
+    description: 'Your API requests as .hit files in your GitHub repo: send, edit and commit them back. Open source.',
     images: ['/assets/images/logo.png'],
   },
   robots: {
@@ -73,7 +72,7 @@ const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
   name: 'Hittable',
-  operatingSystem: 'Web',
+  operatingSystem: 'Web, macOS, Linux',
   applicationCategory: 'DeveloperApplication',
   offers: {
     '@type': 'Offer',
@@ -85,9 +84,10 @@ const jsonLd = {
     name: 'Pantho Haque',
     url: 'https://panthohaque.vercel.app',
   },
-  description: 'A professional, minimalist, and keyboard-driven API testing client. The modern alternative to Postman and Insomnia.',
-  screenshot: 'https://hittable.vercel.app/assets/images/logo.png',
-  softwareVersion: '1.0.0',
+  description: 'Open-source API client for the browser. Sign in with GitHub and your API requests are plain .hit files in your repository: send them, edit them and commit them back. Or open a local folder. No database, no cloud workspace.',
+  isAccessibleForFree: true,
+  image: 'https://hittable.vercel.app/assets/images/logo.png',
+  url: 'https://hittable.vercel.app/',
 };
 
 export default async function RootLayout({

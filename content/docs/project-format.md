@@ -3,11 +3,11 @@ title: Project format
 description: The on-disk format both apps share. A hittable/ folder, .hit request files, env.json for variables, markdown notes. Plain JSON, git-friendly, no database.
 ---
 
-Hittable has no account and no hidden store. A project is a folder in your repository, and everything the web app and the terminal app know about your API lives in files you can read, diff and commit.
+Hittable has no database and no hidden store. A project is a folder in your repository, and everything the web app and the terminal app know about your API lives in files you can read, diff and commit.
 
 ## Folder layout
 
-`hittable init` in the terminal, or choosing a folder in the web app's Directory mode, scaffolds this:
+`hittable init` in the terminal, or **Open a local folder** in the web app, scaffolds this:
 
 ```
 <your repo>/
@@ -83,11 +83,11 @@ Any `.md` file in the folder is a note. The terminal app renders it with a live 
 
 ## Sharing between the two apps
 
-The terminal app and the web app open the same folder with no conversion step. Edit a request in the browser, run it from the terminal; stage and commit from the terminal's Git panel; your teammates `git pull` and open the folder in whichever tool they prefer. Autosave in both apps writes on a short debounce and both detect files changed underneath them, so switching tools mid-session is fine.
+The terminal app and the web app open the same files with no conversion step. Edit a request in the browser, run it from the terminal; commit from the web app's GitHub workspace or the terminal's Git panel; your teammates `git pull` and open the folder in whichever tool they prefer. With a local folder, autosave in both apps writes on a short debounce, so switching tools mid-session is fine.
 
 ### `env.local.json`: values that stay out of git
 
-`hittable/env.local.json` has the same flat shape as `env.json`, and its keys override `env.json`'s. Put the real tokens there and keep placeholders (or nothing) in `env.json`. Both apps read the two layered the same way; the web app adds `env.local.json` to `hittable/.gitignore` when it opens a folder (appending, never rewriting the file) and `hittable init` writes that line too.
+`hittable/env.local.json` has the same flat shape as `env.json`, and its keys override `env.json`'s. Put the real tokens there and keep placeholders (or nothing) in `env.json`. Both apps read the two layered the same way. The web app adds `env.local.json` to `hittable/.gitignore` when it opens a local folder (appending, never rewriting the file), `hittable init` writes that line too, and a GitHub workspace never commits the file.
 
 `HITTABLE_PRODUCTION` set to `true` in either file marks the environment as production: both apps then confirm before sending anything but `GET`, `HEAD` or `OPTIONS`.
 
@@ -95,4 +95,4 @@ A live example lives in this repository at `hittable/` (`env.json`, `testcollect
 
 ## Import and export
 
-Postman v2.1 and Insomnia v4 collections convert both ways. See [Import and export](/docs/import-export) for the mapping and what gets dropped.
+Postman v2.1 and Insomnia v4 collections convert both ways with the terminal app. See [Import and export](/docs/import-export) for the mapping and what gets dropped.

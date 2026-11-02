@@ -1,122 +1,137 @@
 ---
 title: Web app
-description: The browser client. Two workspace modes, the request runner, the response viewer, history, notes, the CodeMirror editor, and the keyboard.
+description: The browser client. Sign in with GitHub and work on a repository's .hit files, or open a local folder. The request runner, the response viewer, share links, the editor and the keyboard.
 ---
 
-The web app lives at `/hittable`. It is a client-side application: there is no account and no server-side state. Where your data lives depends on the workspace mode in the top bar.
+The web app lives at `/hittable`. It works on `.hit` request files that live in a `hittable/` folder, either in one of your GitHub repositories or in a folder on your disk. There is no database: requests live in files you own.
 
 ## Two workspace modes
 
-| | Local mode (default) | Directory mode |
+| | GitHub repository | Local folder |
 | :--- | :--- | :--- |
-| Storage | the browser's `localStorage` | real files on disk, through the File System Access API |
-| Unit of work | collection → folders → routes; each route is stored as a curl command | a folder tree of `.hit` JSON files, plus `hittable/env.json` and markdown notes |
-| Sidebar | a drill-down collection selector | a file explorer over the folder you picked |
-| Variables | per-collection env and secrets | one `hittable/env.json` for the workspace |
-| Shared with the terminal app | no | yes, byte for byte |
-| Browsers | any modern browser | Chromium-based (Chrome, Edge, Opera); the toggle tells you when the API is missing |
+| How you open it | **Sign in with GitHub**, then pick a repository | **Open a local folder** and pick a directory |
+| Account | your GitHub account | none |
+| Where edits go | a working copy saved on this device (IndexedDB) until you commit | straight to the files on disk (autosave) |
+| Getting changes out | review the diff, then commit to the branch, or to a new branch with a pull request | `git commit` yourself, or use the terminal app's Git panel |
+| Browsers | any modern browser | Chrome and Edge (needs the File System Access API) |
+| Shared with the terminal app | yes, through the repository | yes, the same files byte for byte |
 
-Switch with the **Local** / **Directory** button in the top bar. In Directory mode the button disconnects; in Local mode it opens the folder picker. The choice is remembered.
+The GitHub workflow is the v3 direction and is being rolled out; parts of it described below may not be in the hosted app yet. Open a local folder works today.
 
-### Directory mode
+### GitHub repository
 
-Pick any folder, including a repository root. The app creates `hittable/`, `hittable/env.json`, `hittable/notes/sample.md` and `hittable/testcollection/test.hit` if they are missing, stores the directory handle in IndexedDB so the next visit reconnects with one permission click, and reads the folder recursively into the explorer. Large folders take a moment to scan, so prefer a project folder over your home directory.
+1. **Sign in with GitHub**. The app asks for the `repo` and `read:user` scopes (see [Privacy and security](#privacy-and-security)).
+2. Pick a repository. The picker lists every repository your account can see, most recently pushed first, with search, owner filters (you and your organisations) and a **Recent** list kept on this device. Badges mark repositories that are **Private**, a **Fork**, **Archived**, or **Read-only** (you have no push permission).
+3. The repository's tree opens in the explorer. `.hit` files under `hittable/` open in the Runner, markdown in the markdown editor, everything else in the code editor.
+4. Edit and send. Every edit is kept in a working copy on this device, keyed by repository and branch, so a reload does not lose it. Nothing is written to GitHub until you commit.
+5. Review your changes. Each changed file is marked **M** (modified), **A** (added) or **D** (deleted), and opens as a diff against the branch.
+6. Commit to the current branch, or commit to a new branch and open a pull request.
 
-Files are routed by name: `.hit` opens the request editor, `.md` the markdown editor, `env.json` and everything else the code editor. Saves are automatic and serialised, so fast typing never drops a write. Saving `env.json` re-reads it immediately, so `<<KEY>>` resolution picks up new variables at once. `env.json`, `env` and `notes` are reserved names inside `hittable/` and cannot be created, renamed or deleted from the explorer.
+`hittable/env.local.json` is never committed. Archived repositories, repositories you cannot push to and empty repositories open read-only: you can still send requests, but not edit. If an organisation's repositories are missing, see [the FAQ](/docs/faq#organisation-repositories-are-missing).
 
-The explorer is a proper tree: <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>→</kbd> <kbd>←</kbd> expand and collapse (or jump to the parent), <kbd>Enter</kbd> opens, <kbd>F2</kbd> renames, <kbd>Delete</kbd> deletes, right-click for the menu. Rename is implemented as copy-then-delete because the browser API has no rename, so renaming a big folder rewrites its files. <kbd>Ctrl/Cmd+B</kbd> hides and shows the explorer.
+### Local folder
+
+**Open a local folder** uses the browser's File System Access API, which Chrome and Edge have and Safari and Firefox do not. Pick any folder, including a repository root. The app creates `hittable/`, `hittable/env.json`, `hittable/notes/sample.md` and `hittable/testcollection/test.hit` if they are missing, adds `env.local.json` to `hittable/.gitignore`, and reads the folder into the explorer. The folder handle is stored in IndexedDB, so the next visit reconnects with one permission click. Large folders take a moment to scan, so pick a project folder rather than your home directory.
+
+Saves are automatic and serialised, so fast typing never drops a write. Saving `env.json` or `env.local.json` re-reads both, so new variables resolve at once. `env.json`, `env` and `notes` are reserved names inside `hittable/` and cannot be created, renamed or deleted from the explorer.
+
+The explorer is a tree: <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>→</kbd> <kbd>←</kbd> expand and collapse, <kbd>Enter</kbd> opens, <kbd>F2</kbd> renames, <kbd>Delete</kbd> deletes, right-click for the menu. Rename is copy-then-delete because the browser API has no rename, so renaming a big folder rewrites its files. <kbd>Ctrl/Cmd+B</kbd> hides and shows the explorer. **Close folder** in the command palette disconnects.
 
 ### `.hit` files: Text and Runner
 
-Every `.hit` file has two views. **Text** is the CodeMirror editor on the raw JSON, with a schema-aware completer: top-level keys, the HTTP verbs after `"method"`, common header names inside `"headers"`, content types after `Content-Type`. **Runner** is the same URL bar, tabs and response panel you get in Local mode, reading and writing the file directly. Invalid JSON blocks the Runner until you fix it in Text mode. Sending a request in the Runner writes the response into the file's `response` field, so sending mutates the file on purpose: the last result travels with the request.
+Every `.hit` file has two views. **Text** is the CodeMirror editor on the raw JSON, with a schema-aware completer: top-level keys, HTTP verbs after `"method"`, common header names inside `"headers"`, content types after `Content-Type`. **Runner** is the URL bar, tabs and response panel. A file that parses opens in the Runner; invalid JSON opens in Text and blocks the Runner until it is fixed. Sending writes the response into the file's `response` field on purpose, so the last result travels with the request. The format is on [Project format](/docs/project-format).
 
 ## The request runner
 
-**URL bar.** The method dropdown offers `GET POST PUT PATCH DELETE HEAD OPTIONS`, and the bar's border takes the method's colour. `:param` segments in the path render amber; `<<KEY>>` variables render teal when the environment defines them and red with a wavy underline when it does not, and a note under the bar names unknown variables with an **Open Environment** link (values are never shown in the bar). Editing the URL's query string updates the Params tab, and editing Params rewrites the query string; the two are one value. Buttons: **Save** (<kbd>Ctrl/Cmd+S</kbd>), **Send** (<kbd>Ctrl/Cmd+Enter</kbd>), **Copy as**, and **Save to…** when the open request came from history and belongs to no collection yet.
+**URL bar.** The method and the URL are one field; the method is coloured by verb and the whole field lights up when focused. The method dropdown offers `GET POST PUT PATCH DELETE HEAD OPTIONS`. `:param` segments render amber; `<<KEY>>` variables render teal when the environment defines them and red with a wavy underline when it does not, and a note under the bar names the unknown ones. Values are never shown in the bar. The query string and the Params tab are one value: editing either updates the other. **Send** is <kbd>Enter</kbd> in the URL or <kbd>Ctrl/Cmd+Enter</kbd> anywhere, and **Save** is <kbd>Ctrl/Cmd+S</kbd>; a dot on Save marks unsaved changes.
 
-**Send and Cancel.** While a request is in flight, Send turns into **Cancel**; <kbd>Esc</kbd> in the URL bar cancels too. A cancelled request says so and is not logged in history.
+**Send and Cancel.** While a request is in flight, Send turns into **Cancel**; <kbd>Esc</kbd> in the URL bar cancels too.
+
+**Paste a curl command** into the URL field and it is parsed into method, URL, headers, params and body.
+
+**Params, Body, Headers** each have a **JSON mode** (line numbers and an inline parse-error banner) and a **Table mode** (key / value rows). The tabs show how many params and headers are set, and a dot when there is a body. <kbd>Shift+Alt+F</kbd> beautifies JSON. A JSON error in any tab disables Send and says why.
+
+**Body types.** The Body tab picks **None**, **JSON**, **Text** or **Form** (URL-encoded key / value rows). Picking one sets a matching `Content-Type` unless you set your own. The type is read from the body and its `Content-Type`, never stored separately, so files stay as they were. Only a JSON body has to be valid JSON.
+
+**Variables** use `<<KEY>>` in any string field and resolve only when you send; the template stays in the file. They come from `hittable/env.json`, with the git-ignored `hittable/env.local.json` layered on top for values that must not be committed. Unknown keys are left as-is. See [Project format](/docs/project-format#envjson-and-templates).
+
+**Production guard.** Set `HITTABLE_PRODUCTION` to `true` in `env.json` or `env.local.json` and requests show a red **PRODUCTION** badge, and anything but `GET`, `HEAD` or `OPTIONS` asks for confirmation, naming the host, before it goes. The terminal app honours the same variable.
 
 **Copy as** copies the request as **cURL**, **JavaScript fetch**, **Python requests** or **HTTPie**, with variables filled in, or as a **Share link** (below). The command palette has **Copy request as cURL** too.
 
-**Paste a curl command** into the URL field and it is parsed at once into method, URL, headers, params and body; a toast offers **Undo**. `{{var}}` (Postman) and `{{ _.var }}` (Insomnia) references found in it are created as empty variables on the collection.
-
-**Params, Body, Headers** each have a **JSON mode** (a textarea with line numbers and an inline parse-error banner) and a **Table mode** (key / value rows). <kbd>Shift+Alt+F</kbd> beautifies JSON. A JSON error in any JSON tab disables Send and explains why when you try anyway.
-
-**Body types.** The Body tab picks **None**, **JSON**, **Text** or **Form** (URL-encoded key / value rows). Picking one sets a matching `Content-Type` unless you set your own. The type is read from the body and its `Content-Type`, never stored separately, so files and collections stay exactly as they were; only a JSON body has to be valid JSON.
-
-**Auth** (shield icon) writes a header for you: **Bearer Token**, **Basic Auth** (base64 of `user:pass`) or **API Key** with a custom header name, default `X-API-Key`. Only the resulting header is stored with the request, so exports carry the header, not the preset.
-
-**Variables** use `<<KEY>>` in any string field and resolve only when you send; the template stays in storage. Unknown keys are left as-is, and the URL bar names them. In Local mode each collection has **Env Vars** and **Secrets** tabs (variable icon); secrets win on a name clash and are excluded from exports, but they are stored in plain `localStorage` like everything else. In Directory mode `hittable/env.json` is the source, with `hittable/env.local.json` layered on top for values that must not be committed (see [Project format](/docs/project-format)).
-
-**Production guard.** Tick **Production environment** in the Environment dialog (or set `HITTABLE_PRODUCTION` to `true` in `env.json`) and requests show a red **PRODUCTION** badge, and anything but `GET`, `HEAD` or `OPTIONS` asks "Send POST to production?" with the host before it goes. It is an ordinary variable, so it travels with exports and the terminal app honours it too.
-
-**Sending.** Remote URLs go through the app's `/api/proxy` so browser CORS does not get in the way. URLs on `localhost` or `127.0.0.1` cannot be reached by a server, so they are handed to the [browser extension](/docs/browser-extension), which makes the request from the user's own machine and also returns the cookies for that origin. Duration is the round trip measured in the browser, proxy hop included; size is the body's bytes as received.
+**Sending.** Remote URLs go through the app's `/api/proxy` so browser CORS does not get in the way. A server cannot reach `localhost` or `127.0.0.1` on your machine, so those requests go to the [browser extension](/docs/browser-extension). Duration is the round trip measured in the browser, proxy hop included; size is the body's bytes as received.
 
 ## Response viewer
 
-The header shows the status with its reason phrase (filled in when an HTTP/2 server sends none) coloured by class — green 2xx, blue 1xx and 3xx, amber 4xx, red 5xx and network errors — plus duration and size. A localhost request without the extension shows what to do and an **Install the extension** button; a cancelled one just says so. Two tabs: **body** and **headers** (with a count).
+The header shows the status with its reason phrase, coloured by class (green 2xx, blue 1xx and 3xx, amber 4xx, red 5xx and network errors), plus duration and size. A localhost request without the extension explains why and links to the download; a cancelled one just says so. Two tabs: **body** and **headers** (with a count).
 
-The body picks a view from the content type and lets you override it until the next response arrives:
+The body picks a view from the content type, and you can override it until the next response:
 
-- **JSON tree**: collapsible nodes with type colours, `N items` / `N keys` on collapsed nodes, open two levels deep, and nodes expand on their own to reveal search matches.
+- **JSON tree**: collapsible nodes with type colours, `N items` / `N keys` on collapsed nodes, open two levels deep. Nodes expand on their own to reveal search matches.
 - **Raw text**: whitespace preserved, matches highlighted.
-- **HTML preview**: a sandboxed iframe that never runs the page's scripts, with a `<base href>` injected so relative assets resolve, beside a formatted, line-numbered source pane. Turn on **Inspect**, hover to outline elements, click one to see its tag and attributes and jump to its line in the source.
+- **HTML preview**: the page as a browser would draw it. Its CSS, images and scripts load from the URL it came from (after redirects), and its links open in a new tab.
+  - **Scripts on/off** (remembered): page scripts run in an isolated frame with no access to Hittable, your session, its storage or its API. Turn them off to see the server-rendered HTML only.
+  - **Open in browser** is there for pages that refuse to load inside a frame.
+  - **Inspect**: hover to outline an element, click it to see its tag and attributes and mark its line in the source.
+- **Source** (beside the preview): the HTML in a read-only editor that scrolls as one block.
+  - Fold tags, or collapse and expand all.
+  - Wrap long lines (remembered), and switch between pretty-printed and as-received.
+  - Search with <kbd>Ctrl/Cmd+F</kbd> once the source has focus; go to a line with <kbd>Ctrl/Cmd+Alt+G</kbd>.
 
-**Search** (<kbd>Ctrl/Cmd+F</kbd>) counts matches across keys and values, <kbd>Enter</kbd> and <kbd>Shift+Enter</kbd> step through them, <kbd>Esc</kbd> closes. On the headers tab it filters rows. **Copy** copies the body; each header row has its own copy button and there is **Copy all headers**.
+**Search** (<kbd>Ctrl/Cmd+F</kbd>) counts matches across keys and values; <kbd>Enter</kbd> and <kbd>Shift+Enter</kbd> step through them, <kbd>Esc</kbd> closes. On the headers tab it filters rows. **Copy** copies the body, and each header row has its own copy button.
 
-**Filter** (funnel icon, JSON bodies) narrows the body with a JSONPath: `$.items[*].id`, `$..id`, `$['odd key']`, `$[0]`, `$[-1]`, `$[1:3]`. An invalid path is marked as such and the full body stays; a valid one that matches nothing says so. A new response clears it. Search and Copy work on the filtered result.
+**Filter** (funnel icon, JSON bodies) narrows the body with a JSONPath: `$.items[*].id`, `$..id`, `$['odd key']`, `$[0]`, `$[-1]`, `$[1:3]`. An invalid path is marked and the full body stays; a valid one that matches nothing says so. A new response clears it. Search and Copy work on the filtered result.
 
-**Compare** diffs the response against the previous one for the same request — the response saved with it, or the one before this send (in Local mode it falls back to history). It lists every added, removed and changed path with before → after values, key order does not count as a change, and changed headers are listed separately. The **Ignore paths** box takes body paths (`$.updatedAt`, `$.items[*].id`) and header names (`date`), so timestamps don't drown the real changes.
+**Compare** diffs the response against the previous one for the same request: the response saved in the file, or the one before this send. It lists every added, removed and changed path with before and after values. Key order does not count as a change, and changed headers are listed separately. **Ignore paths** takes body paths (`$.updatedAt`, `$.items[*].id`) and header names (`date`), so timestamps do not drown the real changes.
+
+## Layout
+
+Every divider moves: the explorer, Source control (GitHub), request and response, preview and source.
+
+- **Drag** a divider to resize. Drag a pane well past its minimum and it collapses; a **Show …** bar brings it back.
+- **Double-click** a divider to reset it.
+- **Keyboard**: <kbd>Tab</kbd> to a divider, then use the arrows (<kbd>Shift</kbd> for bigger steps), <kbd>Home</kbd> / <kbd>End</kbd> for the extremes, and <kbd>Enter</kbd> to collapse or restore.
+- **Response beside or below the request**: the button left of the extension status. The **source beside or below the preview** button is in the preview's header.
+- Sizes, collapsed panes and both choices are remembered in this browser. On a phone, panes always stack.
 
 ## Share links
 
-**Copy as → Share link** copies a link that carries the request itself, compressed in the part after `#`, which browsers never send to a server — nothing is uploaded and there is no account. Variables stay `<<KEY>>`; secrets are never included; credentials in `Authorization`, `Cookie`, API-key headers, the URL's `user:password@` and query parameters such as `api_key` or `access_token` are replaced with variables (the toast lists what was replaced). Opening a link shows a preview — nothing is sent — with **Import** (into a **Shared** collection, or `hittable/shared/` in Directory mode) and **Dismiss**. Links are capped at 32 KB.
-
-## History
-
-Every send is logged, failures included, up to 100 entries, newest first. The clock icon opens **Request History** with method, URL, status, duration, size and relative time per row; click one to load it back into the runner. A request loaded from history belongs to no collection, so the URL bar offers **Save to…**, which picks or creates a collection and folder and saves it there. **Clear all** empties the log. History is a Local-mode feature; the Directory-mode Runner does not record it.
-
-## Notes
-
-In Local mode the notebook icon opens a notes modal: a searchable list of markdown notes with **Edit**, **Preview** and **Split** views, word and character counts, <kbd>Ctrl/Cmd+S</kbd> to save and a save-or-discard prompt on <kbd>Esc</kbd> with unsaved edits. In Directory mode any `.md` file in the workspace opens in the same editor and autosaves to disk. Markdown is GitHub-flavoured with line breaks preserved.
+**Copy as → Share link** copies a link that carries the request itself, compressed into the part after `#`. Browsers never send that part to a server, so nothing is uploaded. Variables stay `<<KEY>>`. Credentials in `Authorization`, `Cookie` and API-key headers, in the URL's `user:password@` and in query parameters such as `api_key` or `access_token` are replaced with variables, and the toast lists what was replaced. Opening a link shows a preview and sends nothing, with **Import** (into `hittable/shared/`) and **Dismiss**. Links are capped at 32 KB.
 
 ## Code editor
 
-Every non-`.hit` file in Directory mode, and the Text view of `.hit` files, is a CodeMirror 6 editor: line numbers, active line, bracket matching and auto-close, fold gutter (`▾` / `▸`) with **Collapse all** and **Expand all**, search panel, selection-match highlighting, 2-space indentation, <kbd>Tab</kbd> indents. <kbd>Mod+S</kbd> saves, <kbd>Alt+Z</kbd> toggles word wrap, <kbd>Ctrl+Shift+[</kbd> and <kbd>]</kbd> fold and unfold. The status bar shows line and column, the detected language, line count and encoding.
+Markdown files, every other non-`.hit` file, and the Text view of `.hit` files use CodeMirror 6: line numbers, bracket matching and auto-close, a fold gutter, a search panel, selection-match highlighting and 2-space indentation. <kbd>Ctrl/Cmd+S</kbd> saves, <kbd>Alt+Z</kbd> toggles line wrap.
 
-Grammars load on demand, only for the file type you open: TypeScript, TSX, JavaScript, JSX, JSON (including `.hit`), Markdown, HTML, CSS and Sass, XML and SVG, YAML, Python, Go, Rust, SQL, Shell (plus `Makefile` and rc files), TOML, INI, Dockerfile, Ruby, Lua, C and C++, Java, C#, Swift and diff. Languages with their own completion (TypeScript, JavaScript, HTML, CSS, Python, SQL) use it; everything else gets completion from words already in the buffer.
-
-## Import and export
-
-The import icon accepts pasted Postman v2.1 JSON, Insomnia export JSON, or a Hittable native string, and detects which. A collection's `⋮` menu exports it as Postman, Insomnia or the compressed Hittable string. Saved responses are stripped from exports. The full mapping is on [Import and export](/docs/import-export).
+Grammars load on demand for the file type you open: TypeScript, JavaScript, JSON (including `.hit`), Markdown, HTML, CSS, XML, YAML, Python, Go, Rust, SQL, Shell and more. Languages with their own completion use it; everything else gets completion from words already in the buffer.
 
 ## Keyboard shortcuts
 
-<kbd>Ctrl</kbd> and <kbd>Cmd</kbd> are interchangeable. Shortcuts with a modifier work even while typing in a field; <kbd>Shift+T</kbd> does not, so it never fires mid-sentence.
+<kbd>Ctrl</kbd> and <kbd>Cmd</kbd> are interchangeable. Shortcuts with a modifier work even while typing in a field. Press <kbd>?</kbd> in the app for the same list.
 
 | Keys | Action |
 | :--- | :--- |
-| `Ctrl/Cmd + K` | command palette: requests, files and actions |
-| `?` or `Ctrl/Cmd + /` | keyboard shortcuts |
-| `Ctrl/Cmd + Enter` | send the request |
-| `Esc` (URL bar) | cancel the request in flight |
-| `Ctrl/Cmd + S` | save the route or file |
-| `Shift + Alt + F` | beautify JSON in the active tab |
-| `Ctrl/Cmd + F` | search the response |
-| `Ctrl/Cmd + B` | toggle the sidebar or explorer |
-| `Shift + T` | new route in the current folder |
-| `Esc` | close the open modal |
-| `Enter` | confirm the input in create, rename and save dialogs |
-| `Tab` / `Shift+Tab` | move inside a modal; focus returns to where you were on close |
+| `Ctrl/Cmd + K` | open the command palette |
+| `?` | show keyboard shortcuts |
+| `Ctrl/Cmd + /` | show keyboard shortcuts (anywhere) |
+| `Esc` | close modals |
+| `Enter` (URL bar), `Ctrl/Cmd + Enter` | send the request |
+| `Ctrl/Cmd + S` | save the request |
+| `Esc` (URL bar) | cancel the running request |
+| `Ctrl/Cmd + F` | search in the response |
+| `Ctrl/Cmd + B` | toggle the explorer |
+| `Shift + Alt + F` | beautify JSON |
+| `Alt + Z` | toggle line wrap |
 
-All of these come from one list, which the `?` cheatsheet, the command palette's hints and the info dialog all show.
+The cheatsheet, the command palette's hints and the landing page all render from one list in `constants/shortcuts.ts`.
 
-**Command palette** (<kbd>Ctrl/Cmd+K</kbd>, or **Search** in the top bar) fuzzy-searches every request in every collection, the files of an open folder, and actions — new request, environment, import, export, history, notes, auth, copy as cURL, switch Local / Directory. Recently used items come first.
+**Command palette** (<kbd>Ctrl/Cmd+K</kbd>) fuzzy-searches the files and requests of the open workspace, plus actions such as toggle explorer, copy request as cURL, and open or close a local folder.
 
-## Unsaved changes
+## Privacy and security
 
-The request form compares normalised JSON, so reformatting alone is not a change. When something differs you get an amber **Unsaved · Ctrl/Cmd+S** pill, a **Discard changes** button that restores the last saved version, and a browser warning if you try to close the tab.
+There is no database, no telemetry and no analytics.
 
-## Privacy
-
-Collections, variables, notes and history stay in your browser, or in the files you chose. There is no account, no telemetry and no analytics. The one thing to know: a request to a remote URL passes through the `/api/proxy` of whatever instance you are using, with its headers and body, because that is how CORS is avoided. Localhost traffic through the extension never leaves your machine. If that proxy should be yours, [self-host](/docs/self-hosting).
+- **GitHub sign-in.** The access token lives only on the server, in an AES-256-GCM encrypted, `HttpOnly` session cookie. Page JavaScript never sees it. Every GitHub call goes through the app's own `/api/github/*` routes.
+- **Scopes.** `repo` is used to list your repositories, read their `.hit` files and commit your changes back. `read:user` is used for your name and avatar. Nothing admin-, organisation- or workflow-specific is requested.
+- **Revoking.** Signing out revokes the grant on GitHub and clears the cookie. You can also revoke it any time in GitHub under [Settings → Applications](https://github.com/settings/applications).
+- **Organisations** may need to approve the OAuth app before their repositories show up.
+- **The proxy.** A request to a remote URL passes through the `/api/proxy` of whatever instance you are using, with its headers and body, because that is how CORS is avoided. Nothing is stored there. Localhost traffic through the extension never leaves your machine. If that proxy should be yours, [self-host](/docs/self-hosting).

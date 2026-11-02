@@ -1,4 +1,4 @@
-import { test, expect, API, blankRequest, urlInput, send, response, statusBadge } from "./fixtures/test";
+import { test, expect, API, openRequest, FOLDER_ONLY, urlInput, send, response, statusBadge } from "./fixtures/test";
 
 type Flags = { __xss?: number; __htmlScriptRan?: boolean; __htmlOnerror?: boolean };
 const flags = (page: import("@playwright/test").Page) =>
@@ -8,8 +8,10 @@ const flags = (page: import("@playwright/test").Page) =>
   });
 
 test.describe("untrusted responses never run code", () => {
-  test("HTML inside a JSON response renders as text in the tree", async ({ page, seed, dialogs }) => {
-    await blankRequest(page, seed);
+  test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
+
+  test("HTML inside a JSON response renders as text in the tree", async ({ page, dialogs }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/xss`);
     await send(page);
     await expect(statusBadge(page)).toHaveText("200 OK");
@@ -27,8 +29,8 @@ test.describe("untrusted responses never run code", () => {
     expect(dialogs).toEqual([]);
   });
 
-  test("the same payload in raw text and as a forced HTML preview stays inert", async ({ page, seed, dialogs }) => {
-    await blankRequest(page, seed);
+  test("the same payload in raw text and as a forced HTML preview stays inert", async ({ page, dialogs }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/xss-text`);
     await send(page);
     await expect(response(page).locator("pre")).toHaveText('before <img src=x onerror="window.__xss=1;alert(1)"> after');
@@ -41,18 +43,30 @@ test.describe("untrusted responses never run code", () => {
     expect(dialogs).toEqual([]);
   });
 
-  test("the HTML preview is sandboxed: the page's scripts and handlers never run", async ({ page, seed, dialogs }) => {
-    await blankRequest(page, seed);
+  test("the HTML preview runs the page's scripts isolated: they never reach the app", async ({ page, dialogs }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/html`);
     await send(page);
     const iframe = page.locator('iframe[title="HTML response preview"]');
     await expect(page.frameLocator('iframe[title="HTML response preview"]').getByRole("heading")).toBeVisible();
-    const sandbox = await iframe.getAttribute("sandbox");
-    expect(sandbox).not.toBeNull();
-    expect(sandbox).not.toContain("allow-scripts");
-    const inner = await iframe.evaluate((el: HTMLIFrameElement) => (el.contentWindow as unknown as { __inner?: boolean }).__inner);
-    expect(inner).toBeUndefined();
+    const sandbox = (await iframe.getAttribute("sandbox"))!.split(/\s+/);
+    expect(sandbox).toContain("allow-scripts");
+    // Without allow-same-origin the frame is an opaque origin: no access to
+    // this page, its storage, its cookies or its API.
+    expect(sandbox).not.toContain("allow-same-origin");
+    expect(sandbox).not.toContain("allow-modals");
+    const frame = () => page.frames().find((f) => f.parentFrame() === page.mainFrame() && f.url().startsWith("about:srcdoc"))!;
+    await expect.poll(() => frame().evaluate(() => (window as unknown as { __inner?: boolean }).__inner)).toBe(true);
+    expect(await frame().evaluate(() => { try { return parent.document.title; } catch { return "blocked"; } })).toBe("blocked");
+    expect(await frame().evaluate(() => { try { return localStorage.length; } catch { return "blocked"; } })).toBe("blocked");
     expect(await flags(page)).toEqual({});
+    expect(dialogs).toEqual([]);
+
+    // Scripts off: the page's own scripts are blocked, the page still renders.
+    await response(page).getByRole("button", { name: /Scripts on/ }).click();
+    await expect(response(page).getByRole("button", { name: /Scripts off/ })).toHaveAttribute("aria-pressed", "false");
+    await expect(page.frameLocator('iframe[title="HTML response preview"]').getByRole("heading")).toBeVisible();
+    await expect.poll(() => frame().evaluate(() => (window as unknown as { __inner?: boolean }).__inner ?? "blocked")).toBe("blocked");
     expect(dialogs).toEqual([]);
   });
 });

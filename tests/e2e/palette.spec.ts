@@ -1,40 +1,22 @@
 import type { Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import {
-  test,
-  expect,
-  API,
-  sidebar,
-  dialog,
-  urlInput,
-  openRoute,
-  collection,
-  route,
-  folder,
-} from "./fixtures/test";
+import { test, expect, API, dialog, urlInput, methodSelect, openRequest, openLauncher, clipboardText, FOLDER_ONLY } from "./fixtures/test";
+import { tree, node } from "./fixtures/directory";
 
-// FR-1 command palette, FR-2 cheatsheet, NFR-3 keyboard access to the sidebar.
+// FR-1 command palette, FR-2 cheatsheet, NFR-3 keyboard access to the explorer.
 
-const shop = () =>
-  collection(
-    "Shop",
-    [
-      route("list products", `curl -X GET ${API}/products`),
-      folder("Admin", [route("create widget", `curl -X POST ${API}/widgets -d '{"a":1}'`)]),
-    ],
-    { BASE: API },
-  );
+const widget = JSON.stringify({ method: "POST", url: `${API}/widgets`, headers: {}, params: {}, body: '{"a":1}', response: null });
+/** hittable/req.hit (GET /products) open, with hittable/admin/create-widget.hit beside it. */
+const openShop = (page: Page) => openRequest(page, { url: `${API}/products`, files: { "hittable/admin/create-widget.hit": widget } });
 
 const palette = (page: Page) => dialog(page, "Command palette");
 const search = (page: Page) => palette(page).getByRole("combobox");
 
-test.describe("command palette", () => {
-  test.beforeEach(async ({ seed }) => {
-    await seed({ collections: [shop()] });
-  });
+test.describe("command palette in a workspace", () => {
+  test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
 
-  test("Ctrl/Cmd+K from the URL bar, type part of a request name, Enter opens it", async ({ page }) => {
-    await openRoute(page, "Shop", "list products");
+  test("Ctrl/Cmd+K from the URL bar, type part of a file name, Enter opens it", async ({ page }) => {
+    await openShop(page);
     await urlInput(page).focus();
     await page.keyboard.press("ControlOrMeta+k");
     await expect(palette(page)).toBeVisible();
@@ -42,28 +24,36 @@ test.describe("command palette", () => {
 
     await page.keyboard.type("widg");
     const first = palette(page).getByRole("option").first();
-    await expect(first).toContainText("create widget");
-    await expect(first).toContainText("POST");
-    await expect(first).toContainText("Shop / Admin");
+    await expect(first).toContainText("create-widget.hit");
+    await expect(first).toContainText("hittable / admin");
     await page.keyboard.press("Enter");
 
     await expect(palette(page)).toBeHidden();
     await expect(urlInput(page)).toHaveValue(`${API}/widgets`);
-    await expect(page).toHaveURL(/r=create(\+|%20)widget/);
+    await expect(methodSelect(page)).toHaveValue("POST");
   });
 
-  test('typing "env" then Enter opens the Environment dialog', async ({ page }) => {
-    await openRoute(page, "Shop", "list products");
+  test('typing "env.json" then Enter opens the environment file', async ({ page }) => {
+    await openShop(page);
     await page.keyboard.press("ControlOrMeta+k");
     await expect(search(page)).toBeFocused();
-    await page.keyboard.type("env");
-    await expect(palette(page).getByRole("option").first()).toContainText("Environment variables");
+    await page.keyboard.type("env.json");
+    await expect(palette(page).getByRole("option").first()).toContainText("env.json");
     await page.keyboard.press("Enter");
-    await expect(dialog(page, "Environment: Shop")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Edit env.json" })).toBeVisible();
+  });
+
+  test("Copy request as cURL copies the open request", async ({ page }) => {
+    await openShop(page);
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.type("copy request as curl");
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Copied as cURL")).toBeVisible();
+    expect(await clipboardText(page)).toMatch(new RegExp(`^curl -X GET\\b.*${API.replace(/[[\]]/g, "\\$&")}/products`));
   });
 
   test("Esc closes it and focus returns to where it was; the top bar button opens it too", async ({ page }) => {
-    await openRoute(page, "Shop", "list products");
+    await openShop(page);
     await urlInput(page).focus();
     await page.keyboard.press("ControlOrMeta+k");
     await expect(palette(page)).toBeVisible();
@@ -77,13 +67,15 @@ test.describe("command palette", () => {
     await page.keyboard.press("Escape");
     await expect(trigger).toBeFocused();
   });
+});
 
+test.describe("command palette on the launcher", () => {
   test("action rows show their shortcut, arrows move the selection", async ({ page }) => {
-    await page.goto("/hittable");
+    await openLauncher(page);
     await page.keyboard.press("ControlOrMeta+k");
     await expect(search(page)).toBeFocused();
-    await page.keyboard.type("toggle sidebar");
-    const row = palette(page).getByRole("option", { name: /Toggle sidebar/ });
+    await page.keyboard.type("toggle explorer");
+    const row = palette(page).getByRole("option", { name: /Toggle explorer/ });
     await expect(row).toHaveAttribute("aria-selected", "true");
     await expect(row.locator("kbd")).toHaveText([/Ctrl|⌘/, "B"]);
     await search(page).fill("");
@@ -96,7 +88,7 @@ test.describe("command palette", () => {
 
 test.describe("palette accessibility", () => {
   test("axe finds no serious problems in the open palette or the cheatsheet (colour contrast included)", async ({ page }) => {
-    await page.goto("/hittable");
+    await openLauncher(page);
     await page.keyboard.press("ControlOrMeta+k");
     await expect(search(page)).toBeFocused();
     await page.keyboard.type("e");
@@ -118,11 +110,11 @@ test.describe("palette accessibility", () => {
 
 test.describe("keyboard shortcuts cheatsheet", () => {
   test("? opens it outside text fields, grouped by area, and Esc closes it", async ({ page }) => {
-    await page.goto("/hittable");
+    await openLauncher(page);
     await page.locator("body").press("?");
     const sheet = dialog(page, "Keyboard shortcuts");
     await expect(sheet).toBeVisible();
-    for (const group of ["General", "Request", "Response", "Sidebar", "Editor"]) {
+    for (const group of ["General", "Request", "Response", "Explorer", "Editor"]) {
       await expect(sheet.getByRole("heading", { name: group })).toBeVisible();
     }
     await expect(sheet.getByText("Beautify JSON")).toBeVisible();
@@ -130,9 +122,9 @@ test.describe("keyboard shortcuts cheatsheet", () => {
     await expect(sheet).toBeHidden();
   });
 
-  test("? in a text field types a ?, Ctrl/Cmd+/ opens it", async ({ page, seed }) => {
-    await seed({ collections: [shop()] });
-    await openRoute(page, "Shop", "list products");
+  test("? in a text field types a ?, Ctrl/Cmd+/ opens it", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", FOLDER_ONLY);
+    await openShop(page);
     await urlInput(page).focus();
     await page.keyboard.press("End");
     await page.keyboard.type("?");
@@ -143,31 +135,32 @@ test.describe("keyboard shortcuts cheatsheet", () => {
   });
 });
 
-test.describe("keyboard-only sidebar", () => {
-  test("Tab reaches a request row and Enter opens it", async ({ page, seed, browserName }) => {
-    // Safari's Tab skips buttons unless "Press Tab to highlight each item" is
-    // on (Option+Tab otherwise); WebKit in Playwright follows that default.
-    test.skip(browserName === "webkit", "Safari's default Tab skips buttons");
-    await seed({ collections: [shop()], sidebarCollapsed: false });
-    await page.goto("/hittable?c=Shop");
-    const row = sidebar(page).getByRole("button", { name: "GET list products", exact: true });
-    await sidebar(page).getByRole("button", { name: "New Folder" }).focus();
-    for (let i = 0; i < 10 && !(await row.evaluate((el) => el === document.activeElement)); i++) {
-      await page.keyboard.press("Tab");
+test.describe("keyboard-only explorer", () => {
+  test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
+
+  test("Tab reaches the file tree, arrows move through it and Enter opens a file", async ({ page }) => {
+    await openShop(page);
+    // Start from a fresh page with nothing selected, as someone arriving by keyboard would.
+    await page.reload();
+    await expect(tree(page)).toBeVisible();
+    await page.getByRole("button", { name: "Refresh" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(tree(page)).toBeFocused();
+    // hittable/ is open by default: admin/, then its siblings.
+    for (let i = 0; i < 10 && !(await tree(page).getAttribute("aria-activedescendant"))?.endsWith(encodeURIComponent("hittable/req.hit")); i++) {
+      await page.keyboard.press("ArrowDown");
     }
-    await expect(row).toBeFocused();
-    // The row's ⋮ menu shows while the row has focus, so it is reachable too.
-    await expect(sidebar(page).getByRole("button", { name: "Actions for list products" })).toBeVisible();
+    await expect(tree(page)).toHaveAttribute("aria-activedescendant", `file-${encodeURIComponent("hittable/req.hit")}`);
     await page.keyboard.press("Enter");
     await expect(urlInput(page)).toHaveValue(`${API}/products`);
+    await expect(node(page, "hittable/req.hit")).toBeVisible();
   });
 });
 
 test.describe("on a phone @mobile", () => {
-  test("the palette fits a 390×844 screen and opens a request", async ({ page, seed }) => {
-    await seed({ collections: [shop()] });
+  test("the palette fits a 390×844 screen and runs an action", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/hittable");
+    await openLauncher(page);
     await page.getByRole("button", { name: "Search and commands" }).click();
     const d = palette(page);
     await expect(d).toBeVisible();
@@ -177,10 +170,10 @@ test.describe("on a phone @mobile", () => {
     expect(box.y + box.height).toBeLessThanOrEqual(844);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 
-    await search(page).fill("list prod");
-    const option = d.getByRole("option", { name: /list products/ });
+    await search(page).fill("keyboard short");
+    const option = d.getByRole("option", { name: /Keyboard shortcuts/ });
     expect((await option.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await option.click();
-    await expect(urlInput(page)).toHaveValue(`${API}/products`);
+    await expect(dialog(page, "Keyboard shortcuts")).toBeVisible();
   });
 });

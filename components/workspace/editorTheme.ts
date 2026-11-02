@@ -6,14 +6,14 @@ import { tags as t } from "@lezer/highlight";
  * Colours are kept in sync with styles/workspace.css so the CodeMirror surface
  * is indistinguishable from the panes around it.
  */
-const BACKGROUND = "#0c1422";
-const FOREGROUND = "#dce6f3";
-const GUTTER_BACKGROUND = "#0a1220";
-const GUTTER_FOREGROUND = "#8191a8";
-const CARET = "#67e8f9";
-const SELECTION = "#164e63";
-const BORDER = "#ffffff0f";
-const MUTED = "#a8b5c7";
+const BACKGROUND = "#101215"; // --ink-700
+const FOREGROUND = "#e6e8eb"; // --text
+const GUTTER_BACKGROUND = "#0d0e11"; // --ink-900
+const GUTTER_FOREGROUND = "#7d8590";
+const CARET = "#37d4e0"; // --brand
+const SELECTION = "#1f3a40";
+const BORDER = "#ffffff14"; // --border
+const MUTED = "#a0a8b4"; // --muted
 
 const hittableEditorTheme = EditorView.theme(
   {
@@ -40,9 +40,9 @@ const hittableEditorTheme = EditorView.theme(
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
       backgroundColor: SELECTION,
     },
-    ".cm-selectionMatch": { backgroundColor: "#1e3a5f" },
+    ".cm-selectionMatch": { backgroundColor: "#2a3038" },
     "&.cm-focused .cm-matchingBracket": {
-      backgroundColor: "#164e6366",
+      backgroundColor: "#1f3a4066",
       outline: `1px solid ${CARET}55`,
     },
     "&.cm-focused .cm-nonmatchingBracket": { outline: "1px solid #f8717188" },
@@ -77,12 +77,12 @@ const hittableEditorTheme = EditorView.theme(
       padding: "0 0.375rem",
     },
 
-    ".cm-panels": { backgroundColor: "#101c2d", color: FOREGROUND },
+    ".cm-panels": { backgroundColor: "#1a1d22", color: FOREGROUND },
     ".cm-panels.cm-panels-bottom": { borderTop: `1px solid ${BORDER}` },
     ".cm-searchMatch": { backgroundColor: "#ca8a0455", outline: "1px solid #ca8a0499" },
     ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "#ca8a0499" },
     ".cm-panel input, .cm-panel button": {
-      backgroundColor: "#0e1f35",
+      backgroundColor: "#22262c",
       border: `1px solid ${BORDER}`,
       borderRadius: "4px",
       color: FOREGROUND,
@@ -90,7 +90,7 @@ const hittableEditorTheme = EditorView.theme(
     },
 
     ".cm-tooltip": {
-      backgroundColor: "#101c2d",
+      backgroundColor: "#1a1d22",
       border: `1px solid ${BORDER}`,
       borderRadius: "6px",
       boxShadow: "0 12px 32px rgba(0, 0, 0, 0.55)",
@@ -104,7 +104,7 @@ const hittableEditorTheme = EditorView.theme(
     },
     ".cm-tooltip.cm-tooltip-autocomplete > ul > li": { padding: "0.1875rem 0.625rem" },
     ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
-      backgroundColor: "#164e63",
+      backgroundColor: "#1f3a40",
       color: "#f8fafc",
     },
     ".cm-completionLabel": { color: FOREGROUND },

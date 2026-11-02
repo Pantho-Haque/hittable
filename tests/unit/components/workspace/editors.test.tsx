@@ -5,12 +5,11 @@ import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import { WorkspaceProvider, useWorkspace } from "@/context/workspaceContext";
 import { NotificationProvider } from "@/context/notifyContext";
-import { DataProvider } from "@/context/dataContext";
 import HitFileEditor from "@/components/workspace/HitFileEditor";
 import MarkdownEditor from "@/components/workspace/MarkdownEditor";
 import PlainTextEditor from "@/components/workspace/PlainTextEditor";
-import DirectoryPicker from "@/components/workspace/DirectoryPicker";
 import WorkspaceConnecting from "@/components/workspace/WorkspaceConnecting";
+import { createFolderBackend } from "@/services/workspace/folderBackend";
 import { FakeDir, FakeFile, asDir } from "../../helpers/fakeFs";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -27,24 +26,25 @@ const hit = (over: object = {}) =>
 let root: FakeDir;
 let fetchMock: ReturnType<typeof vi.fn>;
 
-function OpenFile({ path }: { path: string }) {
-  const { openFolder, setActiveFile, hittableDir } = useWorkspace();
-  useEffect(() => { openFolder(); }, [openFolder]);
+function OpenFile({ path, readOnly }: { path: string; readOnly: boolean }) {
+  const { openFolder, openBackend, setActiveFile, backendKind } = useWorkspace();
   useEffect(() => {
-    if (hittableDir) setActiveFile({ path: path.split("/"), handle: root.at(path) as unknown as FileSystemFileHandle });
-  }, [hittableDir, path, setActiveFile]);
+    if (readOnly) void openBackend({ ...createFolderBackend(asDir(root)), readOnly });
+    else void openFolder();
+  }, [openFolder, openBackend, readOnly]);
+  useEffect(() => {
+    if (backendKind) setActiveFile(path.split("/"));
+  }, [backendKind, path, setActiveFile]);
   return null;
 }
 
-function mount(path: string, editor: React.ReactNode) {
+function mount(path: string, editor: React.ReactNode, readOnly = false) {
   render(
     <NotificationProvider>
-      <DataProvider>
-        <WorkspaceProvider>
-          <OpenFile path={path} />
-          {editor}
-        </WorkspaceProvider>
-      </DataProvider>
+      <WorkspaceProvider>
+        <OpenFile path={path} readOnly={readOnly} />
+        {editor}
+      </WorkspaceProvider>
     </NotificationProvider>,
   );
   return userEvent.setup();
@@ -127,6 +127,29 @@ describe(".hit files: Text and Runner", () => {
   });
 });
 
+describe("read-only workspace", () => {
+  it("the Runner can't edit the request, and nothing is written", async () => {
+    const before = file("hittable/users/list.hit").content;
+    mount("hittable/users/list.hit", <HitFileEditor />, true);
+    await waitFor(() => expect(screen.getByLabelText("Request URL")).toBeInTheDocument());
+    expect(screen.getByLabelText("Request URL")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("HTTP method")).toBeDisabled();
+    expect(file("hittable/users/list.hit").content).toBe(before);
+  });
+
+  it("text files open read-only", async () => {
+    mount("todo.txt", <PlainTextEditor />, true);
+    await waitFor(() => expect(document.querySelector(".cm-content")?.textContent).toBe("ship it"));
+    expect(document.querySelector(".cm-content")).toHaveAttribute("contenteditable", "false");
+  });
+
+  it("markdown shows the preview without editing", async () => {
+    mount("hittable/notes/api.md", <MarkdownEditor />, true);
+    expect(await screen.findByRole("heading", { name: "API" })).toBeInTheDocument();
+    for (const b of screen.queryAllByTitle(/edit/i)) expect(b).toBeDisabled();
+  });
+});
+
 describe("other editors", () => {
   it("markdown notes render a preview and autosave edits to disk", async () => {
     const user = mount("hittable/notes/api.md", <MarkdownEditor />);
@@ -140,21 +163,6 @@ describe("other editors", () => {
   it("plain files open in the code editor", async () => {
     mount("todo.txt", <PlainTextEditor />);
     await waitFor(() => expect(document.querySelector(".cm-content")?.textContent).toBe("ship it"));
-  });
-
-  it("the picker invites you to choose a folder, then reports the workspace is ready", async () => {
-    render(
-      <NotificationProvider>
-        <WorkspaceProvider>
-          <DirectoryPicker />
-        </WorkspaceProvider>
-      </NotificationProvider>,
-    );
-    const user = userEvent.setup();
-    expect(screen.getByRole("heading", { name: "Open a workspace" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Choose folder" }));
-    expect(await screen.findByRole("heading", { name: "Your workspace is ready" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Change folder" })).toBeInTheDocument();
   });
 
   it("the connecting overlay names the stage", () => {

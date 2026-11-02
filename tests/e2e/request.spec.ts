@@ -2,7 +2,7 @@ import {
   test,
   expect,
   API,
-  blankRequest,
+  openRequest,
   urlInput,
   methodSelect,
   sendButton,
@@ -11,15 +11,15 @@ import {
   fillTab,
   response,
   statusBadge,
-  sidebarItem,
-  collection,
-  route,
-  openRoute,
+  FOLDER_ONLY,
 } from "./fixtures/test";
+import { openFile, readFile } from "./fixtures/directory";
+
+test.skip(({ browserName }) => browserName !== "chromium", FOLDER_ONLY);
 
 test.describe("building and sending requests", () => {
-  test("GET with query params and headers: status, time, size and a JSON tree", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("GET with query params and headers: status, time, size and a JSON tree", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/echo`);
     await fillTab(page, "params", '{"page": "2", "q": "hello world"}');
     // Params and the query string are one value.
@@ -37,8 +37,8 @@ test.describe("building and sending requests", () => {
     await expect(body.getByText('"GET"')).toBeVisible();
   });
 
-  test("editing the query string fills the Params tab", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("editing the query string fills the Params tab", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/users?limit=1&sort=name%20asc`);
     await page.getByRole("tab", { name: "Params", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "params").inputValue())).toEqual({ limit: "1", sort: "name asc" });
@@ -48,8 +48,8 @@ test.describe("building and sending requests", () => {
     await expect(response(page).getByText('"Alan Turing"')).toHaveCount(0);
   });
 
-  test("table mode edits the same params and headers", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("table mode edits the same params and headers", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/echo`);
     await page.getByRole("tab", { name: "Headers", exact: true }).click();
     await page.getByRole("button", { name: "Table mode" }).click();
@@ -72,8 +72,8 @@ test.describe("building and sending requests", () => {
     { method: "PUT", path: "/users/2", body: '{"name": "Replaced"}', status: "200 OK", expectText: '"Replaced"' },
     { method: "PATCH", path: "/users/3", body: '{"active": false}', status: "200 OK", expectText: '"Grace Hopper"' },
   ]) {
-    test(`${method} sends a JSON body`, async ({ page, seed }) => {
-      await blankRequest(page, seed);
+    test(`${method} sends a JSON body`, async ({ page }) => {
+      await openRequest(page);
       await methodSelect(page).selectOption(method);
       await urlInput(page).fill(`${API}${path}`);
       await fillTab(page, "headers", '{"Content-Type": "application/json"}');
@@ -84,8 +84,8 @@ test.describe("building and sending requests", () => {
     });
   }
 
-  test("the body reaches the server unchanged", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("the body reaches the server unchanged", async ({ page }) => {
+    await openRequest(page);
     await methodSelect(page).selectOption("POST");
     await urlInput(page).fill(`${API}/echo`);
     await fillTab(page, "headers", '{"Content-Type": "application/json"}');
@@ -96,8 +96,8 @@ test.describe("building and sending requests", () => {
     await expect(response(page).getByText('"application/json"')).toBeVisible();
   });
 
-  test("DELETE with an empty 204 reply", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("DELETE with an empty 204 reply", async ({ page }) => {
+    await openRequest(page);
     await methodSelect(page).selectOption("DELETE");
     await urlInput(page).fill(`${API}/users/1`);
     await send(page);
@@ -105,8 +105,8 @@ test.describe("building and sending requests", () => {
     await expect(response(page).getByRole("tab", { name: /^headers/ })).toBeVisible();
   });
 
-  test("HEAD shows the response headers as the body", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("HEAD shows the response headers as the body", async ({ page }) => {
+    await openRequest(page);
     await methodSelect(page).selectOption("HEAD");
     await urlInput(page).fill(`${API}/users/1`);
     await send(page);
@@ -114,8 +114,8 @@ test.describe("building and sending requests", () => {
     await expect(response(page).getByText('"content-type"')).toBeVisible();
   });
 
-  test("redirects are followed", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("redirects are followed", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/redirect`);
     await send(page);
     await expect(statusBadge(page)).toHaveText("200 OK");
@@ -127,8 +127,8 @@ test.describe("building and sending requests", () => {
     ["500", "500 Internal Server Error"],
     ["301", "301 Moved Permanently"],
   ] as const) {
-    test(`a ${code} reply is shown with its status`, async ({ page, seed }) => {
-      await blankRequest(page, seed);
+    test(`a ${code} reply is shown with its status`, async ({ page }) => {
+      await openRequest(page);
       await urlInput(page).fill(`${API}/status/${code}`);
       await send(page);
       await expect(statusBadge(page)).toHaveText(text);
@@ -136,8 +136,8 @@ test.describe("building and sending requests", () => {
     });
   }
 
-  test("a missing user is a JSON 404, not an app error", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("a missing user is a JSON 404, not an app error", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/users/999`);
     await send(page);
     await expect(statusBadge(page)).toHaveText("404 Not Found");
@@ -154,8 +154,8 @@ test.describe("failures are explained", () => {
     { name: "an upstream that never answers", url: `${API}/hang`, message: "Upstream did not answer within 4000 ms", status: "0 Timeout" },
     { name: "a response over the size cap", url: `${API}/huge`, message: /larger than the proxy limit/, status: "0 Response Too Large" },
   ]) {
-    test(`${name}`, async ({ page, seed }) => {
-      await blankRequest(page, seed);
+    test(`${name}`, async ({ page }) => {
+      await openRequest(page);
       await urlInput(page).fill(url);
       await send(page);
       await expect(response(page).getByText(message)).toBeVisible({ timeout: 10_000 });
@@ -164,8 +164,8 @@ test.describe("failures are explained", () => {
     });
   }
 
-  test("invalid JSON in a tab blocks sending and says why", async ({ page, seed, request }) => {
-    await blankRequest(page, seed);
+  test("invalid JSON in a tab blocks sending and says why", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/echo`);
     await fillTab(page, "body", '{"broken": ');
     await expect(page.getByText(/JSON|Unexpected end/i).first()).toBeVisible();
@@ -178,12 +178,11 @@ test.describe("failures are explained", () => {
 
     await editor(page, "body").fill('{"broken": false}');
     await expect(sendButton(page)).toBeEnabled();
-    void request;
   });
 
   // While in flight, Send turns into Cancel (FR-6), so it cannot send twice.
-  test("a slow request shows a loading state and cannot be sent twice", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("a slow request shows a loading state and cannot be sent twice", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/slow?ms=1500`);
     await send(page);
     await expect(page.getByRole("button", { name: "Cancel" })).toBeEnabled();
@@ -194,17 +193,24 @@ test.describe("failures are explained", () => {
 });
 
 test.describe("keyboard and saving", () => {
-  test("Ctrl/Cmd+Enter sends from anywhere, even while typing", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("Ctrl/Cmd+Enter sends from anywhere, even while typing", async ({ page }) => {
+    await openRequest(page);
     await urlInput(page).fill(`${API}/users/2`);
     await urlInput(page).press("ControlOrMeta+Enter");
     await expect(statusBadge(page)).toHaveText("200 OK");
     await expect(response(page).getByText('"Alan Turing"')).toBeVisible();
   });
 
+  test("Ctrl/Cmd+Enter sends right after opening the file in the explorer", async ({ page }) => {
+    await openRequest(page, { url: `${API}/users/2` }); // clicked in the explorer: focus is in the file tree
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(statusBadge(page)).toHaveText("200 OK");
+    await expect(response(page).getByText('"Alan Turing"')).toBeVisible();
+  });
+
   // Ctrl/Cmd+J is the browser's Downloads shortcut; Beautify is Shift+Alt+F (FR-2).
-  test("Shift+Alt+F beautifies the JSON in the active tab", async ({ page, seed }) => {
-    await blankRequest(page, seed);
+  test("Shift+Alt+F beautifies the JSON in the active tab", async ({ page }) => {
+    await openRequest(page);
     await fillTab(page, "body", '{"a":1,"b":[1,2]}');
     await editor(page, "body").press("Shift+Alt+KeyF");
     await expect(editor(page, "body")).toHaveValue('{\n\t"a": 1,\n\t"b": [\n\t\t1,\n\t\t2\n\t]\n}');
@@ -212,97 +218,61 @@ test.describe("keyboard and saving", () => {
     await expect(editor(page, "body")).toHaveValue('{\n\t"a": 1,\n\t"b": [\n\t\t1,\n\t\t2\n\t]\n}');
   });
 
-  test("unsaved changes show a pill, Ctrl/Cmd+S saves them with the response", async ({ page, seed }) => {
-    await seed({ collections: [collection("Saving", [route("me", `curl -X GET ${API}/users/1`)])] });
-    await openRoute(page, "Saving", "me");
-    const pill = page.getByText("Unsaved · Ctrl/Cmd+S");
-    await expect(pill).toBeHidden();
-    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
-
+  // Folder mode has no unsaved state: every Runner edit is written to the
+  // .hit file at once, and the last response travels with it.
+  test("Runner edits and the response are saved to the file and survive a reload", async ({ page }) => {
+    await openRequest(page, { url: `${API}/users/1` });
     await urlInput(page).fill(`${API}/users/3`);
-    await expect(pill).toBeVisible();
     await send(page);
     await expect(response(page).getByText('"Grace Hopper"')).toBeVisible();
-    await urlInput(page).press("ControlOrMeta+s");
-    await expect(pill).toBeHidden();
+    await expect.poll(async () => JSON.parse(await readFile(page, "hittable/req.hit")).response?.data?.name).toBe("Grace Hopper");
+    expect(JSON.parse(await readFile(page, "hittable/req.hit")).url).toBe(`${API}/users/3`);
 
     await page.reload();
+    await openFile(page, "hittable/req.hit");
     await expect(urlInput(page)).toHaveValue(`${API}/users/3`);
-    // The last response travels with the saved route.
     await expect(response(page).getByText('"Grace Hopper"')).toBeVisible();
-    await expect(sidebarItem(page, "me")).toContainText("GET");
   });
 
-  test("a saved JSON body keeps its numbers, booleans and objects", async ({ page, seed }) => {
-    await seed({ collections: [collection("Types", [route("r", `curl -X POST ${API}/echo -H "Content-Type: application/json" -d '{"n":1,"b":true,"z":null,"o":{"k":[2]}}'`)])] });
-    await openRoute(page, "Types", "r");
+  test("a saved JSON body keeps its numbers, booleans and objects", async ({ page }) => {
+    const raw = '{"n":1,"b":true,"z":null,"o":{"k":[2]}}';
+    await openRequest(page, { method: "POST", url: `${API}/echo`, headers: { "Content-Type": "application/json" }, body: raw });
     await page.getByRole("tab", { name: "Body", exact: true }).click();
     const expected = { n: 1, b: true, z: null, o: { k: [2] } };
     await expect.poll(async () => JSON.parse(await editor(page, "body").inputValue())).toEqual(expected);
     await send(page);
     await expect(response(page).getByText("true", { exact: true })).toBeVisible();
-    await expect(page.getByText("Unsaved · Ctrl/Cmd+S")).toBeHidden();
     await urlInput(page).press("ControlOrMeta+s");
+    expect(JSON.parse(JSON.parse(await readFile(page, "hittable/req.hit")).body)).toEqual(expected);
     await page.reload();
+    await openFile(page, "hittable/req.hit");
     await page.getByRole("tab", { name: "Body", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "body").inputValue())).toEqual(expected);
   });
 
-  test("reformatting alone is not an unsaved change", async ({ page, seed }) => {
-    await seed({ collections: [collection("Fmt", [route("r", `curl -X POST ${API}/echo -H "A: 1" -d '{"x":1}'`)])] });
-    await openRoute(page, "Fmt", "r");
-    await fillTab(page, "body", '{   "x" :   1   }');
-    await expect(page.getByText("Unsaved · Ctrl/Cmd+S")).toBeHidden();
-    await fillTab(page, "body", '{"x": 2}');
-    await expect(page.getByText("Unsaved · Ctrl/Cmd+S")).toBeVisible();
-  });
-
-  test("Discard changes restores the saved request", async ({ page, seed }) => {
-    await seed({ collections: [collection("Undo", [route("r", `curl -X GET ${API}/users/1`)])] });
-    await openRoute(page, "Undo", "r");
-    await methodSelect(page).selectOption("DELETE");
-    await urlInput(page).fill(`${API}/users/2`);
-    await page.getByRole("button", { name: "Discard changes" }).click();
-    await expect(methodSelect(page)).toHaveValue("GET");
-    await expect(urlInput(page)).toHaveValue(`${API}/users/1`);
-    await expect(page.getByText("Unsaved · Ctrl/Cmd+S")).toBeHidden();
-  });
-
-  test("the save button saves too, and the method colour follows the method", async ({ page, seed }) => {
-    await seed({ collections: [collection("Btn", [route("r", `curl -X GET ${API}/users/1`)])] });
-    await openRoute(page, "Btn", "r");
+  test("the method colour follows the method, and the new method is saved", async ({ page }) => {
+    await openRequest(page, { url: `${API}/users/1` });
     await methodSelect(page).selectOption("PATCH");
-    await expect(methodSelect(page)).toHaveCSS("color", "rgb(167, 139, 250)");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(sidebarItem(page, "r")).toContainText("PATCH");
+    await expect(methodSelect(page)).toHaveCSS("color", "rgb(192, 132, 252)"); // --method-patch
+    await expect.poll(async () => JSON.parse(await readFile(page, "hittable/req.hit")).method).toBe("PATCH");
     await page.reload();
+    await openFile(page, "hittable/req.hit");
     await expect(methodSelect(page)).toHaveValue("PATCH");
   });
 
-  test("closing the tab with unsaved edits asks first", async ({ page, seed }) => {
-    await seed({ collections: [collection("Leave", [route("r", `curl -X GET ${API}/users/1`)])] });
-    await openRoute(page, "Leave", "r");
-    await urlInput(page).fill(`${API}/users/2`);
-    const prompted = new Promise<string>((resolve) => page.once("dialog", (d) => resolve(d.type())));
-    await page.close({ runBeforeUnload: true });
-    expect(await prompted).toBe("beforeunload");
-  });
-
-  test("switching routes loads each one's own request", async ({ page, seed }) => {
-    await seed({
-      collections: [
-        collection("Two", [
-          route("first", `curl -X GET ${API}/users/1 -H "X-One: 1"`),
-          route("second", `curl -X POST ${API}/users -H "Content-Type: application/json" -d '{"name":"Two"}'`),
-        ]),
-      ],
+  test("switching files loads each one's own request", async ({ page }) => {
+    await openRequest(page, {
+      url: `${API}/users/1`,
+      headers: { "X-One": "1" },
+      files: {
+        "hittable/second.hit": JSON.stringify({ method: "POST", url: `${API}/users`, headers: { "Content-Type": "application/json" }, params: {}, body: '{"name":"Two"}', response: null }),
+      },
     });
-    await openRoute(page, "Two", "first");
-    await sidebarItem(page, "second").click();
+    await openFile(page, "hittable/second.hit");
     await expect(methodSelect(page)).toHaveValue("POST");
     await page.getByRole("tab", { name: "Body", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "body").inputValue())).toEqual({ name: "Two" });
-    await sidebarItem(page, "first").click();
+    await openFile(page, "hittable/req.hit");
     await expect(methodSelect(page)).toHaveValue("GET");
     await page.getByRole("tab", { name: "Headers", exact: true }).click();
     await expect.poll(async () => JSON.parse(await editor(page, "headers").inputValue())).toEqual({ "X-One": "1" });

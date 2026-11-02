@@ -1,17 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import RequestForm from "@/components/hittable/RequestForm";
-import { mountData } from "../../helpers/dataHarness";
+import { mountRunner } from "../../helpers/runnerHarness";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
-
-async function setup(route = "List users", folderPath: string[] = []) {
+async function setup(request: "List users" | "Create user" = "List users") {
   const user = userEvent.setup();
-  const r = mountData(<RequestForm />, { route, folderPath });
-  await waitFor(() => expect(screen.getByLabelText("Request URL")).not.toHaveValue(""));
-  return { user, ...r };
+  return { user, ...mountRunner({ request }) };
 }
 
 const tab = (name: "Params" | "Body" | "Headers") => screen.getByRole("tab", { name });
@@ -26,8 +21,6 @@ async function replace(user: ReturnType<typeof userEvent.setup>, el: HTMLElement
     await user.paste(text);
   }
 }
-
-beforeEach(() => localStorage.clear());
 
 describe("Params / Body / Headers editor", () => {
   it("opens on Params and switches tabs", async () => {
@@ -153,7 +146,7 @@ describe("Params / Body / Headers editor", () => {
     });
 
     it("switching tabs in table mode shows that tab's rows; JSON mode shows the result", async () => {
-      const { user } = await setup("Create user", ["Admin"]);
+      const { user } = await setup("Create user");
       await user.click(screen.getByTitle("Table mode"));
       await user.click(tab("Body"));
       expect(screen.getByDisplayValue("name")).toBeInTheDocument();
