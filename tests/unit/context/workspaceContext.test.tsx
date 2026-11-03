@@ -15,8 +15,7 @@ vi.mock("@/services/workspace/HandleStore", () => ({
   saveDirectoryHandle: vi.fn(async (h: unknown) => { handleStore.handle = h; }),
   loadDirectoryHandle: vi.fn(async () => handleStore.handle),
   removeDirectoryHandle: vi.fn(async () => { handleStore.handle = null; }),
-  verifyPermission: vi.fn(async (h: FakeDir, prompt = true) =>
-    (await h.queryPermission()) === "granted" || (prompt && (await h.requestPermission()) === "granted")),
+  verifyPermission: vi.fn(async (h: FakeDir) => (await h.queryPermission()) === "granted"),
 }));
 
 type Ctx = ReturnType<typeof useWorkspace>;
@@ -233,12 +232,24 @@ describe("WorkspaceProvider", () => {
       expect(handleStore.handle).toBe(root);
     });
 
-    it("drops the handle when permission is refused on asking", async () => {
-      root.permission = "denied";
+    it("when asked, opens the picker on the saved folder instead of a permission prompt", async () => {
+      root.permission = "prompt";
       handleStore.handle = root;
       const ctx = mount();
+      await act(async () => { expect(await ctx().reconnectFolder(true)).toBe(true); });
+      expect(window.showDirectoryPicker).toHaveBeenCalledWith({ mode: "readwrite", startIn: root });
+      expect(ctx().backendKind).toBe("folder");
+    });
+
+    it("a cancelled picker keeps the saved folder", async () => {
+      root.permission = "prompt";
+      handleStore.handle = root;
+      window.showDirectoryPicker = vi.fn(async () => {
+        throw new DOMException("cancelled", "AbortError");
+      }) as unknown as typeof window.showDirectoryPicker;
+      const ctx = mount();
       await act(async () => { expect(await ctx().reconnectFolder(true)).toBe(false); });
-      expect(handleStore.handle).toBeNull();
+      expect(handleStore.handle).toBe(root);
     });
 
     it("does nothing without a saved folder", async () => {

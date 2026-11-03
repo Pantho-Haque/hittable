@@ -85,10 +85,9 @@ function FolderCard() {
   const open = async () => {
     if (await openFolder()) router.push("/hittable/folder");
   };
-  // A click is the user gesture the browser needs before it asks for permission again.
+  // A click is the user gesture the folder picker needs.
   const reconnect = async () => {
     if (backendKind === "folder" || (await reconnectFolder(true))) router.push("/hittable/folder");
-    else setSaved(null);
   };
 
   return (

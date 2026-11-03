@@ -244,7 +244,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
   }, [openBackend, reset]);
 
   const pickingRef = useRef(false);
-  const openFolder = useCallback(async () => {
+  const openFolder = useCallback(async (startIn?: FileSystemDirectoryHandle) => {
     // The OS picker is modal, so the loader only covers the work that follows
     // it — otherwise a cancelled picker would leave a spinner on screen.
     // A second click while it is open would throw "File picker already active".
@@ -252,7 +252,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     pickingRef.current = true;
     let handle: FileSystemDirectoryHandle;
     try {
-      handle = await pickFolder();
+      handle = await pickFolder(startIn);
     } catch (err) {
       const name = (err as Error).name;
       if (name !== "AbortError" && !/already active/i.test((err as Error).message ?? "")) {
@@ -268,13 +268,11 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
   const reconnectFolder = useCallback(async (prompt = false) => {
     const handle = await loadDirectoryHandle();
     if (!handle) return false;
-    if (!(await verifyPermission(handle, prompt))) {
-      // Refused when asked: forget it. Not asked yet: keep it for the launcher's Reconnect.
-      if (prompt) await removeDirectoryHandle();
-      return false;
-    }
-    return openFolderHandle(handle, "reconnecting");
-  }, [openFolderHandle]);
+    if (await verifyPermission(handle)) return openFolderHandle(handle, "reconnecting");
+    // Access lapsed: the picker, opened on the saved folder, asks again in a
+    // dialog over the window (one click on Open) rather than a detached prompt.
+    return prompt ? openFolder(handle) : false;
+  }, [openFolder, openFolderHandle]);
 
   const closeWorkspace = useCallback(() => {
     if (backendRef.current?.kind === "folder") void removeDirectoryHandle();

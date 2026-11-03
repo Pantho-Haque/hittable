@@ -40,8 +40,8 @@ This is a sample markdown note in your Hittable workspace.
 Use \`<<KEY>>\` placeholders in your requests. Set values in the \`env.json\` file.
 `;
 
-export async function pickFolder(): Promise<FileSystemDirectoryHandle> {
-  return window.showDirectoryPicker({ mode: "readwrite" });
+export async function pickFolder(startIn?: FileSystemDirectoryHandle): Promise<FileSystemDirectoryHandle> {
+  return window.showDirectoryPicker({ mode: "readwrite", startIn });
 }
 
 export async function scaffoldHittable(

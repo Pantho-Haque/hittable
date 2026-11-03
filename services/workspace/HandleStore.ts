@@ -64,18 +64,15 @@ export async function removeDirectoryHandle(): Promise<void> {
 }
 
 /**
- * Whether the folder can be read and written. Asking (`prompt`) needs a user
- * gesture, so a page load only checks a permission the browser kept.
+ * Whether the browser kept read/write access to the folder. Never asks:
+ * Chrome's `requestPermission` prompt anchors to the address bar, which an
+ * installed app window doesn't have, so it can open off-screen. Reconnect
+ * re-opens the folder picker instead (see workspaceContext.reconnectFolder).
  */
-export async function verifyPermission(
-  handle: FileSystemDirectoryHandle,
-  prompt = true
-): Promise<boolean> {
-  const options = { mode: "readwrite" as const };
+export async function verifyPermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
   try {
-    if ((await handle.queryPermission(options)) === "granted") return true;
-    return prompt && (await handle.requestPermission(options)) === "granted";
+    return (await handle.queryPermission({ mode: "readwrite" })) === "granted";
   } catch {
-    return false; // no user activation, or the handle is stale
+    return false; // the handle is stale
   }
 }

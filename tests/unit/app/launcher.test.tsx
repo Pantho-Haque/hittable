@@ -14,7 +14,7 @@ vi.mock("@/services/workspace/HandleStore", () => ({
   saveDirectoryHandle: vi.fn(async (h: unknown) => { handleStore.handle = h; }),
   loadDirectoryHandle: vi.fn(async () => handleStore.handle),
   removeDirectoryHandle: vi.fn(async () => { handleStore.handle = null; }),
-  verifyPermission: vi.fn(async (h: FakeDir) => (await h.requestPermission()) === "granted"),
+  verifyPermission: vi.fn(async (h: FakeDir) => (await h.queryPermission()) === "granted"),
 }));
 
 let root: FakeDir;
@@ -65,20 +65,21 @@ describe("Workspaces launcher", () => {
     expect(screen.getByRole("note")).toHaveTextContent(/Chrome or Edge.*GitHub repository instead/);
   });
 
-  it("offers to reconnect the last folder, asking for permission on click", async () => {
+  it("reconnects straight away when the browser kept permission", async () => {
     handleStore.handle = root;
     const user = mount();
     await user.click(await screen.findByRole("button", { name: "Reconnect my-api" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/hittable/folder"));
+    expect(window.showDirectoryPicker).not.toHaveBeenCalled();
   });
 
-  it("a refused reconnect drops the offer", async () => {
-    root.permission = "denied";
+  it("otherwise reconnects through the picker, opened on the saved folder", async () => {
+    root.permission = "prompt";
     handleStore.handle = root;
     const user = mount();
     await user.click(await screen.findByRole("button", { name: "Reconnect my-api" }));
-    await waitFor(() => expect(screen.queryByRole("button", { name: /Reconnect/ })).not.toBeInTheDocument());
-    expect(push).not.toHaveBeenCalled();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/hittable/folder"));
+    expect(window.showDirectoryPicker).toHaveBeenCalledWith({ mode: "readwrite", startIn: root });
   });
 
   describe("sign-in errors", () => {
