@@ -10,21 +10,20 @@ import FileViewer from "./FileViewer";
 import MarkdownEditor from "./MarkdownEditor";
 import WorkspaceConnecting from "./WorkspaceConnecting";
 import Split from "@/components/ui/Split";
-import useMediaQuery from "@/hooks/useMediaQuery";
 
 /**
  * The workspace chrome for any backend: a header bar (explorer toggle, then
- * `header`), the explorer, an optional `sidePanel` (e.g. Source Control) and
- * the editor for the open file. `emptyState` replaces the hint shown when no file is open.
+ * `header`), the explorer and the editor for the open file. `changes` (the
+ * Source Control page) takes the whole body while set; the explorer and editor
+ * stay mounted underneath, so the open file keeps its state.
+ * `emptyState` replaces the hint shown when no file is open.
  */
-export default function WorkspaceShell({ header, sidePanel, emptyState }: { header: ReactNode; sidePanel?: ReactNode; emptyState?: ReactNode }) {
+export default function WorkspaceShell({ header, changes, emptyState }: { header: ReactNode; changes?: ReactNode; emptyState?: ReactNode }) {
   const {
     shortcuts: { toggleSidebar },
     toggle,
   } = useShortcuts();
   const { activeFile, connectingStage, isFileLoaded, fileView, fileNotice, readOnly } = useWorkspace();
-  // On a phone the source-control panel is an overlay, not a column.
-  const narrow = useMediaQuery("(max-width: 767px)");
 
   const editor = (
     <main className="flex-1 min-w-0 h-full overflow-hidden" aria-label="File editor">
@@ -59,16 +58,19 @@ export default function WorkspaceShell({ header, sidePanel, emptyState }: { head
     <div className="workspace relative h-[calc(100dvh-44px)] w-full flex flex-col bg-(--ink-700) overflow-hidden">
       {connectingStage && <WorkspaceConnecting stage={connectingStage} />}
       <div className="flex min-h-11 shrink-0 items-center gap-3 border-b border-white/10 px-3">
-        <button className="workspace-button" onClick={() => toggle("toggleSidebar")}
-          aria-expanded={!toggleSidebar} aria-controls="directory-explorer" title="Toggle explorer (Ctrl/Cmd+B)">
-          <PanelLeft size={16} aria-hidden="true" /> Explorer
-        </button>
+        {!changes && (
+          <button className="workspace-button" onClick={() => toggle("toggleSidebar")}
+            aria-expanded={!toggleSidebar} aria-controls="directory-explorer" title="Toggle explorer (Ctrl/Cmd+B)">
+            <PanelLeft size={16} aria-hidden="true" /> Explorer
+          </button>
+        )}
         {header}
         {readOnly && (
           <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-white/70">Read-only</span>
         )}
       </div>
-      <div className="flex min-h-0 flex-1 w-full relative">
+      {changes && <div className="flex min-h-0 flex-1 w-full">{changes}</div>}
+      <div className={`flex min-h-0 flex-1 w-full relative ${changes ? "hidden" : ""}`}>
         <Split
           id="explorer"
           orientation="horizontal"
@@ -89,28 +91,7 @@ export default function WorkspaceShell({ header, sidePanel, emptyState }: { head
               <DirectoryTree />
             </aside>
           }
-          second={
-            sidePanel && !narrow ? (
-              <Split
-                id="source-control"
-                orientation="horizontal"
-                unit="px"
-                defaultSize={288}
-                minFirst={220}
-                minSecond={240}
-                firstLabel="Source control"
-                secondLabel="Editor"
-                className="h-full w-full"
-                first={sidePanel}
-                second={editor}
-              />
-            ) : (
-              <>
-                {sidePanel}
-                {editor}
-              </>
-            )
-          }
+          second={editor}
         />
       </div>
     </div>

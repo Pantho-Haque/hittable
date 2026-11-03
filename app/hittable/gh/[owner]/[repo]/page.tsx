@@ -7,7 +7,7 @@ import { useWorkspace } from "@/context/workspaceContext";
 import { findNode } from "@/services/workspace/backend";
 import WorkspaceShell from "@/components/workspace/WorkspaceShell";
 import RepoHeader, { repoUrl } from "@/components/github/RepoHeader";
-import SourceControlPanel from "@/components/github/SourceControlPanel";
+import ChangesView, { readSides } from "@/components/github/ChangesView";
 import DiffDialog, { type DiffSides } from "@/components/github/DiffView";
 import { createGitHubBackend, type GitHubBackend } from "@/services/github/githubBackend";
 import { api, describeError, GitHubError, signInUrl } from "@/utils/github/api";
@@ -138,18 +138,7 @@ function useDiff(backend: GitHubBackend | null) {
       if (!backend) return;
       setDiff({ path, theirs, sides: null });
       try {
-        const [original, modified, binary] = await Promise.all([
-          theirs ? backend.readTheirs(path) : backend.readBase(path),
-          backend.readWorking(path),
-          backend.binarySides(path, theirs),
-        ]);
-        const sides = {
-          original,
-          modified,
-          binary,
-          originalLabel: theirs ? `Theirs (latest on ${backend.branch})` : `Last commit (${backend.baseSha().slice(0, 7)})`,
-          modifiedLabel: "Yours",
-        };
+        const sides = await readSides(backend, path, theirs);
         setDiff((d) => (d?.path === path ? { ...d, sides } : d));
       } catch (err) {
         setDiff((d) => (d?.path === path ? { ...d, error: describeError(err) } : d));
@@ -192,7 +181,7 @@ function Workspace({ backend }: { backend: GitHubBackend }) {
     <>
       <WorkspaceShell
         header={<RepoHeader backend={backend} panelOpen={panel} onTogglePanel={() => setPanel((p) => !p)} onCompare={(p) => void open(p, true)} />}
-        sidePanel={panel && <SourceControlPanel backend={backend} onOpenDiff={(p) => void open(p, false)} onClose={() => setPanel(false)} />}
+        changes={panel && <ChangesView backend={backend} onClose={() => setPanel(false)} />}
         emptyState={
           tree.length === 0 || hasHittable ? undefined : readOnly ? (
             <p className="m-auto max-w-sm p-8 text-center text-sm leading-6 text-white/60">

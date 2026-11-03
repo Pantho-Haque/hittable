@@ -52,6 +52,12 @@ async function openChanges(page: Page) {
   await expect(panel(page)).toBeVisible();
 }
 
+/** Back from the Changes page to the explorer and editor. */
+async function closeChanges(page: Page) {
+  await panel(page).getByRole("button", { name: "Close source control" }).click();
+  await expect(tree(page)).toBeVisible();
+}
+
 test.beforeEach(async ({ page, request }) => {
   await request.post(`${FAKE}/__fake/reset`);
   // The fake authorizes at once; the callback lands back on the launcher.
@@ -77,14 +83,17 @@ test("pick a repo, edit in the Runner, reload, review the diff and commit", asyn
   await expect(item(page, "get.hit")).toHaveAccessibleDescription("Modified");
   await expect(changesButton(page)).toHaveAccessibleName("Source control, 1 change");
 
+  // The Changes page replaces the explorer; the first file's diff shows side by side.
   await openChanges(page);
+  await expect(tree(page)).toBeHidden();
   await expect(panel(page).getByRole("listitem")).toHaveCount(1);
-  await panel(page).getByRole("button", { name: /hittable\/users\/get\.hit, Modified/ }).click();
-  const diff = page.getByRole("dialog", { name: GET_HIT });
+  await expect(panel(page).getByRole("button", { name: /hittable\/users\/get\.hit, Modified/ })).toHaveAttribute("aria-current", "true");
+  const diff = page.getByRole("region", { name: GET_HIT });
   await expect(diff.getByText("users/2", { exact: false }).first()).toBeVisible();
-  await diff.getByRole("button", { name: "Side by side" }).click();
+  await expect(diff.getByRole("button", { name: "Side by side" })).toHaveAttribute("aria-pressed", "true");
   await expect(diff.getByRole("textbox", { name: `${GET_HIT}, before` })).toBeVisible();
-  await diff.getByRole("button", { name: "Close" }).click();
+  await diff.getByRole("button", { name: "Inline" }).click();
+  await expect(diff.getByRole("textbox", { name: `Changes to ${GET_HIT}` })).toBeVisible();
 
   const before = await fakeState(request);
   await expect(panel(page).getByRole("textbox", { name: "Commit message" })).toHaveValue(`Update ${GET_HIT}`);
@@ -96,6 +105,8 @@ test("pick a repo, edit in the Runner, reload, review the diff and commit", asyn
   expect(after.head).not.toBe(before.head);
   expect(after.message).toBe(`Update ${GET_HIT}`);
   expect(JSON.parse(after.files[GET_HIT]).url).toBe("{{baseUrl}}/users/2");
+  await expect(page.getByText("No changes to review.", { exact: false })).toBeVisible();
+  await closeChanges(page);
   await expect(item(page, "get.hit")).not.toHaveAccessibleDescription("Modified");
   await expect(changesButton(page)).toHaveAccessibleName("Source control, 0 changes");
 });
@@ -112,6 +123,7 @@ test("delete a file: D, then commit the deletion", async ({ page, request }) => 
   await panel(page).getByRole("button", { name: /Commit to main/ }).click();
   await expect(page.getByText(/^Committed [0-9a-f]{7} to main$/)).toBeVisible();
   expect((await fakeState(request)).files["README.md"]).toBeUndefined();
+  await closeChanges(page);
   await expect(item(page, "README.md")).toHaveCount(0);
 });
 
@@ -124,7 +136,7 @@ test("someone else changed the same file: conflict, nothing overwritten", async 
   await openChanges(page);
   await panel(page).getByRole("button", { name: /Commit to main/ }).click();
   await expect(panel(page).getByRole("alert")).toContainText("changed the same files");
-  await expect(item(page, "get.hit")).toHaveAccessibleDescription("Conflict");
+  await expect(panel(page).getByRole("button", { name: `${GET_HIT}, Conflict` })).toBeVisible();
   expect((await fakeState(request)).files[GET_HIT]).toBe(theirs);
 
   // Compare shows theirs against mine; Keep mine then commits on top of theirs.
@@ -134,7 +146,7 @@ test("someone else changed the same file: conflict, nothing overwritten", async 
   await page.getByRole("dialog", { name: GET_HIT }).getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: "1 conflict" }).click();
   await page.getByRole("button", { name: "Keep mine" }).click();
-  await expect(item(page, "get.hit")).toHaveAccessibleDescription("Modified");
+  await expect(panel(page).getByRole("button", { name: `${GET_HIT}, Modified` })).toBeVisible();
   await panel(page).getByRole("button", { name: /Commit to main/ }).click();
   await expect(page.getByText(/^Committed [0-9a-f]{7} to main$/)).toBeVisible();
   expect(JSON.parse((await fakeState(request)).files[GET_HIT]).url).toBe("{{baseUrl}}/users/mine");
@@ -246,9 +258,8 @@ test("upload a file in a repo: binary working copy, sent before committing, kept
   await openChanges(page);
   await expect(panel(page).getByRole("button", { name: "hittable/files/avatar.png, Added, binary" })).toBeVisible();
   await panel(page).getByRole("button", { name: "hittable/files/avatar.png, Added, binary" }).click();
-  const diff = page.getByRole("dialog", { name: "hittable/files/avatar.png" });
+  const diff = page.getByRole("region", { name: "hittable/files/avatar.png" });
   await expect(diff.getByText("Binary file: there is no text to compare.")).toBeVisible();
-  await diff.getByRole("button", { name: "Close" }).click();
 
   await page.reload();
   await expect(changesButton(page)).toHaveAccessibleName("Source control, 2 changes");

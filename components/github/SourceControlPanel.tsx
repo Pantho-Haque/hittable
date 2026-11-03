@@ -132,10 +132,13 @@ function PullRequestDialog({
 /** FR-G5: the changes, discard, and the commit box. */
 export default function SourceControlPanel({
   backend,
+  selected,
   onOpenDiff,
   onClose,
 }: {
   backend: GitHubBackend;
+  /** The file whose diff is shown. */
+  selected?: string | null;
   onOpenDiff: (path: string) => void;
   onClose: () => void;
 }) {
@@ -214,7 +217,7 @@ export default function SourceControlPanel({
     <aside
       id="source-control"
       aria-label="Source control"
-      className="absolute inset-y-0 right-0 z-30 flex w-full max-w-80 flex-col border-l border-(--border) bg-(--surface-1) shadow-xl shadow-black/60 md:static md:z-auto md:h-full md:w-full md:max-w-none md:border-l-0 md:shadow-none"
+      className="flex h-full w-full flex-col bg-(--surface-1)"
     >
       <div className="flex items-center gap-2 border-b border-(--border) px-3 py-2">
         <h2 className="text-xs font-semibold text-(--text)">Source control</h2>
@@ -255,14 +258,18 @@ export default function SourceControlPanel({
             {changes.map((c) => {
               const s = STATUS[c.conflict ? "C" : c.status];
               return (
-                <li key={c.path} className="group flex items-center gap-1 pr-1 hover:bg-(--surface-2)">
+                <li
+                  key={c.path}
+                  className={`group flex items-center gap-1 pr-1 hover:bg-(--surface-2) ${c.path === selected ? "bg-(--ink-500)" : ""}`}
+                >
                   <button
                     type="button"
+                    aria-current={c.path === selected ? "true" : undefined}
                     onClick={() => onOpenDiff(c.path)}
                     // An explicit name: the browser separates the flex items
                     // with a space, which read as "get.hit , Modified".
                     aria-label={`${c.path}, ${s.label}${c.binary ? ", binary" : ""}`}
-                    title={`${c.path} (${s.label}) — open the diff`}
+                    title={`${c.path} (${s.label}) — show the changes`}
                     className="flex min-h-8 min-w-0 flex-1 items-center gap-2 px-3 text-left text-xs text-(--text)"
                   >
                     <span className={`w-3 shrink-0 font-mono font-bold ${s.className}`} aria-hidden="true">

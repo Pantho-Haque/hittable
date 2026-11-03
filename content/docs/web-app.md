@@ -23,8 +23,8 @@ The GitHub workflow is the v3 direction and is being rolled out; parts of it des
 1. **Sign in with GitHub**. The app asks for the `repo` and `read:user` scopes (see [Privacy and security](#privacy-and-security)).
 2. Pick a repository. The picker lists every repository your account can see, most recently pushed first, with search, owner filters (you and your organisations) and a **Recent** list kept on this device. Badges mark repositories that are **Private**, a **Fork**, **Archived**, or **Read-only** (you have no push permission).
 3. The repository's tree opens in the explorer. `.hit` files under `hittable/` open in the Runner, markdown in the markdown editor, everything else in the code editor.
-4. Edit and send. Every edit is kept in a working copy on this device, keyed by repository and branch, so a reload does not lose it. Nothing is written to GitHub until you commit.
-5. Review your changes. Each changed file is marked **M** (modified), **A** (added) or **D** (deleted), and opens as a diff against the branch.
+4. Edit and send. Every edit is kept in a working copy in this browser's IndexedDB, keyed by repository and branch, so a reload or a closed tab does not lose it. Nothing is written to GitHub until you commit.
+5. Review your changes. **Changes** turns the page into a review: the changed files and the commit box on the left, the picked file's diff on the right, side by side (**Inline** on request, and on a phone). Each file is marked **M** (modified), **A** (added) or **D** (deleted); **Open file** goes back to the editor with that file.
 6. Commit to the current branch, or commit to a new branch and open a pull request.
 
 `hittable/env.local.json` is never committed. Archived repositories, repositories you cannot push to and empty repositories open read-only: you can still send requests, but not edit. If an organisation's repositories are missing, see [the FAQ](/docs/faq#organisation-repositories-are-missing).
@@ -88,7 +88,7 @@ The body picks a view from the content type, and you can override it until the n
 
 ## Layout
 
-Every divider moves: the explorer, Source control (GitHub), request and response, preview and source.
+Every divider moves: the explorer, the Changes file list (GitHub), request and response, preview and source.
 
 - **Drag** a divider to resize. Drag a pane well past its minimum and it collapses; a **Show …** bar brings it back.
 - **Double-click** a divider to reset it.

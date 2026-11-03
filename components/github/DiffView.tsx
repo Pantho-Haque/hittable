@@ -27,9 +27,9 @@ export type DiffSides = {
 
 const size = (n: number | null) => (n === null ? "no file" : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} bytes`);
 
-/** Read-only diff of two texts: inline by default, side by side on request. */
+/** Read-only diff of two texts: side by side, or inline on request (and by default on a phone). */
 export function DiffEditor({ path, original, modified }: { path: string; original: string; modified: string }) {
-  const [split, setSplit] = useState(false);
+  const [split, setSplit] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -96,34 +96,40 @@ export function DiffEditor({ path, original, modified }: { path: string; origina
   );
 }
 
-/** The diff in a large dialog. `sides` null while the texts load. */
+/** The diff of one file: loading, error, binary sizes, or the text diff. */
+export function DiffBody({ path, sides, error }: { path: string; sides: DiffSides | null; error?: string | null }) {
+  if (error) return <p role="alert" className="text-sm text-(--danger)">{error}</p>;
+  if (!sides) return <p role="status" className="text-sm text-(--muted)">Loading the diff…</p>;
+  if (sides.binary) {
+    return (
+      <div className="rounded-md border border-(--border) p-4 text-sm text-(--text)">
+        <p className="mb-2 text-(--muted)">Binary file: there is no text to compare.</p>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+          <dt className="text-(--git-deleted)">− {sides.originalLabel}</dt>
+          <dd>{size(sides.binary.original)}</dd>
+          <dt className="text-(--git-added)">+ {sides.modifiedLabel}</dt>
+          <dd>{sides.binary.modified === null ? "deleted" : size(sides.binary.modified)}</dd>
+        </dl>
+      </div>
+    );
+  }
+  return (
+    <>
+      <p className="text-xs text-(--muted)">
+        <span className="text-(--git-deleted)">−</span> {sides.originalLabel}
+        {sides.original === null && " (no file)"} · <span className="text-(--git-added)">+</span> {sides.modifiedLabel}
+        {sides.modified === null && " (deleted)"}
+      </p>
+      <DiffEditor path={path} original={sides.original ?? ""} modified={sides.modified ?? ""} />
+    </>
+  );
+}
+
+/** The diff in a large dialog (comparing with theirs). `sides` null while the texts load. */
 export default function DiffDialog({ path, sides, error, onClose }: { path: string; sides: DiffSides | null; error?: string | null; onClose: () => void }) {
   return (
     <ModalShell title={path} size="lg" onClose={onClose}>
-      {error ? (
-        <p role="alert" className="text-sm text-(--danger)">{error}</p>
-      ) : !sides ? (
-        <p role="status" className="text-sm text-(--muted)">Loading the diff…</p>
-      ) : sides.binary ? (
-        <div className="rounded-md border border-(--border) p-4 text-sm text-(--text)">
-          <p className="mb-2 text-(--muted)">Binary file: there is no text to compare.</p>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-            <dt className="text-(--git-deleted)">− {sides.originalLabel}</dt>
-            <dd>{size(sides.binary.original)}</dd>
-            <dt className="text-(--git-added)">+ {sides.modifiedLabel}</dt>
-            <dd>{sides.binary.modified === null ? "deleted" : size(sides.binary.modified)}</dd>
-          </dl>
-        </div>
-      ) : (
-        <>
-          <p className="text-xs text-(--muted)">
-            <span className="text-(--git-deleted)">−</span> {sides.originalLabel}
-            {sides.original === null && " (no file)"} · <span className="text-(--git-added)">+</span> {sides.modifiedLabel}
-            {sides.modified === null && " (deleted)"}
-          </p>
-          <DiffEditor path={path} original={sides.original ?? ""} modified={sides.modified ?? ""} />
-        </>
-      )}
+      <DiffBody path={path} sides={sides} error={error} />
       <div className="flex justify-end">
         <button type="button" className="workspace-button border border-(--border-strong)" onClick={onClose}>
           Close
