@@ -135,11 +135,14 @@ export default function SourceControlPanel({
   selected,
   onOpenDiff,
   onClose,
+  onDiscard,
 }: {
   backend: GitHubBackend;
   /** The file whose diff is shown. */
   selected?: string | null;
   onOpenDiff: (path: string) => void;
+  /** After files are discarded (the diff shows the stored text again). */
+  onDiscard?: (paths: string[]) => void;
   onClose: () => void;
 }) {
   useBackend(backend);
@@ -171,6 +174,7 @@ export default function SourceControlPanel({
     if (paths.length === changes.length) await backend.discardAll();
     else await backend.discard(paths);
     refreshOpen(paths);
+    onDiscard?.(paths);
   };
 
   const commit = async () => {

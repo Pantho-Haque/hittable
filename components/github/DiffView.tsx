@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { MergeView, unifiedMergeView } from "@codemirror/merge";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
-import { EditorView, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { ModalShell } from "@/components/ui/SharedModal";
 import { hittableTheme } from "@/components/workspace/editorTheme";
 import { languageForFile } from "@/utils/workspace/editorLanguages";
@@ -14,7 +15,37 @@ const diffTheme = EditorView.theme({
   ".cm-deletedChunk, .cm-deletedLine": { backgroundColor: "color-mix(in srgb, var(--git-deleted) 12%, transparent)" },
   ".cm-deletedText, .cm-deletedChunk .cm-deletedText": { background: "color-mix(in srgb, var(--git-deleted) 30%, transparent)" },
   ".cm-collapsedLines": { color: "var(--muted)", background: "var(--surface-2)" },
+  // Revert in the inline view (inside the editor; the split view's ⟲ is styled in workspace.css).
+  ".cm-chunkButtons button": {
+    color: "var(--muted)",
+    border: "1px solid var(--border-strong)",
+    borderRadius: "4px",
+    background: "var(--surface-1)",
+    padding: "0 6px",
+    fontSize: "11px",
+    cursor: "pointer",
+  },
+  ".cm-chunkButtons button:hover": { color: "var(--brand)" },
 });
+
+/** The ⟲ between the panes: puts the last commit's lines back over yours for that change. */
+const revertButton = () => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = "⟲";
+  b.title = "Revert this change";
+  b.setAttribute("aria-label", "Revert this change");
+  return b;
+};
+
+/** Inline view: only Revert (Accept would rewrite the last commit, which isn't yours to edit). */
+const inlineControls = (type: "accept" | "reject", action: (e: MouseEvent) => void) => {
+  if (type === "accept") return document.createElement("span");
+  const b = revertButton();
+  b.textContent = "⟲ Revert";
+  b.onmousedown = action;
+  return b;
+};
 
 export type DiffSides = {
   original: string | null;
@@ -27,32 +58,60 @@ export type DiffSides = {
 
 const size = (n: number | null) => (n === null ? "no file" : n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} bytes`);
 
-/** Read-only diff of two texts: side by side, or inline on request (and by default on a phone). */
-export function DiffEditor({ path, original, modified }: { path: string; original: string; modified: string }) {
+/**
+ * Diff of two texts: side by side, or inline on request (and by default on a
+ * phone). With `onChange` your side is editable and every change has a ⟲
+ * that puts the last commit's lines back; each edit is reported as the whole text.
+ */
+export function DiffEditor({
+  path,
+  original,
+  modified,
+  onChange,
+}: {
+  path: string;
+  original: string;
+  modified: string;
+  onChange?: (text: string) => void;
+}) {
   const [split, setSplit] = useState(() => typeof window === "undefined" || window.innerWidth >= 768);
   const host = useRef<HTMLDivElement>(null);
+  const editable = !!onChange;
+  // Your text as last typed: a layout switch rebuilds the views from it, and
+  // the views are never rebuilt for a `modified` that is just your own edit coming back.
+  const mine = useRef(modified);
+  const change = useRef(onChange);
+  useEffect(() => {
+    change.current = onChange;
+  });
 
   useEffect(() => {
     const parent = host.current;
     if (!parent) return;
     const language = new Compartment();
-    const base: Extension[] = [
-      lineNumbers(),
-      hittableTheme,
-      diffTheme,
-      EditorState.readOnly.of(true),
-      EditorView.editable.of(false),
-      language.of([]),
-    ];
+    const readOnly = [EditorState.readOnly.of(true), EditorView.editable.of(false)];
+    const base: Extension[] = [lineNumbers(), hittableTheme, diffTheme, language.of([])];
+    const yours: Extension[] = editable
+      ? [
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+          EditorView.updateListener.of((u) => {
+            if (!u.docChanged) return;
+            mine.current = u.state.doc.toString();
+            change.current?.(mine.current);
+          }),
+        ]
+      : readOnly;
     const collapse = { margin: 3, minSize: 6 };
     let views: EditorView[];
     let destroy: () => void;
     if (split) {
       const mv = new MergeView({
-        a: { doc: original, extensions: [...base, EditorView.contentAttributes.of({ "aria-label": `${path}, before` })] },
-        b: { doc: modified, extensions: [...base, EditorView.contentAttributes.of({ "aria-label": `${path}, after` })] },
+        a: { doc: original, extensions: [...base, ...readOnly, EditorView.contentAttributes.of({ "aria-label": `${path}, before` })] },
+        b: { doc: mine.current, extensions: [...base, ...yours, EditorView.contentAttributes.of({ "aria-label": `${path}, after` })] },
         parent,
         collapseUnchanged: collapse,
+        ...(editable && { revertControls: "a-to-b" as const, renderRevertControl: revertButton }),
       });
       views = [mv.a, mv.b];
       destroy = () => mv.destroy();
@@ -60,10 +119,11 @@ export function DiffEditor({ path, original, modified }: { path: string; origina
       const view = new EditorView({
         parent,
         state: EditorState.create({
-          doc: modified,
+          doc: mine.current,
           extensions: [
             ...base,
-            unifiedMergeView({ original, mergeControls: false, collapseUnchanged: collapse }),
+            ...yours,
+            unifiedMergeView({ original, mergeControls: editable ? inlineControls : false, collapseUnchanged: collapse }),
             EditorView.contentAttributes.of({ "aria-label": `Changes to ${path}` }),
           ],
         }),
@@ -79,7 +139,7 @@ export function DiffEditor({ path, original, modified }: { path: string; origina
       live = false;
       destroy();
     };
-  }, [split, path, original, modified]);
+  }, [split, path, original, editable]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -97,7 +157,18 @@ export function DiffEditor({ path, original, modified }: { path: string; origina
 }
 
 /** The diff of one file: loading, error, binary sizes, or the text diff. */
-export function DiffBody({ path, sides, error }: { path: string; sides: DiffSides | null; error?: string | null }) {
+export function DiffBody({
+  path,
+  sides,
+  error,
+  onChange,
+}: {
+  path: string;
+  sides: DiffSides | null;
+  error?: string | null;
+  /** Makes your side editable (a text file that still exists). */
+  onChange?: (text: string) => void;
+}) {
   if (error) return <p role="alert" className="text-sm text-(--danger)">{error}</p>;
   if (!sides) return <p role="status" className="text-sm text-(--muted)">Loading the diff…</p>;
   if (sides.binary) {
@@ -119,8 +190,17 @@ export function DiffBody({ path, sides, error }: { path: string; sides: DiffSide
         <span className="text-(--git-deleted)">−</span> {sides.originalLabel}
         {sides.original === null && " (no file)"} · <span className="text-(--git-added)">+</span> {sides.modifiedLabel}
         {sides.modified === null && " (deleted)"}
+        {onChange && sides.modified !== null && " · edit your side; ⟲ reverts one change, Ctrl/Cmd+Z undoes"}
       </p>
-      <DiffEditor path={path} original={sides.original ?? ""} modified={sides.modified ?? ""} />
+      <DiffEditor
+        // A new file or a new base starts over from the stored text; your own
+        // edits coming back as `modified` never rebuild the views.
+        key={`${path}\0${sides.original ?? ""}`}
+        path={path}
+        original={sides.original ?? ""}
+        modified={sides.modified ?? ""}
+        onChange={sides.modified === null ? undefined : onChange}
+      />
     </>
   );
 }

@@ -76,3 +76,9 @@ body.is-splitting-x iframe, body.is-splitting-y iframe { pointer-events: none; }
 .url-field:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px var(--accent-soft); }
 .workspace .url-field :is(select, textarea):focus-visible { outline: none; }
 .url-field select:focus-visible { background: var(--surface-2); }
+
+/* Diff: the ⟲ between the panes (outside both editors, so not in their theme). */
+.cm-mergeView .cm-merge-revert { width: 2.25rem; background: var(--surface-1); }
+.cm-mergeView .cm-merge-revert button { font-size: 18px; line-height: 1; padding: 2px 0; color: var(--text); border-radius: 4px; }
+.cm-mergeView .cm-merge-revert button:hover { color: var(--brand); background: var(--surface-2); }
+.cm-mergeView .cm-merge-revert button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }

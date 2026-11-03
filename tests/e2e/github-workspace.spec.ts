@@ -111,6 +111,39 @@ test("pick a repo, edit in the Runner, reload, review the diff and commit", asyn
   await expect(changesButton(page)).toHaveAccessibleName("Source control, 0 changes");
 });
 
+test("edit your side of the diff and revert one change", async ({ page, request }) => {
+  await openRepo(page);
+  await editUrl(page, "{{baseUrl}}/users/2");
+  await openChanges(page);
+  const diff = page.getByRole("region", { name: GET_HIT });
+  const yours = diff.getByRole("textbox", { name: `${GET_HIT}, after` });
+  await expect(yours).toContainText("users/2");
+
+  // One more change typed on your side, then the URL change (the first) reverted on its own.
+  const reverts = diff.getByRole("button", { name: "Revert this change" });
+  await expect(reverts.first()).toBeVisible();
+  const before = await reverts.count();
+  await yours.click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n// from the diff");
+  await expect(reverts).toHaveCount(before + 1);
+  await reverts.first().click();
+  await expect(yours).not.toContainText("users/2");
+  await expect(reverts).toHaveCount(before);
+
+  // The editor underneath reloaded the same text (no longer a valid request, so as plain text).
+  await closeChanges(page);
+  const text = page.getByRole("textbox", { name: "Edit get.hit" });
+  await expect(text).toContainText("// from the diff");
+  await expect(text).not.toContainText("users/2");
+  await openChanges(page);
+  await panel(page).getByRole("button", { name: /Commit to main/ }).click();
+  await expect(page.getByText(/^Committed [0-9a-f]{7} to main$/)).toBeVisible();
+  const file = (await fakeState(request)).files[GET_HIT];
+  expect(file).toContain("// from the diff");
+  expect(file).not.toContain("users/2");
+});
+
 test("delete a file: D, then commit the deletion", async ({ page, request }) => {
   await openRepo(page);
   await item(page, "README.md").locator("> div").first().click({ button: "right" });
