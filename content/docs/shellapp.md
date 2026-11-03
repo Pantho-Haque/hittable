@@ -16,8 +16,9 @@ Around the request runner it carries the tools you would otherwise leave the ter
 - fuzzy file find and live grep
 - a Git panel with staging by line, split diffs you can edit in place, a commit-message drafter, blame, branches and stashes
 - an integrated shell on a real PTY
+- [VS Code extensions](/docs/shellapp-extensions) from Open VSX: language servers, formatters, themes, snippets and commands
 
-What it deliberately does **not** do: AI code completion in the editor (suggestions come from the buffer, the language and the `.hit` schema), commit bodies that explain *why* (the diff does not know), an integrated terminal on native Windows (it needs a PTY; use WSL), and GitLens-style commit graphs, worktrees or interactive rebase.
+What it deliberately does **not** do: AI code completion built in (suggestions come from the buffer, the language, the `.hit` schema and any extensions you install), debuggers and notebooks from extensions, commit bodies that explain *why* (the diff does not know), an integrated terminal on native Windows (it needs a PTY; use WSL), and GitLens-style commit graphs, worktrees or interactive rebase.
 
 ## Install
 
@@ -157,7 +158,7 @@ Some chords cannot arrive at all: a terminal sends the same byte for <kbd>ctrl+c
 hittable update            # download the latest release, verify SHA-256, replace this binary
 hittable update --check    # only report whether a newer release exists
 hittable update --tag sh-v1.2.0
-hittable uninstall         # remove the binary, ~/.hittable and any downloaded model
+hittable uninstall         # remove the binary, ~/.hittable (extensions included) and any downloaded model
 ```
 
 `update` checks the install directory is writable before downloading, verifies the checksum, swaps the binary atomically, and runs the new binary's `version` to prove it works. It never touches `~/.hittable`, so a model you enabled stays enabled. `uninstall` refuses while another `hittable` is running, removes data first and binaries last, and leaves your project folders alone.

@@ -1,12 +1,17 @@
 package extpanel
 
 import (
+	"archive/zip"
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/hittable/shellapp/internal/extensions"
 	"image"
 	"image/color"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -215,9 +220,13 @@ func TestButtonsAndClicks(t *testing.T) {
 func TestAccordionHoverAndWheel(t *testing.T) {
 	fakeOpenVSX(t, nil)
 	p, ch := newPanel(t)
-	p.SetSize(120, 9) // short, so the list scrolls
+	p.SetSize(120, minHeight) // the smallest panel, so the list scrolls
 	p.Open()
 	drain(t, p, ch, func() bool { return len(p.list) == 2 })
+	for i := 0; i < 5; i++ {
+		p.popular = append(p.popular, entry{id: fmt.Sprintf("acme.more%d", i), name: "More", publisher: "acme"})
+	}
+	p.rebuild()
 	p.View()
 
 	// The pointer over the page focuses it; back over the list, the list.
@@ -244,11 +253,18 @@ func TestAccordionHoverAndWheel(t *testing.T) {
 	if !p.collapsed[secPopular] || len(p.rows) != 1 {
 		t.Fatalf("collapse: %v, %d rows", p.collapsed, len(p.rows))
 	}
-	if v := plain(p.View()); !strings.Contains(v, "▸ POPULAR ON OPEN VSX  2") || strings.Contains(v, "Prettier") {
-		t.Errorf("collapsed section still shows its entries:\n%s", v)
+	v := plain(p.View())
+	rows := 0
+	for _, h := range p.hits {
+		if h.act == "row" {
+			rows++
+		}
+	}
+	if !strings.Contains(v, "▸ POPULAR ON OPEN VSX  7") || rows != 1 {
+		t.Errorf("collapsed section still shows its entries (%d rows):\n%s", rows, v)
 	}
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if p.collapsed[secPopular] || len(p.rows) != 3 {
+	if p.collapsed[secPopular] || len(p.rows) != 8 {
 		t.Errorf("expand: %v, %d rows", p.collapsed, len(p.rows))
 	}
 }
@@ -370,5 +386,83 @@ func TestKittyIcons(t *testing.T) {
 	p.icon("acme.x", "", 12, 6, "")
 	if len(p.icons.kitty) != 2 {
 		t.Errorf("sizes share an image: %d", len(p.icons.kitty))
+	}
+}
+
+func TestTinyPanelNeverPanics(t *testing.T) {
+	fakeOpenVSX(t, nil)
+	p, ch := newPanel(t)
+	p.Open()
+	drain(t, p, ch, func() bool { return len(p.list) == 2 })
+	for _, sz := range [][2]int{{0, 0}, {1, 1}, {10, 3}, {59, 30}, {120, 13}, {60, 14}, {61, 15}} {
+		p.SetSize(sz[0], sz[1])
+		v := p.View()
+		lines := strings.Split(v, "\n")
+		if sz[0] > 0 && sz[1] > 0 && len(lines) != sz[1] {
+			t.Errorf("%v: %d rows", sz, len(lines))
+		}
+		for i, l := range lines {
+			if w := ansi.StringWidth(l); w > sz[0] {
+				t.Errorf("%v: row %d is %d wide", sz, i, w)
+			}
+		}
+		p.HandleMouse(tea.MouseMsg{X: 1, Y: 1, Type: tea.MouseWheelDown})
+		p.HandleKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+}
+
+// In a common 80×24 terminal (a 21-row panel), an installed extension with
+// code and setup left to do still shows its tabs and README.
+func TestShortPageKeepsTabsVisible(t *testing.T) {
+	fakeOpenVSX(t, nil)
+	p, ch := newPanel(t)
+	vsix := filepath.Join(t.TempDir(), "c.vsix")
+	f, _ := os.Create(vsix)
+	zw := zip.NewWriter(f)
+	w, _ := zw.Create("extension/package.json")
+	w.Write([]byte(`{"name":"c","publisher":"acme","version":"1.0.0","engines":{"vscode":"^1.80.0"},"main":"./m.js","activationEvents":["onLanguage:yaml"]}`))
+	w, _ = zw.Create("extension/m.js")
+	w.Write([]byte("exports.activate=()=>{}"))
+	w, _ = zw.Create("extension/README.md")
+	w.Write([]byte("# Readme\n\nREADME-BODY here.\n"))
+	zw.Close()
+	f.Close()
+	if _, err := extensions.Install(context.Background(), vsix, nil); err != nil {
+		t.Fatal(err)
+	}
+	p.Actions.State = func() State {
+		return State{Spinner: "⠋", Progress: -1, NodeProblem: "Needs Node.js 20+", NodePlan: "Install Node.js with Homebrew"}
+	}
+	p.SetSize(80, 21)
+	p.Open()
+	drain(t, p, ch, func() bool { return len(p.list) >= 1 && p.sel == "acme.c" })
+	v := plain(p.View())
+	for _, want := range []string{"DETAILS", "README-BODY", "Install Node.js", "Trust this folder"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q at 80×21:\n%s", want, v)
+		}
+	}
+}
+
+// Every button the page draws is fully on screen where its hit area says.
+func TestButtonsAreNeverCutOff(t *testing.T) {
+	fakeOpenVSX(t, nil)
+	p, ch := newPanel(t)
+	p.Actions.State = func() State {
+		return State{Spinner: "⠋", Progress: -1, NodeProblem: "Needs Node.js 20+, and none is installed", NodePlan: "Install Node.js 24 to ~/.local"}
+	}
+	p.Open()
+	drain(t, p, ch, func() bool { return len(p.list) == 2 })
+	for _, w := range []int{60, 80, 100, 150} {
+		p.SetSize(w, 30)
+		v := strings.Split(plain(p.View()), "\n")
+		for _, h := range p.hits {
+			if h.act == "row" || h.act == "search" || h.y0 >= len(v) {
+				continue
+			}
+			if h.x1 > w {
+				t.Errorf("width %d: %s button ends at %d", w, h.act, h.x1)
+			}
+		}
 	}
 }

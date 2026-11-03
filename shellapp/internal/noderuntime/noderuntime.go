@@ -585,3 +585,23 @@ func isFile(p string) bool {
 }
 
 func exists(p string) bool { _, err := os.Lstat(p); return err == nil }
+
+// InstalledByHittable returns the shell command that removes a Node.js
+// InstallGlobal put in ~/.local, or "" when there is none.
+func InstalledByHittable() string {
+	ms, _ := filepath.Glob(filepath.Join(localNodeRoot(), "node-v*"))
+	if len(ms) == 0 || runtime.GOOS == "windows" {
+		if len(ms) > 0 {
+			return "rmdir /s " + strings.Join(ms, " ")
+		}
+		return ""
+	}
+	cmd := "rm -rf " + strings.Join(ms, " ")
+	for _, c := range []string{"node", "npm", "npx", "corepack"} {
+		link := filepath.Join(localBin(), c)
+		if cur, err := os.Readlink(link); err == nil && strings.HasPrefix(cur, localNodeRoot()) {
+			cmd += " " + link
+		}
+	}
+	return cmd
+}

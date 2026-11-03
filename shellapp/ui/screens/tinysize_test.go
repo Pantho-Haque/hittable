@@ -15,6 +15,7 @@ import (
 // is laid out, rendered and poked with mouse and keys at sizes far below the
 // smallest supported layout; none of it may panic.
 func TestTinyTerminalSizesNeverPanic(t *testing.T) {
+	installTestExtension(t)
 	views := map[string]func(m *MainScreen, hd string){
 		"welcome": func(m *MainScreen, hd string) {},
 		"runner":  func(m *MainScreen, hd string) { m.openFileRaw(filepath.Join(hd, "a.hit")) },
@@ -36,10 +37,16 @@ func TestTinyTerminalSizesNeverPanic(t *testing.T) {
 			m.Term.Open = true // the panel, without spawning a shell
 			m.focusTerminal()
 		},
-		"git":     func(m *MainScreen, hd string) { m.toggleGit() },
-		"palette": func(m *MainScreen, hd string) { m.openPalette(palette.ModeFiles) },
-		"grep":    func(m *MainScreen, hd string) { m.openPalette(palette.ModeGrep) },
-		"help":    func(m *MainScreen, hd string) { m.toggleHelp() },
+		"git":        func(m *MainScreen, hd string) { m.toggleGit() },
+		"extensions": func(m *MainScreen, hd string) { m.openExtensions("") },
+		"ext-page": func(m *MainScreen, hd string) {
+			m.openExtensions("")
+			m.ExtPanel.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+		},
+		"cmd-palette": func(m *MainScreen, hd string) { m.openCommandPalette() },
+		"palette":     func(m *MainScreen, hd string) { m.openPalette(palette.ModeFiles) },
+		"grep":        func(m *MainScreen, hd string) { m.openPalette(palette.ModeGrep) },
+		"help":        func(m *MainScreen, hd string) { m.toggleHelp() },
 		"hidden-sidebar": func(m *MainScreen, hd string) {
 			m.openFileRaw(filepath.Join(hd, "a.hit"))
 			m.toggleExplorer()

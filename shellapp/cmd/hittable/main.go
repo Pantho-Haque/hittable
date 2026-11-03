@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/hittable/shellapp/internal/collection"
+	"github.com/hittable/shellapp/internal/noderuntime"
 	"github.com/hittable/shellapp/internal/rootdir"
 	"github.com/hittable/shellapp/internal/scaffold"
 	"github.com/hittable/shellapp/ui"
@@ -70,7 +71,16 @@ plain .hit files (shared with the Hittable web app), variables in hittable/env.j
                                (or alt+p › Extensions inside the app)
 
   hittable update              update to the latest release (verified download)
-  hittable uninstall           remove hittable, its data, extensions and the model from this machine`,
+  hittable uninstall           remove hittable, its data, extensions and the model from this machine
+
+Inside the app: alt+x Extensions · alt+p command palette · ? or F1 every key.
+
+Environment:
+  HITTABLE_HOME          where state lives (default ~/.hittable)
+  HITTABLE_NODE          the Node.js extensions run with (default: the one on PATH)
+  HITTABLE_IMAGES        kitty | blocks: how extension icons are drawn
+  HITTABLE_EXT_REGISTRY  an Open VSX mirror instead of open-vsx.org
+  HITTABLE_AI=0          turn commit-message drafting with a model off`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		return cobra.MaximumNArgs(1)(cmd, exportFormatArg(args))
 	},
@@ -168,6 +178,10 @@ var uninstallCmd = &cobra.Command{
 			fmt.Printf("  (%s freed)\n", humanBytes(freed))
 		}
 		fmt.Println("hittable has been uninstalled. Your project files (hittable/ folders) were left untouched.")
+		if note := noderuntime.InstalledByHittable(); note != "" {
+			fmt.Println("The Node.js hittable installed for extensions was kept, since other tools may use it.")
+			fmt.Println("To remove it:", note)
+		}
 		return nil
 	},
 }

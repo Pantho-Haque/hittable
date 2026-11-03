@@ -19,9 +19,16 @@ hittable model status          # what is installed, how much disk, is it running
 hittable model disable         # stop the server, free the memory, keep the files
 hittable model delete          # remove the model and runtime, reclaim the disk
 
+hittable ext search yaml       # search VS Code extensions on Open VSX
+hittable ext install <id>      # install one (also id@1.2.3, id@latest, or a .vsix file)
+hittable ext list              # installed extensions
+hittable ext uninstall <id>    # remove one (enable / disable <id> to switch it)
+hittable ext trust [folder]    # allow extension code to run in a folder
+hittable ext node [status|install|remove]   # the Node.js extensions with code run in
+
 hittable update                # update to the latest release (verified download)
 hittable version               # hittable <version> <os>/<arch>
-hittable uninstall             # remove hittable, its data and the model
+hittable uninstall             # remove hittable, its data, extensions and the model
 hittable -h                    # all options
 ```
 
@@ -54,6 +61,22 @@ Creates `hittable/testcollection/test.hit` (a real, runnable request), `hittable
 
 Nothing is downloaded until you run `model enable`, and a non-interactive stdin answers "no", so a script piping into it never starts a 2 GB download by accident. Details on what gets installed and how it runs are on the [Commit messages with a local model](/docs/shellapp-ai) page.
 
+## `hittable ext …`
+
+VS Code extensions from [Open VSX](https://open-vsx.org); the same actions are in the app's Extensions panel (<kbd>alt+x</kbd>). See [VS Code extensions](/docs/shellapp-extensions).
+
+| Command | What it does |
+| :--- | :--- |
+| `ext search <words>` | search Open VSX, most installed first; `✓` marks a verified publisher |
+| `ext install <id[@version] \| file.vsix>…` | install with dependencies. Checks the registry's SHA-256 and Ed25519 signature, picks the newest stable version whose `engines.vscode` accepts the API hittable provides and the build for this platform. `id@latest` updates an installed one. Microsoft-licensed extensions and ones that need proposed APIs are refused |
+| `ext list` | id, version, enabled or disabled, declarative or code, name |
+| `ext uninstall <id>…` | remove; refuses while another installed extension depends on it |
+| `ext enable <id>…`, `ext disable <id>…` | switch without uninstalling |
+| `ext trust [folder]` | let extension code run in a folder (default: the current one); themes and snippets need no trust |
+| `ext node status` | which Node.js runs extensions, and from where |
+| `ext node install` | install Node.js for your account when there is none: Homebrew, winget, or the official build in `~/.local` (never sudo) |
+| `ext node remove` | remove only what `ext node install` put in `~/.local` |
+
 ## `hittable update`
 
 | Flag | Meaning |
@@ -66,7 +89,7 @@ The download is verified against the release's `checksums.txt`; a release that p
 
 ## `hittable uninstall`
 
-Refuses while another `hittable` process is running. Removes, in this order: `~/.hittable` (or `$HITTABLE_HOME`), `~/.config/hittable`, `~/.local/share/hittable`, `~/.cache/hittable` and their XDG equivalents, reporting the space freed; then the binary itself, every `hittable` on your `PATH`, `~/.local/bin/hittable` and `~/go/bin/hittable`. Project folders are never touched.
+Refuses while another `hittable` process is running. Removes, in this order: `~/.hittable` (or `$HITTABLE_HOME`, which holds installed extensions and their data), `~/.config/hittable`, `~/.local/share/hittable`, `~/.cache/hittable` and their XDG equivalents, reporting the space freed; then the binary itself, every `hittable` on your `PATH`, `~/.local/bin/hittable` and `~/go/bin/hittable`. Project folders are never touched. A Node.js that `ext node install` put in `~/.local` is kept, since other tools may use it; the command prints how to remove it.
 
 ## Environment variables
 
@@ -76,6 +99,9 @@ Refuses while another `hittable` process is running. Removes, in this order: `~/
 | `HITTABLE_AI_ENDPOINT` | base URL of an OpenAI-compatible server you already run; hittable will never spawn or download one |
 | `HITTABLE_AI_MODEL` | model identifier to request from that endpoint |
 | `HITTABLE_HOME` | relocate `~/.hittable` |
+| `HITTABLE_NODE=<path>` | the Node.js (20 or newer) extensions run with, instead of the one found on the machine |
+| `HITTABLE_IMAGES=kitty\|blocks` | extension icons as real images (kitty graphics protocol) or half blocks; detected by default |
+| `HITTABLE_EXT_REGISTRY=<url>` | another Open VSX server (a company mirror) instead of open-vsx.org |
 | `HITTABLE_KEYLOG=<path>` | log the key names your terminal actually delivers |
 | `HITTABLE_PTYLOG=<path>` | record the raw byte stream a program in the integrated terminal writes, before the emulator sees it |
 | `HITTABLE_VERSION`, `HITTABLE_INSTALL_DIR` | installer only: release tag and target directory for `install.sh` |

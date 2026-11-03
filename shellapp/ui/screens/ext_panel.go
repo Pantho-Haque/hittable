@@ -57,6 +57,7 @@ func extpanelActions(m *MainScreen) extpanel.Actions {
 		},
 		RestartHost: func() { m.Ext.crashes = nil; m.pendingCmd = m.extRestart() },
 		ShowLog:     func() { m.ExtOpen = false; m.showOutput("Extension Host") },
+		ShowNodeLog: func() { m.ExtOpen = false; m.showOutput("Node.js install") },
 		State: func() extpanel.State {
 			x := m.Ext
 			pct := x.installPct

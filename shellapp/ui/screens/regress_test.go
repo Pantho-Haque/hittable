@@ -1,7 +1,10 @@
 package screens
 
 import (
+	"archive/zip"
+	"context"
 	"encoding/json"
+	"github.com/hittable/shellapp/internal/extensions"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,6 +132,7 @@ func TestRenameAndNewFolder(t *testing.T) {
 
 // The rendered frame must be exactly Height rows in every UI state.
 func TestLayoutFits(t *testing.T) {
+	installTestExtension(t) // so the Extensions panel has an entry, a page and a checklist
 	for _, sz := range [][2]int{{80, 24}, {120, 40}, {200, 60}} {
 		m, hd := newTestScreen(t)
 		m.SetSize(sz[0], sz[1])
@@ -150,8 +154,11 @@ func TestLayoutFits(t *testing.T) {
 			"nosidebar":   func() { m.GitOpen = false; m.toggleExplorer() },
 			"mdpreview":   func() { m.toggleExplorer(); m.openFileRaw(filepath.Join(hd, "notes.md")); m.setMdMode(MdPreview) },
 			"mdsplit":     func() { m.setMdMode(MdSplit) },
+			"extensions":  func() { m.openExtensions("") },
+			"extpage":     func() { m.ExtPanel.HandleKey(tea.KeyMsg{Type: tea.KeyTab}) },
+			"cmdpalette":  func() { m.toggleExtensions(); m.openCommandPalette() },
 		}
-		for _, name := range []string{"runner", "dropdown", "search", "headers", "invalidjson", "help", "text", "menu", "termopen", "termrunner", "git", "nosidebar", "mdpreview", "mdsplit"} {
+		for _, name := range []string{"runner", "dropdown", "search", "headers", "invalidjson", "help", "text", "menu", "termopen", "termrunner", "git", "nosidebar", "mdpreview", "mdsplit", "extensions", "extpage", "cmdpalette"} {
 			states[name]()
 			lines := strings.Split(m.View(), "\n")
 			if len(lines) != sz[1] {
@@ -565,5 +572,32 @@ func TestBlameFollowsExplorerClick(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.GitOpen || m.TextEd.GetCursorRow() != 1 {
 		t.Fatalf("enter: open=%v row=%d", m.GitOpen, m.TextEd.GetCursorRow())
+	}
+}
+
+// installTestExtension installs a small extension with code (and points the
+// registry at a closed port, so no test reaches open-vsx.org).
+func installTestExtension(t *testing.T) {
+	t.Helper()
+	t.Setenv("HITTABLE_HOME", t.TempDir())
+	t.Setenv("HITTABLE_EXT_REGISTRY", "http://127.0.0.1:1")
+	vsix := filepath.Join(t.TempDir(), "x.vsix")
+	f, err := os.Create(vsix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	w, _ := zw.Create("extension/package.json")
+	w.Write([]byte(`{"name":"layout","publisher":"acme","version":"1.0.0","displayName":"A Very Long Extension Name For Layout Tests",
+		"description":"An extension whose description is long enough to need truncating in narrow panes","engines":{"vscode":"^1.80.0"},
+		"main":"./m.js","contributes":{"commands":[{"command":"acme.go","title":"Go","category":"Acme"}]}}`))
+	w, _ = zw.Create("extension/m.js")
+	w.Write([]byte(`exports.activate=()=>{}`))
+	w, _ = zw.Create("extension/README.md")
+	w.Write([]byte("# Layout\n\n" + strings.Repeat("A line of README text that wraps. ", 40)))
+	zw.Close()
+	f.Close()
+	if _, err := extensions.Install(context.Background(), vsix, nil); err != nil {
+		t.Fatal(err)
 	}
 }

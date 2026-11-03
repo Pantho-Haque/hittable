@@ -18,6 +18,8 @@ All chords use <kbd>ctrl</kbd> for cross-platform reach. A terminal cannot deliv
 | `ctrl+p`, `alt+f` | find file · live grep |
 | `ctrl+j`, `` ctrl+` `` | toggle the integrated terminal (`ctrl+j` is the reliable one) |
 | `ctrl+g`, `alt+g`, `F5` | toggle the Git panel (`g` in the explorer, or click `⎇ Git`) |
+| `alt+x` | toggle the Extensions panel (or click `Extensions`) |
+| `alt+p` | command palette: hittable's commands and every command installed extensions add |
 | `esc` | close file / dismiss |
 | `?`, `F1` | help overlay (scrolls with `↑↓`, `pgup/pgdn`, `g/G`, wheel) |
 | `ctrl+c` | quit (copies a selection first, if there is one) |
@@ -73,6 +75,31 @@ Every editor is the same component: the Text view, the Params / Headers / Body t
 | `shift+wheel`, wheel left/right | scroll sideways with wrap off |
 | `ctrl+←/→`, `alt+←/→` | jump by word |
 | `tab`, `shift+tab` | indent two spaces · leave the editor |
+
+### With a language extension installed
+
+| Key | Action |
+| :--- | :--- |
+| `alt+h` | hover information at the cursor (any key closes it) |
+| `F12`, `shift+F12` | go to definition · references |
+| `F2` | rename the symbol |
+| `alt+.` | quick fixes and refactorings |
+| `alt+shift+f` | format the document |
+| `F8` | next problem in the file |
+
+## Extensions panel
+
+| Key | Action |
+| :--- | :--- |
+| type | search Open VSX; `@installed` filters what is installed |
+| `↑↓` | move through entries and section headers |
+| `⏎` | install the entry · open the page of an installed one · fold a section header |
+| `←`, `→` | fold · open the section |
+| `tab` | list ⇄ page |
+| `1` `2` `3`, `←/→` | Details · Features · Changelog (on the page) |
+| `i` `u` `e` `U` | install · uninstall · enable/disable · update (on the page) |
+| `esc` | clear the search, then close |
+| hover, wheel | the pane under the pointer takes the keys and scrolls |
 
 ## Markdown
 

@@ -114,6 +114,9 @@ func (m Manifest) HasCode() bool { return m.Main != "" }
 func (m Manifest) Unsupported() []string {
 	var out []string
 	c := m.Contributes
+	if m.Main == "" && m.Browser != "" {
+		out = append(out, "its code, which is built only for browser editors (vscode.dev)")
+	}
 	if len(c.Debuggers) > 0 {
 		out = append(out, "debuggers")
 	}

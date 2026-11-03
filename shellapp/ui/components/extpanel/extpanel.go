@@ -46,6 +46,7 @@ type Actions struct {
 	SetTheme    func(extID string)
 	RestartHost func()
 	ShowLog     func()
+	ShowNodeLog func()
 	State       func() State
 }
 
@@ -723,6 +724,10 @@ func (p *Panel) do(act string) {
 		if a.ShowLog != nil {
 			a.ShowLog()
 		}
+	case "nodelog":
+		if a.ShowNodeLog != nil {
+			a.ShowNodeLog()
+		}
 	}
 }
 
@@ -796,9 +801,20 @@ func (p *Panel) leftWidth() int {
 // listRows is the list's height in lines: border(2) + search(1) + rule(1) + status(1).
 func (p *Panel) listRows() int { return max(p.Height-5, 1) }
 
+// rep is strings.Repeat that treats a negative count as zero: in a tiny
+// window the arithmetic goes negative, and that must never panic.
+func rep(s string, n int) string { return strings.Repeat(s, max(n, 0)) }
+
+// minWidth and minHeight are the smallest panel that lays out; below them
+// the panel asks for a larger window rather than drawing a broken layout.
+const minWidth, minHeight = 60, 14
+
 // View renders the panel.
 func (p *Panel) View() string {
 	p.hits = p.hits[:0]
+	if p.Width < minWidth || p.Height < minHeight {
+		return p.tooSmall()
+	}
 	lw := p.leftWidth()
 	view := lipgloss.JoinHorizontal(lipgloss.Top, p.viewList(lw), p.viewPage(lw, p.Width-lw))
 	// Image uploads go ahead of the first row: zero width, and written
@@ -821,13 +837,23 @@ func (p *Panel) viewList(w int) string {
 	if !p.FocusDetail {
 		caret = "▏"
 	}
+	// One line, always: a wrapped search box would push the list (and the
+	// hit areas measured against it) down a row.
 	if p.Query == "" {
-		lines = append(lines, theme.PromptStyle.Render("  "+caret)+theme.MutedStyle.Render("Search Open VSX · @installed"))
+		hint := "Search Open VSX · @installed"
+		if inner < 34 {
+			hint = "Search Open VSX"
+		}
+		lines = append(lines, ansi.Truncate(theme.PromptStyle.Render("  "+caret)+theme.MutedStyle.Render(hint), inner, "…"))
 	} else {
-		lines = append(lines, theme.PromptStyle.Render("  "+p.Query+caret))
+		q := p.Query
+		if over := lipgloss.Width(q) + 4 - inner; over > 0 {
+			q = "…" + string([]rune(q)[min(over+1, len([]rune(q))):]) // keep the end, where typing happens
+		}
+		lines = append(lines, ansi.Truncate(theme.PromptStyle.Render("  "+q+caret), inner, ""))
 	}
 	p.hits = append(p.hits, hit{x0: 0, x1: w, y0: 1, y1: 1, act: "search"})
-	lines = append(lines, theme.MutedStyle.Render(strings.Repeat("─", inner)))
+	lines = append(lines, theme.MutedStyle.Render(rep("─", inner)))
 
 	var status string
 	switch {
@@ -900,7 +926,7 @@ func (p *Panel) viewList(w int) string {
 		y := 1 + len(lines)
 		if sb != nil {
 			if pad := inner - 1 - lipgloss.Width(text); pad > 0 {
-				text += strings.Repeat(" ", pad)
+				text += rep(" ", pad)
 			}
 			text = ansi.Truncate(text, inner-1, "") + sb[i]
 		}
@@ -1000,7 +1026,7 @@ func padBetween(left, right string, w int) string {
 	if gap < 1 {
 		return ansi.Truncate(left, w, "…")
 	}
-	return left + strings.Repeat(" ", gap) + right
+	return left + rep(" ", gap) + right
 }
 
 // ---------------------------------------------------------------- the page
@@ -1058,8 +1084,13 @@ func (p *Panel) viewPage(x0, w int) string {
 	if installed {
 		version = ie.Version
 	}
-	const coverIcon = 12
-	icon := p.icon(e.id, p.iconSource(e), coverIcon, 6, "")
+	// A short window gets a 3-row cover, so the tabs and README keep room.
+	coverRows := 6
+	if p.Height < 32 {
+		coverRows = 3
+	}
+	coverIcon := coverRows * 2
+	icon := p.icon(e.id, p.iconSource(e), coverIcon, coverRows, "")
 	textW := inner - coverIcon - 4
 	title := bold.Foreground(theme.TextColor).Render(ansi.Truncate(name, max(textW-14, 10), "…"))
 	if version != "" {
@@ -1093,10 +1124,10 @@ func (p *Panel) viewPage(x0, w int) string {
 	}
 	cover := []string{title, ansi.Truncate(pubLine, textW, "…"), ansi.Truncate(statLine, textW, "…"), ""}
 	cover = append(cover, wrap(desc, textW, 2)...)
-	for len(cover) < 6 {
+	for len(cover) < coverRows {
 		cover = append(cover, "")
 	}
-	for i := 0; i < 6; i++ {
+	for i := 0; i < coverRows; i++ {
 		out = append(out, " "+icon[i]+"   "+cover[i])
 	}
 
@@ -1134,7 +1165,15 @@ func (p *Panel) viewPage(x0, w int) string {
 	switch {
 	case installed || installingThis:
 		out = append(out, "")
-		out = append(out, p.setupLines(e, ie, installed, installingThis, st, x0, inner, func() int { return 1 + len(out) })...)
+		// The whole checklist when it fits with a few rows of README under
+		// it; otherwise only the steps still waiting on something.
+		mark := len(p.hits)
+		steps := p.setupLines(e, ie, installed, installingThis, st, x0, inner, func() int { return 1 + len(out) }, false)
+		if len(out)+len(steps)+2+4 > p.Height-2 {
+			p.hits = p.hits[:mark]
+			steps = p.setupLines(e, ie, installed, installingThis, st, x0, inner, func() int { return 1 + len(out) }, true)
+		}
+		out = append(out, steps...)
 	case pg.err != "":
 		out = append(out, "", " "+errStyle.Render("✖ "+pg.err))
 	case d != nil && d.Engine != "" && !extensions.EngineAllows(d.Engine, extensions.APIVersion):
@@ -1144,10 +1183,14 @@ func (p *Panel) viewPage(x0, w int) string {
 	}
 
 	// ---- tabs
-	out = append(out, theme.MutedStyle.Render(strings.Repeat("─", inner)))
+	out = append(out, theme.MutedStyle.Render(rep("─", inner)))
 	tx := x0 + 2
 	var tabs []string
-	for i, n := range tabNames {
+	names := tabNames
+	if inner < 40 {
+		names = []string{"INFO", "FEATURES", "LOG"} // a narrow page: short labels that fit
+	}
+	for i, n := range names {
 		s := theme.TabInactiveStyle.Render(" " + n + " ")
 		if i == p.Tab {
 			s = theme.TabActiveStyle.Render(" " + n + " ")
@@ -1172,7 +1215,7 @@ func (p *Panel) viewPage(x0, w int) string {
 		line = ansi.Truncate(line, inner-1, "")
 		if sb != nil {
 			if pad := inner - 1 - lipgloss.Width(line); pad > 0 {
-				line += strings.Repeat(" ", pad)
+				line += rep(" ", pad)
 			}
 			line += sb[i]
 		}
@@ -1187,10 +1230,28 @@ func (p *Panel) viewPage(x0, w int) string {
 // setupLines is the checklist from download to "active". Each step is done
 // (✓), in progress (spinner), waiting on the user (○ with the button that
 // does it) or failed (✖ with what to do).
-func (p *Panel) setupLines(e entry, ie extensions.Installed, installed, installing bool, st State, x0, inner int, y func() int) []string {
+func (p *Panel) setupLines(e entry, ie extensions.Installed, installed, installing bool, st State, x0, inner int, y func() int, pendingOnly bool) []string {
 	var out []string
+	doneMark := okStyle.Render("✓")
+	nDone := 0
 	add := func(mark, text string, buttons ...[2]string) {
+		if mark == doneMark {
+			nDone++
+			if pendingOnly {
+				return
+			}
+		}
 		line := " " + mark + " " + text
+		bw := 0
+		for _, b := range buttons {
+			bw += 2 + lipgloss.Width(" "+b[0]+" ")
+		}
+		// Buttons share the step's line when they fit, else get their own
+		// line under it, so a narrow page never cuts one off.
+		if len(buttons) > 0 && lipgloss.Width(line)+bw > inner {
+			out = append(out, ansi.Truncate(line, inner, "…"))
+			line = "   "
+		}
 		bx := x0 + 1 + lipgloss.Width(line)
 		row := y() + len(out)
 		for _, b := range buttons {
@@ -1201,7 +1262,7 @@ func (p *Panel) setupLines(e entry, ie extensions.Installed, installed, installi
 		}
 		out = append(out, ansi.Truncate(line, inner, "…"))
 	}
-	done := okStyle.Render("✓")
+	done := doneMark
 	todo := warnStyle.Render("○")
 	fail := errStyle.Render("✖")
 	spin := lipgloss.NewStyle().Foreground(theme.PrimaryColor).Render(st.Spinner)
@@ -1209,6 +1270,14 @@ func (p *Panel) setupLines(e entry, ie extensions.Installed, installed, installi
 	dim := theme.MutedStyle.Render
 
 	out = append(out, " "+theme.GitHeaderStyle.Render("SETUP"))
+	if pendingOnly {
+		defer func() {
+			out[0] += theme.MutedStyle.Render(fmt.Sprintf("  %d done", nDone))
+			if len(out) == 1 {
+				out[0] += okStyle.Render("  ✓ ready")
+			}
+		}()
+	}
 	if installing {
 		label := "Downloading and verifying"
 		if st.Progress >= 0 {
@@ -1229,6 +1298,11 @@ func (p *Panel) setupLines(e entry, ie extensions.Installed, installed, installi
 	add(done, sig+dim("  v"+ie.Version))
 	if !ie.Enabled {
 		add(todo, "Disabled", [2]string{"Enable", "toggle"})
+		return out
+	}
+	if ie.Manifest.Main == "" && ie.Manifest.Browser != "" {
+		add(fail, "Its code is built only for browser editors (vscode.dev), so it cannot run here")
+		add(" ", dim("what it declares (themes, snippets, languages) still applies"))
 		return out
 	}
 	if !ie.Manifest.HasCode() {
@@ -1262,7 +1336,7 @@ func (p *Panel) setupLines(e entry, ie extensions.Installed, installed, installi
 		}
 		add(spin, "Installing Node.js"+dim("  "+line))
 	case st.NodeErr != "":
-		add(fail, "Node.js install failed: "+st.NodeErr, [2]string{"Try again", "node"})
+		add(fail, "Node.js install failed: "+st.NodeErr, [2]string{"Try again", "node"}, [2]string{"Log", "nodelog"})
 	default:
 		add(todo, st.NodeProblem)
 		add(" ", dim("→ "+st.NodePlan), [2]string{"Install Node.js", "node"})
@@ -1453,7 +1527,7 @@ func cleanProse(md string) string {
 	md = reHeading.ReplaceAllStringFunc(md, func(s string) string {
 		m := reHeading.FindStringSubmatch(s)
 		n := int(m[1][0] - '0')
-		return "\n\n" + strings.Repeat("#", n) + " " + strings.TrimSpace(reTag.ReplaceAllString(m[2], "")) + "\n\n"
+		return "\n\n" + rep("#", n) + " " + strings.TrimSpace(reTag.ReplaceAllString(m[2], "")) + "\n\n"
 	})
 	md = reSummary.ReplaceAllString(md, "\n**$1**\n")
 	md = reLi.ReplaceAllString(md, "\n- ")
@@ -1610,7 +1684,7 @@ func settings(raw []byte) [][2]string {
 
 func stars(r float64) string {
 	full := int(r + 0.5)
-	return strings.Repeat("★", full) + strings.Repeat("☆", 5-full)
+	return rep("★", full) + rep("☆", 5-full)
 }
 
 func human(n int64) string {
@@ -1624,3 +1698,22 @@ func human(n int64) string {
 }
 
 func newerVersion(a, b string) bool { return a != b && extensions.EngineAllows(">"+b, a) }
+
+// tooSmall fills the panel's exact size with a note, so the frame keeps its
+// shape in a window too small for two panes.
+func (p *Panel) tooSmall() string {
+	w, h := max(p.Width, 0), max(p.Height, 0)
+	if w == 0 || h == 0 {
+		return ""
+	}
+	msg := []string{"Extensions", fmt.Sprintf("needs %d×%d; this pane is %d×%d", minWidth, minHeight, w, h)}
+	lines := make([]string, h)
+	for i := range lines {
+		text := ""
+		if i < len(msg) {
+			text = ansi.Truncate(" "+msg[i], w, "…")
+		}
+		lines[i] = text + rep(" ", w-lipgloss.Width(text))
+	}
+	return strings.Join(lines, "\n")
+}

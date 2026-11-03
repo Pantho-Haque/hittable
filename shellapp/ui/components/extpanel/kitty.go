@@ -49,7 +49,7 @@ func detectGraphics() graphicsMode {
 		return gBlocks
 	}
 	if os.Getenv("TERM_PROGRAM") == "ghostty" || os.Getenv("GHOSTTY_RESOURCES_DIR") != "" ||
-		os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("TERM") == "xterm-kitty" {
+		os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("TERM") == "xterm-kitty" || os.Getenv("TERM") == "xterm-ghostty" {
 		return gKitty
 	}
 	return gBlocks

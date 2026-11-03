@@ -72,6 +72,10 @@ A merge, rebase or cherry-pick that stops on conflicts adds a `⚠ merge in prog
 
 When every file is resolved the group offers to continue, which runs the matching `rebase --continue`, `cherry-pick --continue` or `commit --no-edit`.
 
+## When a command fails
+
+A git command that fails — a commit a pre-commit or commit-msg hook refuses, a push the remote rejects, a pull that stops — opens its full output in the detail pane: `✖ commit failed (exit 1)`, the command, a hint naming the hook, then everything it printed, with error lines in red. It scrolls and selects like a diff; <kbd>y</kbd> copies all of it, <kbd>esc</kbd> or a click in the list goes back, and <kbd>!</kbd> shows the last command's output again at any time. A refused commit keeps your message for the next <kbd>c</kbd>.
+
 ## Committing
 
 Press <kbd>c</kbd>. If the repository's history follows conventional commits, a type picker appears in the footer with the likely type preselected; <kbd>⏎</kbd> accepts it. A full editor then opens over the detail pane already holding a valid draft: a conventional subject under 72 characters and one bullet per directory with file names and `(+n −m)`. <kbd>ctrl+s</kbd> commits, <kbd>esc</kbd> cancels and keeps the draft for the next <kbd>c</kbd>.

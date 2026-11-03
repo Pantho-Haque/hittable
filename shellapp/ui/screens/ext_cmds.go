@@ -458,6 +458,11 @@ func (m *MainScreen) extInstallNodeNow(then func(m *MainScreen) tea.Cmd) tea.Cmd
 		return nil
 	}
 	x.installing, x.installPct, x.nodeLine, x.nodeErr = "⬇ Node.js", -1, plan.Summary, ""
+	delete(x.outputs, "Node.js install")
+	m.extAppendOutput("Node.js install", "$ "+plan.Summary+"\n")
+	if plan.Command != "" {
+		m.extAppendOutput("Node.js install", "$ "+plan.Command+"\n")
+	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
@@ -473,7 +478,8 @@ func (m *MainScreen) extInstallNodeNow(then func(m *MainScreen) tea.Cmd) tea.Cmd
 			m.Ext.installing = ""
 			if err != nil {
 				m.Ext.nodeErr = err.Error()
-				m.extNote("error", "Node.js install failed: "+err.Error())
+				m.extAppendOutput("Node.js install", "\n✖ "+err.Error()+"\n")
+				m.extNote("error", "Node.js install failed: "+err.Error()+" (its full output: Log on the extension's page)")
 				return
 			}
 			m.Ext.nodeLine = ""

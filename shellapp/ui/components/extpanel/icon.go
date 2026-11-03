@@ -239,10 +239,10 @@ func tileLines(id string, cols, rows int, bg string) []string {
 	st := lipgloss.NewStyle().Background(lipgloss.Color(c)).Foreground(lipgloss.Color("#282a36")).Bold(true)
 	out := make([]string, rows)
 	for r := range out {
-		text := strings.Repeat(" ", cols)
+		text := rep(" ", cols)
 		if r == rows/2 {
 			pad := (cols - len([]rune(letters))) / 2
-			text = strings.Repeat(" ", pad) + letters + strings.Repeat(" ", cols-pad-len([]rune(letters)))
+			text = rep(" ", pad) + letters + rep(" ", cols-pad-len([]rune(letters)))
 		}
 		out[r] = st.Render(text)
 	}

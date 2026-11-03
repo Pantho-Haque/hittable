@@ -119,7 +119,7 @@ directories, requests as `.hit` files, and variables merged into `hittable/env.j
 scripts, unsupported auth types and cookie jars are dropped and reported.
 
 `uninstall` refuses while another hittable is running. Otherwise it removes `~/.hittable`
-(including anything `model enable` downloaded) and then deletes the binary from
+(including anything `model enable` downloaded and every installed extension) and then deletes the binary from
 `~/.local/bin`, `~/go/bin` and anywhere else on your `PATH`. Your project folders are left
 untouched.
 
@@ -239,6 +239,18 @@ cherry-pick that stops on conflicts shows a `⚠ merge in progress` group with a
 
 Git state is polled every two seconds off the UI goroutine, so changes made in the
 integrated terminal or outside the app show up without a refresh.
+
+---
+
+**VS Code extensions.** `alt+x` opens the Extensions panel: search Open VSX, install,
+update, enable or remove, and read each extension's README, features and changelog. Language
+extensions give the editor diagnostics, completions, hover, go to definition (`F12`),
+references, rename (`F2`), quick fixes (`alt+.`) and formatting (`alt+shift+f`); themes,
+snippets and commands (`alt+p`) work too. See [`hittable ext`](#hittable-ext).
+
+**Command output.** When a git command fails — a hook refusing a commit, a rejected push —
+the Git panel shows everything it printed, with error lines in red; `!` shows the last
+command's output again.
 
 ---
 
@@ -391,9 +403,16 @@ Environment variables override both:
 | `HITTABLE_AI_ENDPOINT` | base URL of a server you already run; hittable will never spawn or download one |
 | `HITTABLE_AI_MODEL` | model identifier to request from that endpoint |
 | `HITTABLE_HOME` | relocate `~/.hittable` |
+| `HITTABLE_NODE=<path>` | the Node.js (20+) extensions run with, instead of the one found on the machine |
+| `HITTABLE_IMAGES=kitty\|blocks` | extension icons as real images (kitty graphics protocol) or half blocks |
+| `HITTABLE_EXT_REGISTRY=<url>` | an Open VSX mirror instead of open-vsx.org |
 | `HITTABLE_KEYLOG=<path>` | log the key names your terminal actually delivers |
 
 `ai.enabled` means "use a model if one is installed" — it is not a claim that one is.
+
+Extensions read their settings from `~/.hittable/settings.json` and the project's
+`.vscode/settings.json` (VS Code's format, comments allowed); alt+p › Preferences: Open
+User Settings (JSON) opens the first.
 
 ---
 
@@ -460,11 +479,15 @@ Environment variables override both:
 | Markdown view         | `ctrl+t` cycles Text → Preview → Split; click `[ Text \| Preview \| Split ]` | .md file open |
 | Preview scroll        | `jk` `↑↓` `pgup/pgdown` `g/G`, wheel | Preview focused (tab ⇄ editor in split) |
 | Find file             | `ctrl+p`, `/` in explorer, click `Find` | Global (fuzzy, skips node_modules etc.) |
+| Extensions panel      | `alt+x`, click `Extensions` | Global: type to search, `⏎` install/open, `tab` page, `1/2/3` tabs, `i u e U` install · uninstall · enable/disable · update |
+| Command palette       | `alt+p`         | Global: hittable's commands and every extension command |
+| Extension features    | `alt+h` hover · `F12` / `shift+F12` definition / references · `F2` rename · `alt+.` quick fix · `alt+shift+f` format · `F8` next problem | Text editor, with a language extension installed |
 | Live grep             | `alt+f`, `tab` inside the palette | Global (ripgrep → git grep → walk) |
 | Git: commits          | `f` `/` `y` `J/K` | file↔repo history · search · hash · scroll diff |
 | Git: branches         | `⏎` `n` `d` `f` | checkout · new · delete · fetch |
 | Git: stashes          | `⏎` `s` `d`     | pop · stash · drop |
 | Git: blame            | `⏎` `b`         | go to line · toggle inline blame in editor |
+| Git: command output   | `!`             | full output of the last git command; opens by itself when one fails |
 | Click                 | mouse left      | Everything: files, folders, tabs, toggle, method, URL cursor, editor cursor, response, body/headers label |
 | Scroll                | wheel           | Explorer, editor, response |
 | Select any text       | drag over it, then `ctrl+c` | Anywhere: explorer, response, preview, help, git lists; editors, the terminal panel and the git diff keep their own selections |
@@ -548,6 +571,9 @@ file "$(which hittable)"   # confirm the architecture
   terminal panel.
 - **No GitLens commit graph, worktrees, interactive rebase, forge integration, or
   compare-refs.** Those have no good terminal equivalent here.
+- **No debuggers, notebooks or custom editors from extensions,** and no Microsoft-licensed
+  extensions (their licences allow only Microsoft's VS Code). Extension HTML panels open in
+  the browser rather than the terminal.
 
 ---
 

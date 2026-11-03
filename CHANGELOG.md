@@ -4,6 +4,14 @@ All notable changes to Hittable will be documented in this file.
 
 ## [Unreleased]
 
+### v3.5 — VS Code extensions in the terminal app (see content/docs/shellapp-extensions.md)
+- **Extensions panel** (`alt+x`): search Open VSX, install with dependencies (SHA-256 and Ed25519 signature checked, the newest stable build that fits this platform and API), update, enable/disable, uninstall. Each extension's page has its icon (a real image in kitty and Ghostty), installs, rating, licence, a live setup checklist, and Details (README) / Features / Changelog tabs. Sections fold; the pane under the pointer takes the keys.
+- **Extensions run in the editor:** diagnostics, completions, hover, go to definition and references, rename, quick fixes, formatting, signature help, symbols, commands (`alt+p`), status bar items, progress, tree views, and HTML panels in the browser. Themes and snippets apply without Node.
+- **Node.js:** the one on the machine is used (`PATH`, Homebrew, nvm, fnm, Volta, …, or `HITTABLE_NODE`); when there is none, one click installs it for the account (Homebrew, winget, or the official build in `~/.local`, never sudo). Extension code runs only in trusted folders.
+- **`hittable ext list|search|install|uninstall|enable|disable|trust|node`.**
+- **Git panel:** a failed command shows its full output (hooks, rejected pushes) with errors in red, `!` reopens it, and a refused commit keeps its message.
+- **Fix:** the web app's ESLint no longer lints `shellapp/`, so lint-staged stops refusing commits that touch the terminal app's JavaScript.
+
 ### v3.3 — File uploads, web and terminal (see docs/file-uploads.md)
 - **`.hit` files can send files** with curl's `@` convention, no new keys: a `multipart/form-data` body is a JSON object whose `@path` values are files; a body that is exactly `@path` sends that file as the whole body. Paths are relative to the `.hit` file; `<<KEY>>`, `;type=` and `;filename=` work; `@@` escapes. Both apps test the parser against one shared table of cases.
 - **Web:** Body types **Multipart** (Text/File rows) and **File**. Choose a file from the computer (or drop it) and it is copied into `hittable/files/`; or pick any workspace file. Missing files are marked and block the send with their path.

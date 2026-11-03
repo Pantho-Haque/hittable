@@ -97,9 +97,17 @@ No. Without a model it drafts commit messages from the staged diff locally. With
 
 About 2.1 GB of disk and 3.2 GB of memory while generating. `hittable model disable` frees the memory and keeps the files; `hittable model delete` removes them.
 
+### Can I use VS Code extensions?
+
+In the terminal app, yes: the Extensions panel (<kbd>alt+x</kbd>) installs them from Open VSX, the open registry VSCodium uses. Language servers, formatters, themes, snippets and commands work; extension panels made of HTML open in your browser. Debuggers, notebooks and custom editors do not, and Microsoft-licensed extensions (Pylance, C/C++, Remote, Copilot) are refused because their licences allow only Microsoft's VS Code. Details on the [extensions page](/docs/shellapp-extensions).
+
+### An extension says it needs Node.js
+
+Extensions with code run in the Node.js on your machine (20 or newer). If there is none, the extension's page in the panel has an **Install Node.js** button that installs it for your account with Homebrew, winget, or the official build in `~/.local`; or run `hittable ext node install`. To use a particular Node, set `HITTABLE_NODE=/path/to/node`.
+
 ### Where does the terminal app keep its state?
 
-`~/.hittable` (or `$HITTABLE_HOME`): the runtime, model, logs and `config.json`. `hittable uninstall` removes it along with the binary and leaves your project folders alone.
+`~/.hittable` (or `$HITTABLE_HOME`): the runtime, model, logs, `config.json`, `settings.json`, installed extensions and their data. `hittable uninstall` removes it along with the binary and leaves your project folders alone.
 
 ## Still stuck
 

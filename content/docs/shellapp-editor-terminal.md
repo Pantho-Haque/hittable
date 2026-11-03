@@ -22,6 +22,10 @@ Folding comes from indentation, the way VS Code folds a file that has no folding
 
 Suggestions appear after two word characters, or on <kbd>ctrl+space</kbd>. They are computed locally and ranked in three tiers: request schema, language keywords, identifiers already in the buffer. Keyword sets exist for Go, Python, JavaScript, TypeScript, Rust, JSON and YAML. `.hit` files additionally complete their own keys (`method`, `url`, `headers`, `params`, `body`, `response`), the HTTP verbs on the `"method"` line, common header names inside `"headers"`, and content types after `Content-Type`. No model is involved and nothing leaves the machine. Files over 512 KB skip the identifier scan.
 
+### Language features from extensions
+
+Install a language extension from the Extensions panel (<kbd>alt+x</kbd>) and the same editor gets real diagnostics (underlined, the message in the status row, counted in the footer), completions merged into the suggestion list, hover (<kbd>alt+h</kbd>), go to definition and references (<kbd>F12</kbd>, <kbd>shift+F12</kbd>), rename (<kbd>F2</kbd>), quick fixes (<kbd>alt+.</kbd>), formatting (<kbd>alt+shift+f</kbd>) and signature help while you type a call. Colour themes and snippets from extensions apply too. See [VS Code extensions](/docs/shellapp-extensions).
+
 ### Params, Headers, Body
 
 The Runner tabs are editors too. Params and Headers are edited as raw JSON objects with a fixed status row that shows `⚠ invalid JSON` while you are mid-edit; the last valid value is kept and invalid JSON is never written to disk. <kbd>ctrl+l</kbd> pretty-prints the body.

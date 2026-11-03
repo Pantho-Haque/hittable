@@ -25,3 +25,6 @@ func SHA256File(path string) (string, error) { return sha256File(path) }
 // FreeDisk is the free space in bytes on the volume holding dir (or its
 // nearest existing parent), 0 when it cannot be read.
 func FreeDisk(dir string) int64 { return freeDisk(dir) }
+
+// ProcessAlive reports whether a process with this pid is running.
+func ProcessAlive(pid int) bool { return processAlive(pid) }

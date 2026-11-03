@@ -347,6 +347,7 @@ func (m *MainScreen) extUpdate(msg tea.Msg) tea.Cmd {
 	case extProgressMsg:
 		if msg.line != "" {
 			x.nodeLine = msg.line
+			m.extAppendOutput("Node.js install", msg.line+"\n")
 			return nil
 		}
 		if msg.total > 0 {
@@ -538,45 +539,55 @@ func loadExtSettings(root string) exthost.Settings {
 	return exthost.Settings{User: read(hithome.SettingsPath()), Workspace: read(filepath.Join(root, ".vscode", "settings.json"))}
 }
 
-// writeSetting updates one key. The project's .vscode/settings.json is only
-// rewritten when it has no comments (rewriting would drop them); otherwise
-// the value goes to user settings.
+// writeSetting updates one key, editing the file's text in place so its
+// comments and layout survive (extensions.SetJSONCValue). A value that
+// cannot be edited in place (an object, a list) rewrites the file, except
+// the project's .vscode/settings.json when it has comments: that value goes
+// to user settings rather than erasing someone's notes.
 func (m *MainScreen) writeSetting(key string, value any, target string) error {
 	p := hithome.SettingsPath()
 	if target == "workspace" {
-		wp := filepath.Join(m.RootDir, ".vscode", "settings.json")
-		b, err := os.ReadFile(wp)
-		if err != nil || string(extensions.StripJSONC(b)) == string(b) {
-			p = wp
-		} else {
-			m.extNote("warning", "Saved "+key+" to user settings: .vscode/settings.json has comments, and rewriting it would remove them.")
-		}
+		p = filepath.Join(m.RootDir, ".vscode", "settings.json")
 	}
-	cur := map[string]any{}
-	if b, err := os.ReadFile(p); err == nil {
-		_ = json.Unmarshal(extensions.StripJSONC(b), &cur)
+	src, _ := os.ReadFile(p)
+	if len(src) == 0 {
+		src = []byte("{\n}\n")
+	}
+	out, ok := extensions.SetJSONCValue(src, key, value)
+	if !ok {
+		hasComments := string(extensions.StripJSONC(src)) != string(src)
+		if hasComments && target == "workspace" {
+			m.extNote("warning", "Saved "+key+" to user settings: rewriting .vscode/settings.json would remove its comments.")
+			return m.writeSetting(key, value, "user")
+		}
+		cur := map[string]any{}
+		_ = json.Unmarshal(extensions.StripJSONC(src), &cur)
 		if cur == nil {
 			cur = map[string]any{}
 		}
-	}
-	if value == nil {
-		delete(cur, key)
-	} else {
-		cur[key] = value
-	}
-	out, err := json.MarshalIndent(cur, "", "  ")
-	if err != nil {
-		return err
+		if value == nil {
+			delete(cur, key)
+		} else {
+			cur[key] = value
+		}
+		b, err := json.MarshalIndent(cur, "", "  ")
+		if err != nil {
+			return err
+		}
+		out = append(b, '\n')
+		if hasComments {
+			m.extNote("warning", "Rewrote "+filepath.Base(p)+" to save "+key+"; its comments could not be kept.")
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(p, append(out, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(p, out, 0o644); err != nil {
 		return err
 	}
 	m.Ext.settings = loadExtSettings(m.RootDir)
 	if doc := m.Store.Get(p); doc != nil {
-		m.adoptDiskContent(doc, append(out, '\n'))
+		m.adoptDiskContent(doc, out)
 	}
 	return nil
 }

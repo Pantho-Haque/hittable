@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hittable/shellapp/internal/hithome"
+	"github.com/hittable/shellapp/internal/llmhost"
 )
 
 // Installed is one entry of ~/.hittable/extensions/extensions.json.
@@ -233,8 +235,9 @@ func canonical(p string) string {
 }
 
 // lock serialises installs across hittable windows and CLI runs with an
-// O_EXCL lock file. A lock older than ten minutes belongs to a process that
-// died mid-install and is taken over.
+// O_EXCL lock file holding the owner's pid. A lock whose owner is no longer
+// running (it crashed or was killed mid-install) is taken over at once; one
+// older than ten minutes is too, in case the pid was reused.
 func lock() (func(), error) {
 	if err := os.MkdirAll(hithome.Extensions(), 0o755); err != nil {
 		return nil, err
@@ -248,9 +251,13 @@ func lock() (func(), error) {
 			f.Close()
 			return func() { _ = os.Remove(p) }, nil
 		}
-		if fi, serr := os.Stat(p); serr == nil && time.Since(fi.ModTime()) > 10*time.Minute {
-			_ = os.Remove(p)
-			continue
+		if fi, serr := os.Stat(p); serr == nil {
+			b, _ := os.ReadFile(p)
+			pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+			if (pid > 0 && pid != os.Getpid() && !llmhost.ProcessAlive(pid)) || time.Since(fi.ModTime()) > 10*time.Minute {
+				_ = os.Remove(p)
+				continue
+			}
 		}
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("another hittable is installing extensions (lock %s); try again when it finishes", p)

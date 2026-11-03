@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alecthomas/chroma"
 )
@@ -363,5 +364,51 @@ func TestTrust(t *testing.T) {
 	}
 	if Trusted(root + "-other") {
 		t.Error("trust leaked to a sibling with the same prefix")
+	}
+}
+
+func TestSetJSONCValueKeepsComments(t *testing.T) {
+	src := []byte("// my settings\n{\n  // the theme I like\n  \"workbench.colorTheme\": \"Dracula\",\n  \"editor.tabSize\": 4, // tabs\n  \"files.exclude\": {\"**/.git\": true}\n}\n")
+	out, ok := SetJSONCValue(src, "workbench.colorTheme", "Nord")
+	if !ok || !strings.Contains(string(out), `"workbench.colorTheme": "Nord",`) || !strings.Contains(string(out), "// the theme I like") {
+		t.Fatalf("replace: %v\n%s", ok, out)
+	}
+	out, ok = SetJSONCValue(out, "editor.tabSize", nil)
+	if !ok || strings.Contains(string(out), "tabSize") || !strings.Contains(string(out), "// my settings") {
+		t.Fatalf("delete: %v\n%s", ok, out)
+	}
+	out, ok = SetJSONCValue(out, "yaml.format.enable", false)
+	if !ok || !strings.Contains(string(out), `"yaml.format.enable": false,`) {
+		t.Fatalf("insert: %v\n%s", ok, out)
+	}
+	var v map[string]any
+	if err := json.Unmarshal(StripJSONC(out), &v); err != nil || v["workbench.colorTheme"] != "Nord" || v["yaml.format.enable"] != false {
+		t.Fatalf("result does not parse: %v %v\n%s", err, v, out)
+	}
+	if _, ok := SetJSONCValue(src, "files.exclude", "x"); ok {
+		t.Error("an object value must not be edited in place")
+	}
+	if _, ok := SetJSONCValue(src, "k", map[string]any{"a": 1}); ok {
+		t.Error("an object value must not be written in place")
+	}
+	if out, ok := SetJSONCValue([]byte("{}"), "a", "b"); !ok || !strings.Contains(string(out), `"a": "b"`) {
+		t.Errorf("empty object: %s", out)
+	}
+}
+
+func TestStaleLockIsTakenOver(t *testing.T) {
+	t.Setenv("HITTABLE_HOME", t.TempDir())
+	os.MkdirAll(filepath.Join(os.Getenv("HITTABLE_HOME"), "extensions"), 0o755)
+	// A pid that is certainly not running.
+	os.WriteFile(filepath.Join(os.Getenv("HITTABLE_HOME"), "extensions", ".lock"), []byte("999999"), 0o644)
+	done := make(chan error, 1)
+	go func() { done <- SetEnabled("nothing.here", true) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "not installed") {
+			t.Errorf("expected the real error after taking the lock, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a lock left by a dead process blocked the install")
 	}
 }
