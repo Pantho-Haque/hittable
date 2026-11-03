@@ -20,7 +20,7 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 )
 
-func newTestScreen(t *testing.T) (*MainScreen, string) {
+func newTestScreen(t testing.TB) (*MainScreen, string) {
 	t.Helper()
 	tmp := t.TempDir()
 	hd := filepath.Join(tmp, "hittable")

@@ -150,6 +150,10 @@ func (p *Panel) handleDiffKey(msg tea.KeyMsg) bool {
 	case "G", "end":
 		p.setDiffCursor(len(p.detailLines()))
 	case "enter":
+		if f := p.foldAt(p.diffCursor); f >= 0 {
+			p.unfold(f)
+			return true
+		}
 		if path := p.fileHeadAt(p.diffCursor); path != "" {
 			p.toggleFile(path)
 			return true

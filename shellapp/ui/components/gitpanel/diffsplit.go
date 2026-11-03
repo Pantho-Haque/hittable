@@ -72,11 +72,7 @@ func splitDiff(unified []string, width, half int, wrap bool, sepSt lipgloss.Styl
 	var out []string
 	var src [][]int
 	if half < 8 || width-half-1 < 8 {
-		for i, l := range unified {
-			out = append(out, l)
-			src = append(src, []int{i})
-		}
-		return out, src
+		return unifiedRows(unified, width, wrap)
 	}
 	var dels, adds []string
 	var delIdx, addIdx []int
@@ -143,6 +139,11 @@ func splitDiff(unified []string, width, half int, wrap bool, sepSt lipgloss.Styl
 			emit(sideRows(oldN, line[1:], plain, half, wrap), sideRows(newN, line[1:], plain, rhalf, wrap), []int{i})
 			oldN++
 			newN++
+		case foldCount(line) > 0:
+			flush()
+			n := foldCount(line)
+			oldN, newN = oldN+n, newN+n
+			full([]string{renderFold(n, width)}, i)
 		case strings.HasPrefix(line, "\\"):
 			flush()
 			full([]string{theme.MutedStyle.Render(line)}, i)

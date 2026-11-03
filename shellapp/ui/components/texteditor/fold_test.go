@@ -180,7 +180,7 @@ func TestFoldAllMovesTheCursorOutOfAFold(t *testing.T) {
 	ed.FoldAll()
 
 	lines := strings.Split(ed.GetContent(), "\n")
-	hidden, _ := ed.cur.fold.hidden(lines)
+	hidden, _ := ed.cur.fold.hidden(lines, foldRegions(lines))
 	if row := ed.GetCursorRow(); row < len(hidden) && hidden[row] {
 		t.Fatalf("cursor left on hidden row %d", row)
 	}

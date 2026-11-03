@@ -449,6 +449,7 @@ send binding.
 | Git: list ⇄ diff      | `tab`, click    | Moves the keyboard between the file list (left) and the diff (right); `esc` returns to the list |
 | Git: diff lines       | `jk`/`↑↓`, `shift+↑↓`, `s`, `u`, `d`, click `[ ⟲ revert ]` / `[ + stage ]` / `[ − unstage ]` on a hunk header | Diff focused: move · select lines · stage / unstage-or-revert / revert the selection or the cursor's hunk (revert confirms) |
 | Git: diff layout      | drag `│` (list width, split columns), drag `─` (list / graph), `z`/`alt+z`/`⌥z`, `v`, `w` | resize · wrap lines · inline⇄split · ignore whitespace |
+| Git: whole file       | `F`, click `[full]` in the header; click or `⏎` on a `⋯ n unchanged lines` row | whole file ⇄ only the changes · show one folded run |
 | Git: edit in split    | click the new (right) side of a split diff | the editor takes the right column at that line, the index side on the left. Live diff (`editdiff.go`): removed lines red on the left, added lines green in the editor, `⟲` / `+` per hunk in the 5-cell gutter between them (revert in the buffer, undoable · stage via `git apply --cached --unidiff-zero` without leaving the editor); `esc` saves and returns |
 | Resize cursor         | hover any splitter | the splitter lights up; terminals that honour OSC 22 (kitty, Ghostty, WezTerm, foot, xterm) also show a resize pointer |
 | Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `z` `d` `D` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · wrap lines · discard · undo all · commit · stash · push · pull · fetch · open/collapse · filter |
@@ -477,6 +478,36 @@ send binding.
 | Resize markdown split | drag the seam between editor and preview | Markdown split view |
 
 ## 10. Changelog
+
+### v3.5.7 — Precise scrolling
+- Scrolling overshot: Bubble Tea v1 builds a frame after every message, and a
+  trackpad sends wheel events faster than a frame was built on a big file (6.6 ms
+  per tick in the editor at 160×40), so they queued and the view kept moving after
+  the hand stopped. Two fixes:
+  - `ui/app.go` coalesces frames: wheel and pointer-motion events are applied as
+    they arrive, but within 16 ms of the last frame `View` returns that frame and
+    one `frameMsg` tick draws the latest state. Keys, clicks and every other
+    message draw at once.
+  - The editor no longer splits the whole buffer on every frame. The textarea
+    stamps a content revision (`Model.Rev`, unique across copies) in every
+    mutating entry point, and `TextEditor.derive` caches the lines, the longest
+    line and the fold regions per revision. A wheel tick in the editor is now
+    ~2 ms including the frame, its update ~0.1 µs (`BenchmarkWheelEditor`).
+- Every pane scrolls one row per wheel event; the Extensions panel moved 3.
+
+### v3.5.6 — Whole-file diffs with folds
+- A changed file's diff now carries the whole file (`gitx.DiffFull`, `--unified=1000000`),
+  and `regroup` (`gitpanel/fold.go`) splits git's single full-context hunk back into
+  one hunk per change group (changes within 6 unchanged lines stay together). Each
+  hunk starts 3 lines above its change; the first keeps the lines above it and the
+  last the lines below, so every line is in exactly one hunk and the hunk buttons,
+  `s`/`u`/`d` and `SubPatchLines` still act on one change.
+- Runs of unchanged lines draw as one `⋯ n unchanged lines` row (3 lines kept beside
+  each change, at least 3 hidden). Rendering goes through `visibleDetail` (a NUL-prefixed
+  stand-in per closed fold) and maps rows back to detail indexes, so selection, line ops
+  and line numbers are unchanged; split view advances its numbers past a fold. Click
+  or `⏎` opens one fold, `F` / `[full]` shows the whole file or folds it all again,
+  keeping the top line in view. Open folds reset when another file loads.
 
 ### v3.5.5 — Current VS Code API, Install anyway
 - `extensions.APIVersion` was 1.105.0, a year behind VS Code (1.144), so extensions

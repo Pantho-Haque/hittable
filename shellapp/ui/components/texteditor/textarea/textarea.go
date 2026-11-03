@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"unicode"
 
 	"github.com/atotto/clipboard"
@@ -191,7 +192,17 @@ func (w line) Hash() string {
 }
 
 // Model is the Bubble Tea model for this text area element.
+// revSeq hands out content revisions, unique across every Model and copy.
+var revSeq atomic.Uint64
+
+// Rev changes whenever the content may have changed (an insert, a reset, any
+// Update while focused), so a reader can cache what it derives from Value.
+// It is unique across models: a restored older copy keeps its own revision.
+func (m Model) Rev() uint64 { return m.rev }
+
 type Model struct {
+	rev uint64
+
 	Err error
 
 	// General settings.
@@ -366,6 +377,7 @@ func (m *Model) InsertRune(r rune) {
 
 // insertRunesFromUserInput inserts runes at the current cursor position.
 func (m *Model) insertRunesFromUserInput(runes []rune) {
+	m.rev = revSeq.Add(1)
 	// Clean up any special characters in the input provided by the
 	// clipboard. This avoids bugs due to e.g. tab characters and
 	// whatnot.
@@ -597,6 +609,7 @@ func (m *Model) Blur() {
 
 // Reset sets the input to its default state with no input.
 func (m *Model) Reset() {
+	m.rev = revSeq.Add(1)
 	m.value = make([][]rune, minHeight, maxLines)
 	m.col = 0
 	m.row = 0
@@ -963,6 +976,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.Cursor.Blur()
 		return m, nil
 	}
+	m.rev = revSeq.Add(1)
 
 	// Used to determine if the cursor should blink.
 	oldRow, oldCol := m.cursorLineNumber(), m.col

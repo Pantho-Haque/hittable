@@ -448,6 +448,7 @@ var helpSections = []struct {
 		{"p P f  y", "push · pull · fetch · sync"},
 		{"e", "edit working copy in preview"},
 		{"v  z  w", "inline⇄split · wrap · ignore ws"},
+		{"F  ⏎ on ⋯", "whole file ⇄ changes · show folded lines"},
 		{"drag │ ─", "resize list · graph · diff columns"},
 		{"drag  ctrl+c", "select diff lines · copy"},
 		{"n d", "new / delete branch"},

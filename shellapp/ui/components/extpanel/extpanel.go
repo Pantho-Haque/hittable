@@ -764,11 +764,13 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			d = -1
 		}
 		p.FocusDetail = !inLeft
+		// One line per wheel event, the finest a terminal reports: a trackpad
+		// sends many, so a bigger step overshoots where the hand stopped.
 		if inLeft {
-			p.scroll += d * entryLines // one entry per notch
+			p.scroll += d
 			p.follow = false
 		} else {
-			p.dscroll += d * 3
+			p.dscroll += d
 		}
 		p.hoverRow = -1 // the row under the pointer just moved
 		return

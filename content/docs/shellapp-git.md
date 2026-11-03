@@ -15,6 +15,7 @@ Two collapsible groups, **Staged Changes** and **Changes** (untracked included).
 
 The selected file's diff fills the detail pane:
 
+- The whole file is there, not only the changed parts. Each long run of unchanged lines folds into one row, `⋯ 23 unchanged lines`, with three lines kept beside every change. Click the row (or <kbd>⏎</kbd> on it after <kbd>tab</kbd>) to show those lines. <kbd>F</kbd> or the `[full]` toggle in the header shows the whole file at once, and folds everything again when pressed a second time. Each change keeps its own hunk header and buttons.
 - <kbd>v</kbd> flips between inline and side-by-side. <kbd>z</kbd> wraps or clips long lines. <kbd>w</kbd> runs the diff with `-w` to hide whitespace-only changes.
 - Added and removed lines carry a full-width tint. Tabs are expanded and trailing spaces shown as `·`, so a re-indent is not an invisible all-red, all-green diff.
 - Drag over lines to select them; <kbd>ctrl+c</kbd> copies.

@@ -120,7 +120,15 @@ type Panel struct {
 	detailSrc      [][]int  // rendered row → detail line(s) it shows (memo)
 	detailCacheKey string   // width/divider/split/wrap it was built for
 	detailScroll   int
-	collapsed      [2]bool // status groups
+	detailFolds    map[int]int // rendered row → detail index of the fold drawn there (memo)
+	collapsed      [2]bool     // status groups
+
+	// FullFile shows every unchanged line of a changed file; otherwise long
+	// unchanged runs fold into one row each, and unfolded holds the ones
+	// opened (by the detail index they start at) until another file loads.
+	FullFile bool
+	unfolded map[int]bool
+	foldGen  int // bumped when a fold opens or closes (part of the memo key)
 
 	// Two columns: the list (with the commit graph under it) on the left,
 	// the diff on the right. ListW / ListRows are the user's drag
@@ -502,6 +510,7 @@ func (p *Panel) loadDetail() {
 	p.detailScroll, p.diffCursor = 0, 0
 	p.selAnchor, p.selEnd = -1, -1
 	p.hunkBtns = ""
+	p.unfolded = nil
 	p.graphSel, p.graphSelHash = -1, ""
 	r := p.current()
 	if r == nil || p.Repo == nil {
@@ -520,7 +529,8 @@ func (p *Panel) loadDetail() {
 		n := len(gitx.ParseConflicts(string(b)))
 		text = fmt.Sprintf("%d conflict block(s) — press ⏎ or [ resolve ] to resolve here, o to open in the editor", n)
 	case r.file != nil:
-		text = p.Repo.Diff(*r.file, r.staged, p.IgnoreWS)
+		// The whole file, one hunk per change (fold.go).
+		text = regroup(p.Repo.DiffFull(*r.file, r.staged, p.IgnoreWS), foldMargin)
 		if strings.TrimSpace(text) == "" {
 			text = "(no diff)"
 			if p.IgnoreWS {
@@ -560,33 +570,35 @@ func (p *Panel) detailLines() []string {
 	w, half := p.detailWidth(), p.splitHalf()
 	hot := p.dragSplit || p.HoverSep == "split"
 	// The hovered hunk button is baked into the rows, so it is part of the key.
-	key := fmt.Sprintf("%d/%d/%v/%v/%v/%s/%d/%s", w, half, p.Split, p.Wrap, hot, p.hunkBtns, p.hoverHunk, p.hoverHunkB)
+	key := fmt.Sprintf("%d/%d/%v/%v/%v/%s/%d/%s/%v/%d", w, half, p.Split, p.Wrap, hot, p.hunkBtns, p.hoverHunk, p.hoverHunkB, p.FullFile, p.foldGen)
 	if p.detailCache != nil && p.detailCacheKey == key {
 		return p.detailCache
 	}
 	out, src := []string{}, [][]int{}
+	p.detailFolds = nil
 	if p.Section == SecBlame {
 		for i, l := range p.blameLines(w) {
 			out = append(out, l)
 			src = append(src, []int{i})
 		}
-	} else if p.Split {
-		out, src = splitDiff(p.detail, w, half, p.Wrap, sepStyle(hot))
 	} else {
-		for i, l := range p.detail {
-			chunks := fullWidth(diffLine(showWhitespace(l)), w, p.Wrap)
-			if st, tinted := diffRowStyle(l); tinted {
-				// Fill the rest of the row so the tint reaches the edge.
-				for i, c := range chunks {
-					if n := w - lipgloss.Width(c); n > 0 {
-						chunks[i] = c + st.Render(strings.Repeat(" ", n))
-					}
-				}
+		// Rendered from the visible lines (folds closed), then mapped back to detail indexes.
+		vis, visSrc := p.visibleDetail()
+		if p.Split {
+			out, src = splitDiff(vis, w, half, p.Wrap, sepStyle(hot))
+		} else {
+			out, src = unifiedRows(vis, w, p.Wrap)
+		}
+		p.detailFolds = map[int]int{}
+		for i, ss := range src {
+			if n := foldCount(vis[ss[0]]); n > 0 && (i == 0 || src[i-1][0] != ss[0]) {
+				p.detailFolds[i] = visSrc[ss[0]]
 			}
-			out = append(out, chunks...)
-			for range chunks {
-				src = append(src, []int{i})
+			mapped := make([]int, len(ss))
+			for j, v := range ss {
+				mapped[j] = visSrc[v]
 			}
+			src[i] = mapped
 		}
 	}
 	p.decorateFileHeads(out, src, w)
@@ -1182,6 +1194,8 @@ func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 		p.loadDetail()
 	case "z", "alt+z", "Ω": // Option+z arrives as Ω on macOS
 		p.ToggleWrap()
+	case "F":
+		p.ToggleFullFile()
 	case "ctrl+c":
 		p.CopySelection()
 	case "e":
@@ -1581,6 +1595,11 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 			}
 			if msg.Action == tea.MouseActionPress {
 				p.FocusDiff = true
+				if f := p.foldAt(drow); f >= 0 {
+					p.unfold(f)
+					p.diffCursor = drow
+					return
+				}
 				if path := p.fileHeadAt(drow); path != "" {
 					p.toggleFile(path)
 					p.diffCursor = drow
@@ -1878,6 +1897,14 @@ func (p *Panel) View(z *zone.Manager) string {
 		wrapSt = theme.TabActiveStyle
 	}
 	mode = z.Mark("git_wrap", theme.Hoverable(p.Hover == "git_wrap", wrapSt).Render("[wrap]")) + " " + mode
+	if p.Section == SecStatus {
+		// Whole file ⇄ only the changes (F).
+		fullSt := theme.MutedStyle
+		if p.FullFile {
+			fullSt = theme.TabActiveStyle
+		}
+		mode = z.Mark("git_full", theme.Hoverable(p.Hover == "git_full", fullSt).Render("[full]")) + " " + mode
+	}
 	right := branch + "  " +
 		z.Mark("git_sync", theme.Hoverable(p.Hover == "git_sync", theme.SendButtonStyle).Render(p.SyncLabel())) + "  " + mode
 	// The loader (sync, commit, message generation) and the last result sit
@@ -2140,13 +2167,13 @@ func (p *Panel) hints() string {
 	}
 	if p.FocusDiff {
 		if p.hunkBtns != "" {
-			return "jk move · shift+↑↓ select · s stage lines · u revert/unstage lines · e edit · ctrl+c copy · drag │ resize · tab/esc list"
+			return "jk move · ⏎ show folded lines · F whole file · shift+↑↓ select · s stage lines · u revert/unstage lines · e edit · ctrl+c copy · tab/esc list"
 		}
-		return "jk move · shift+↑↓ select · ctrl+c copy · v split · z wrap · tab/esc list"
+		return "jk move · ⏎ show folded lines · F whole file · shift+↑↓ select · ctrl+c copy · v split · z wrap · tab/esc list"
 	}
 	switch p.Section {
 	case SecStatus:
-		return "tab diff · +/− stage · e edit · v split · z wrap · w -w · c commit · y sync · S stash · d discard · P pull · f fetch"
+		return "tab diff · +/− stage · e edit · v split · F whole file · z wrap · w -w · c commit · y sync · S stash · d discard · P pull · f fetch"
 	case SecCommits:
 		return "⏎/jk browse · J/K scroll diff · click a file header to fold it · f file↔repo history · / search · y hash"
 	case SecBranches:

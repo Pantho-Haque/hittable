@@ -243,7 +243,7 @@ func TestAccordionHoverAndWheel(t *testing.T) {
 	sel := p.sel
 	p.HandleMouse(tea.MouseMsg{X: 3, Y: 6, Type: tea.MouseWheelDown})
 	p.View()
-	if p.scroll != entryLines || p.sel != sel {
+	if p.scroll != 1 || p.sel != sel {
 		t.Errorf("wheel: scroll %d, selection %q (was %q)", p.scroll, p.sel, sel)
 	}
 

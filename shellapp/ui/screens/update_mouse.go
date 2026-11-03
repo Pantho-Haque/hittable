@@ -238,6 +238,10 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					m.Git.ToggleWrap()
 					return m, nil
 				}
+				if tz := m.Zones.Get("git_full"); tz != nil && tz.InBounds(msg) {
+					m.Git.ToggleFullFile()
+					return m, nil
+				}
 				if tz := m.Zones.Get("git_sync"); tz != nil && tz.InBounds(msg) {
 					m.Git.SyncAction()
 					return m, nil
@@ -481,7 +485,7 @@ func (m *MainScreen) findZoneAt(msg tea.MouseMsg) string {
 	switch {
 	case m.Palette.Open, m.ExtOpen: // rows and buttons are hit-tested inside the component
 	case m.GitOpen:
-		ids = append(ids, "git_diffmode", "git_wrap", "git_sync")
+		ids = append(ids, "git_diffmode", "git_wrap", "git_full", "git_sync")
 		for i := range gitpanel.SectionNames {
 			ids = append(ids, fmt.Sprintf("git_tab_%d", i))
 		}

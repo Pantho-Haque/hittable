@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/alecthomas/chroma"
 	"github.com/alecthomas/chroma/formatters"
@@ -100,6 +101,8 @@ type TextEditor struct {
 	// TextArea is the active buffer's textarea (kept exported for tests).
 	TextArea textarea.Model
 
+	dv derived // per-revision cache of the text's lines (derive)
+
 	mu          sync.RWMutex
 	buffers     map[string]*buffer
 	cur         *buffer
@@ -155,15 +158,19 @@ type vrow struct {
 
 // layout splits lines into visual rows. Without wrap each line is one row.
 func (t *TextEditor) layout(lines []string, avail int) []vrow {
-	hidden, head := t.cur.fold.hidden(lines)
+	hidden, head := t.cur.fold.hidden(lines, t.regionsFor(lines))
 	t.cur.foldHead = head
 	rows := make([]vrow, 0, len(lines))
 	for i, l := range lines {
 		if hidden[i] {
 			continue // inside a collapsed block
 		}
+		if !t.Wrap {
+			rows = append(rows, vrow{i, 0, utf8.RuneCountInString(l), true})
+			continue
+		}
 		r := []rune(l)
-		if !t.Wrap || displayCol(r, len(r)) <= avail {
+		if displayCol(r, len(r)) <= avail {
 			rows = append(rows, vrow{i, 0, len(r), true})
 			continue
 		}
@@ -963,7 +970,7 @@ func (t *TextEditor) clampScroll() {
 	b := t.cur
 	total := t.TextArea.LineCount()
 	if t.Wrap {
-		total = len(t.layout(strings.Split(t.TextArea.Value(), "\n"), t.avail()))
+		total = len(t.layout(t.lines(), t.avail()))
 	}
 	if max := total - t.contentRows(); b.scrollY > max {
 		b.scrollY = max
@@ -983,14 +990,51 @@ func (t *TextEditor) clampScroll() {
 
 // longestLine is the display width of the widest line in the buffer.
 func (t *TextEditor) longestLine() int {
-	w := 0
-	for _, l := range strings.Split(t.TextArea.Value(), "\n") {
-		r := []rune(l)
-		if n := displayCol(r, len(r)); n > w {
-			w = n
+	d := t.derive()
+	if d.longest < 0 {
+		d.longest = 0
+		for _, l := range d.lines {
+			r := []rune(l)
+			if n := displayCol(r, len(r)); n > d.longest {
+				d.longest = n
+			}
 		}
 	}
-	return w
+	return d.longest
+}
+
+// derived holds what every frame computes from the buffer's text, for one
+// revision of it: a wheel tick or a cursor blink redraws without splitting
+// the whole file again (that was most of a frame on a large file).
+type derived struct {
+	ok        bool
+	rev       uint64
+	lines     []string
+	longest   int // -1 until asked for
+	regions   []foldRegion
+	regionsOK bool
+}
+
+func (t *TextEditor) derive() *derived {
+	if r := t.TextArea.Rev(); !t.dv.ok || t.dv.rev != r {
+		t.dv = derived{ok: true, rev: r, lines: strings.Split(t.TextArea.Value(), "\n"), longest: -1}
+	}
+	return &t.dv
+}
+
+// lines is the buffer split into lines. Callers only read it.
+func (t *TextEditor) lines() []string { return t.derive().lines }
+
+// regionsFor is foldRegions(lines), cached when lines is the buffer's own.
+func (t *TextEditor) regionsFor(lines []string) []foldRegion {
+	d := t.derive()
+	if len(lines) == 0 || len(d.lines) != len(lines) || &d.lines[0] != &lines[0] {
+		return foldRegions(lines)
+	}
+	if !d.regionsOK {
+		d.regions, d.regionsOK = foldRegions(lines), true
+	}
+	return d.regions
 }
 
 // ---------- View ----------
@@ -1033,7 +1077,7 @@ func (t *TextEditor) View() string {
 		border = theme.FocusedBorderStyle
 	}
 	b := t.cur
-	lines := strings.Split(t.TextArea.Value(), "\n")
+	lines := t.lines()
 	row, col := t.TextArea.Line(), t.TextArea.LineInfo().ColumnOffset
 	gw := t.gutterWidth()
 	_ = gw

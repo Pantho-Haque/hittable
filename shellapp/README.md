@@ -472,6 +472,7 @@ User Settings (JSON) opens the first.
 | Git: list ⇄ diff      | `tab`, click    | file list (left) ⇄ diff (right); `esc` back to the list |
 | Git: diff lines       | `jk`, `shift+↑↓`, `s`, `u`, `d`, click `[ ⟲ revert ]` / `[ + stage ]` / `[ − unstage ]` | stage · unstage-or-revert · revert the selected lines or the cursor's hunk |
 | Git: diff layout      | drag `│` / `─`, `z`/`alt+z`/`⌥z`, `v`, `w` | resize columns · list/graph · wrap · inline⇄split · ignore whitespace |
+| Git: whole file       | `F`, click `[full]`; click or `⏎` on `⋯ n unchanged lines` | the diff carries the whole file: unchanged runs fold, one opens on click, `F` shows or folds them all |
 | Git: edit in split    | click the new (right) side of a split diff | the editor takes the right column, the index side stays on the left; removed lines red, added lines green, and each hunk gets `⟲` (revert) and `+` (stage) buttons in the gutter between them; `esc` back to the diff |
 | Git: status           | `+`/`s` `−`/`u` `a` `A` `e` `v` `z` `d` `D` `c` `S` `p` `P` `f` `⏎` `/` | stage · unstage · stage all · unstage all · edit in preview · inline⇄split · wrap lines · discard · undo all · commit · stash · push · pull · fetch · open/collapse · filter |
 | Git: commit type      | `←/→`, first letter, `⏎`, `esc` | Type picker (conventional repos only) |

@@ -241,11 +241,22 @@ func (r *Repo) Fetch() (string, error) { return r.Run("fetch", "--prune") }
 // Diff returns the unified diff for a path (staged compares index to HEAD).
 // ignoreWS passes -w so whitespace-only changes disappear.
 func (r *Repo) Diff(f FileStatus, staged, ignoreWS bool) string {
+	return r.diff(f, staged, ignoreWS, nil)
+}
+
+// DiffFull is Diff with the whole file as context: one hunk per file that
+// carries every unchanged line too, so a viewer can show the full file.
+// ponytail: the context is a fixed 1,000,000 lines; longer files get hunks.
+func (r *Repo) DiffFull(f FileStatus, staged, ignoreWS bool) string {
+	return r.diff(f, staged, ignoreWS, []string{"--unified=1000000"})
+}
+
+func (r *Repo) diff(f FileStatus, staged, ignoreWS bool, extra []string) string {
 	if f.Untracked() {
 		out, _ := r.Run("diff", "--no-index", "--", "/dev/null", f.Path)
 		return out
 	}
-	args := []string{"diff"}
+	args := append([]string{"diff"}, extra...)
 	if staged {
 		args = append(args, "--cached")
 	}

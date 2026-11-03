@@ -149,6 +149,7 @@ Every editor is the same component: the Text view, the Params / Headers / Body t
 | `d`, `D` | discard the file · undo all changes (`y`/`n` confirms) |
 | `e` | edit the working copy in the preview pane |
 | `v`, `z`, `w` | inline ⇄ split · wrap lines · ignore whitespace |
+| `F`, click `[full]` | whole file ⇄ only the changes (unchanged runs folded) |
 | `c`, `S` | commit (type picker, then the message editor) · stash |
 | `p`, `P`, `f`, `y` | push · pull · fetch · sync |
 | `⏎` | open the file · collapse a group |
@@ -161,6 +162,7 @@ Every editor is the same component: the Text view, the Params / Headers / Body t
 | `s`, `u`, `d` | stage · unstage-or-revert · revert the selected lines or the cursor's hunk |
 | click `[ + stage ]`, `[ − unstage ]`, `[ ⟲ revert ]` | the same, from the hunk header |
 | click the right side of a split diff | edit that line in place; `⟲` and `+` in the gutter revert or stage a hunk; `esc` returns |
+| `⏎` or click on `⋯ n unchanged lines` | show those lines |
 | `⏎` on a file header (commits) | fold / unfold that file |
 | `ctrl+c` | copy the selected lines |
 

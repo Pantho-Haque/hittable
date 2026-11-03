@@ -90,10 +90,10 @@ func (f *foldState) set(head int, on bool) {
 // hidden marks the lines currently folded away, and reports which headers are
 // foldable so the gutter can draw its arrows. Regions whose header is no longer
 // a header (the file was edited under them) are dropped.
-func (f *foldState) hidden(lines []string) (hidden []bool, head map[int]foldRegion) {
+func (f *foldState) hidden(lines []string, regions []foldRegion) (hidden []bool, head map[int]foldRegion) {
 	head = map[int]foldRegion{}
 	hidden = make([]bool, len(lines))
-	for _, r := range foldRegions(lines) {
+	for _, r := range regions {
 		head[r.head] = r
 	}
 	for h := range f.collapsed {
@@ -180,7 +180,7 @@ func (t *TextEditor) AnyFolded() bool { return len(t.cur.fold.collapsed) > 0 }
 
 // Foldable reports whether the buffer has any collapsible block at all.
 func (t *TextEditor) Foldable() bool {
-	return len(foldRegions(strings.Split(t.TextArea.Value(), "\n"))) > 0
+	return len(t.regionsFor(t.lines())) > 0
 }
 
 // FoldAll collapses every block in the buffer. Nested regions are collapsed
@@ -202,7 +202,7 @@ func (t *TextEditor) FoldAll() {
 	// The cursor must not end up inside a fold; the first header is the
 	// nearest visible line to wherever it was.
 	if row := t.TextArea.Line(); row > outermost {
-		hidden, _ := t.cur.fold.hidden(lines)
+		hidden, _ := t.cur.fold.hidden(lines, foldRegions(lines))
 		if row < len(hidden) && hidden[row] {
 			moveTo(&t.TextArea, outermost, 0)
 		}
