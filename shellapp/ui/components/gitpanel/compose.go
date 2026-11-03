@@ -247,6 +247,7 @@ func (p *Panel) commitCompose() {
 		text = repaired
 	}
 	p.Composing, p.MsgEditor, p.draft, p.draftEdited, p.digest = false, nil, "", false, nil
+	p.committing = text // given back to the editor if a hook refuses the commit
 	// Committing is not instant: pre-commit hooks run, and on a large index
 	// git itself takes a moment. run() would do that on the UI goroutine with
 	// the screen frozen and no indication anything is happening, so this goes

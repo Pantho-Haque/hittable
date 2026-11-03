@@ -89,5 +89,7 @@ func (a *App) Cleanup() {
 	// Stop a model server this process started. One adopted from another
 	// hittable window is left running for it.
 	a.screen.CloseAI()
+	a.screen.CloseExtensions()
+	a.screen.ExtPanel.DeleteImages(os.Stdout)
 	Zones.Close()
 }

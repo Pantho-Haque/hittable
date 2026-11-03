@@ -4,6 +4,7 @@ package screens
 import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hittable/shellapp/ui/components/extpanel"
 	"github.com/hittable/shellapp/ui/components/gitpanel"
 	"github.com/hittable/shellapp/ui/components/palette"
 	"github.com/hittable/shellapp/ui/components/requesteditor"
@@ -41,15 +42,22 @@ type addConfirmMsg struct {
 }
 
 func (m *MainScreen) Init() tea.Cmd {
-	return gitTick()
+	return tea.Batch(gitTick(), m.extStartCmd())
 }
 
 // busy reports whether anything long-running is in flight, so the spinner
 // keeps animating: a request, or a git network operation like push or pull.
-func (m *MainScreen) busy() bool { return m.Sending || m.Git.Busy != "" }
+func (m *MainScreen) busy() bool {
+	return m.Sending || m.Git.Busy != "" || m.Palette.Loading() || (m.ExtOpen && m.ExtPanel.Busy()) ||
+		(m.Ext != nil && (m.Ext.installing != "" || m.Ext.starting))
+}
 
 func (m *MainScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.update(msg)
+	if m.pendingCmd != nil {
+		cmd = tea.Batch(cmd, m.pendingCmd)
+		m.pendingCmd = nil
+	}
 	// Start the spinner the moment something goes in flight. Git work begins
 	// inside a key or click handler that has no Cmd to return, so it is picked
 	// up here rather than at each call site.
@@ -70,6 +78,7 @@ func (m *MainScreen) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.SetSize(msg.Width, msg.Height)
+		m.ExtPanel.Retransmit() // the repaint may have dropped the icons
 		return m, nil
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
@@ -141,6 +150,11 @@ func (m *MainScreen) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case debounceSaveMsg:
 		m.saveAndEnqueue()
+		return m, nil
+	case extNoteMsg, extReqMsg, extExitMsg, extStartedMsg, extDoneMsg, extProgressMsg, extRestartMsg:
+		return m, m.extUpdate(msg)
+	case extpanel.Msg:
+		m.ExtPanel.Apply(msg)
 		return m, nil
 	}
 	return m, nil

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,7 +71,8 @@ func (r *Repo) RunEnv(env []string, args ...string) (string, error) {
 			cmd.Env = append(os.Environ(), env...)
 		}
 		var ob, eb bytes.Buffer
-		cmd.Stdout, cmd.Stderr = &ob, &eb
+		comb := &lockedBuffer{}
+		cmd.Stdout, cmd.Stderr = io.MultiWriter(&ob, comb), io.MultiWriter(&eb, comb)
 		runErr := cmd.Run()
 		out = ob.String()
 		if runErr == nil {
@@ -80,7 +82,12 @@ func (r *Repo) RunEnv(env []string, args ...string) (string, error) {
 		if msg == "" {
 			msg = runErr.Error()
 		}
-		err = errors.New(msg)
+		code := -1
+		var ee *exec.ExitError
+		if errors.As(runErr, &ee) {
+			code = ee.ExitCode()
+		}
+		err = &CmdError{Args: args, Msg: msg, Output: comb.String(), Code: code}
 		if !strings.Contains(msg, "index.lock") {
 			break
 		}
@@ -615,4 +622,51 @@ func Resolve(content string, idx int, choice string) string {
 	out = append(out, repl...)
 	out = append(out, lines[c.End+1:]...)
 	return strings.Join(out, "\n")
+}
+
+// CmdError is a git command that failed. Error() is its stderr, as before;
+// Output is everything it printed, stdout and stderr interleaved as they
+// came — what a hook (husky, lint-staged) printed, in order.
+type CmdError struct {
+	Args   []string
+	Msg    string
+	Output string
+	Code   int // exit code, -1 when it did not run
+}
+
+func (e *CmdError) Error() string { return e.Msg }
+
+// Command renders the git command line for display, eliding a commit
+// message (it is long, and shown elsewhere).
+func (e *CmdError) Command() string {
+	var parts []string
+	for i, a := range e.Args {
+		if i > 0 && e.Args[i-1] == "-m" {
+			a = "<message>"
+		}
+		if strings.ContainsAny(a, " \t") {
+			a = "'" + a + "'"
+		}
+		parts = append(parts, a)
+	}
+	return "git " + strings.Join(parts, " ")
+}
+
+// lockedBuffer collects stdout and stderr, which exec copies from two
+// goroutines.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }

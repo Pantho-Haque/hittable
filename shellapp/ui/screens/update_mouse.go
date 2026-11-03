@@ -25,7 +25,7 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.MouseMotion {
 		m.HoverZone = m.findZoneAt(msg)
 		m.sepHover = ""
-		if m.ActiveFile != "" && !m.GitOpen && !m.Palette.Open && !m.ShowHelp { // zones of a hidden main pane go stale
+		if m.ActiveFile != "" && !m.GitOpen && !m.ExtOpen && !m.Palette.Open && !m.ShowHelp { // zones of a hidden main pane go stale
 			m.sepHover = m.splitterAt(msg)
 		}
 		switch {
@@ -127,6 +127,8 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.Git.SyncAction()
 			case "top_git", "top_branch":
 				m.toggleGit()
+			case "top_ext":
+				m.toggleExtensions()
 			case "top_find":
 				if m.Palette.Open {
 					m.Palette.Close()
@@ -209,6 +211,17 @@ func (m *MainScreen) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.Palette.Close()
 		} else if msg.Type == tea.MouseMotion {
 			m.Palette.HoverRow = -1
+		}
+		return m, nil
+	}
+
+	// ---- extensions panel ----
+	if m.ExtOpen {
+		if z := m.Zones.Get("ext_panel"); z != nil && z.InBounds(msg) {
+			rel := msg
+			rel.X -= z.StartX
+			rel.Y -= z.StartY
+			m.ExtPanel.HandleMouse(rel)
 		}
 		return m, nil
 	}
@@ -466,7 +479,7 @@ func (m *MainScreen) handleBodyMouse(msg tea.MouseMsg) tea.Cmd {
 func (m *MainScreen) findZoneAt(msg tea.MouseMsg) string {
 	ids := topZoneIDs()
 	switch {
-	case m.Palette.Open: // its rows are hit-tested inside the component
+	case m.Palette.Open, m.ExtOpen: // rows and buttons are hit-tested inside the component
 	case m.GitOpen:
 		ids = append(ids, "git_diffmode", "git_wrap", "git_sync")
 		for i := range gitpanel.SectionNames {
@@ -507,7 +520,7 @@ func (m *MainScreen) editorRelative(msg tea.MouseMsg) tea.MouseMsg {
 }
 
 func topZoneIDs() []string {
-	return []string{"top_sidebar", "top_git", "top_find", "top_term", "top_help", "top_branch", "top_sync"}
+	return []string{"top_sidebar", "top_git", "top_ext", "top_find", "top_term", "top_help", "top_branch", "top_sync"}
 }
 
 func (m *MainScreen) findTopZone(msg tea.MouseMsg) string {

@@ -14,6 +14,7 @@ import (
 	"github.com/hittable/shellapp/internal/gitx"
 	"github.com/hittable/shellapp/internal/hitfile"
 	"github.com/hittable/shellapp/ui/components/explorer"
+	"github.com/hittable/shellapp/ui/components/extpanel"
 	"github.com/hittable/shellapp/ui/components/gitpanel"
 	"github.com/hittable/shellapp/ui/components/mdpreview"
 	"github.com/hittable/shellapp/ui/components/palette"
@@ -121,7 +122,11 @@ type MainScreen struct {
 	frameSel         frameSel // drag-selected block of the rendered frame
 	lastFrame        []string // the frame as last drawn, for copying the block
 	HoverZone        string
-	HelpScroll       int // the help overlay scrolls when it outgrows the pane
+	HelpScroll       int       // the help overlay scrolls when it outgrows the pane
+	Ext              *extState // VS Code extensions (ext.go)
+	ExtPanel         *extpanel.Panel
+	ExtOpen          bool    // the Extensions panel fills the main pane
+	pendingCmd       tea.Cmd // a command started from a palette pick, returned by Update
 	ShowHelp         bool
 	Spinner          spinner.Model
 }
@@ -174,6 +179,7 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 		AI:              aiState,
 		Palette:         pal,
 		Preview:         mdpreview.New(),
+		ExtPanel:        extpanel.New(func(msg tea.Msg) { send(msg) }),
 		Focus:           FocusExplorerPane,
 		LastFocus:       FocusURLBar,
 		ExplorerFocused: true,
@@ -206,6 +212,8 @@ func NewMainScreen(rootDir string, zones *zone.Manager) *MainScreen {
 	explorerComp.OnSelect = func(n *explorer.Node) {
 		// No-op for now; cursor movement is the visible feedback.
 	}
+	m.extInit()
+
 	explorerComp.OnActivate = func(n *explorer.Node) {
 		if n.Kind == explorer.NodeDir {
 			explorerComp.Toggle(n)
@@ -271,6 +279,7 @@ func (m *MainScreen) SetSize(w, h int) {
 
 	m.Explorer.SetSize(m.ExplorerWidth, h-2)
 	m.Git.SetSize(m.MainWidth, m.MainH)
+	m.ExtPanel.SetSize(m.MainWidth, m.MainH)
 	m.Palette.SetSize(m.MainWidth, m.MainH)
 	m.URLBar.SetSize(m.MainWidth - 4)
 	m.Params.SetSize(m.MainWidth-4, m.EditorHeight-2)
@@ -361,5 +370,5 @@ func fileExists(p string) bool {
 // preference. The Git panel keeps the tree: clicking a file there feeds the
 // Blame tab.
 func (m *MainScreen) explorerHidden() bool {
-	return m.SingleFile || m.ExplorerHidden || m.Palette.Open
+	return m.SingleFile || m.ExplorerHidden || m.Palette.Open || m.ExtOpen
 }

@@ -5,7 +5,7 @@ export const DOCS_NAV: { title: string; slugs: string[] }[] = [
   { title: "Web app", slugs: ["web-app", "browser-extension", "import-export", "self-hosting"] },
   {
     title: "Terminal app",
-    slugs: ["shellapp", "shellapp-cli", "shellapp-keyboard", "shellapp-git", "shellapp-ai", "shellapp-editor-terminal"],
+    slugs: ["shellapp", "shellapp-cli", "shellapp-keyboard", "shellapp-git", "shellapp-ai", "shellapp-editor-terminal", "shellapp-extensions"],
   },
   { title: "Project", slugs: ["development", "faq"] },
 ];

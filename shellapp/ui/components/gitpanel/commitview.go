@@ -81,6 +81,9 @@ func (p *Panel) rebuildCommitDetail() {
 
 // fileHeadAt is the path whose accordion header is on a rendered row, "".
 func (p *Panel) fileHeadAt(row int) string {
+	if p.ShowOutput {
+		return ""
+	}
 	p.detailLines() // fills detailSrc
 	if row < 0 || row >= len(p.detailSrc) {
 		return ""

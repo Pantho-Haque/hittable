@@ -77,10 +77,26 @@ func Logs() string { return filepath.Join(Dir(), "logs") }
 // ConfigPath is the app config file.
 func ConfigPath() string { return filepath.Join(Dir(), "config.json") }
 
+// Node is where hittable 3.5 downloaded a private Node.js; it is only read
+// (and cleaned up) now that extensions use the machine's Node.
+func Node() string { return filepath.Join(Dir(), "node") }
+
+// Extensions holds installed VS Code extensions (one directory each) and
+// their index, extensions.json.
+func Extensions() string { return filepath.Join(Dir(), "extensions") }
+
+// ExtData holds what extensions store at runtime: globalState, secrets,
+// storage folders, output logs.
+func ExtData() string { return filepath.Join(Dir(), "extdata") }
+
+// SettingsPath is the user settings file extensions read through
+// vscode.workspace.getConfiguration (VS Code's settings.json format).
+func SettingsPath() string { return filepath.Join(Dir(), "settings.json") }
+
 // EnsureDirs creates the root and every sub-directory of the layout. It is
 // idempotent and safe to call from several processes at once.
 func EnsureDirs() error {
-	for _, d := range []string{Dir(), Runtime(), Models(), Run(), Tmp(), Logs()} {
+	for _, d := range []string{Dir(), Runtime(), Models(), Run(), Tmp(), Logs(), Extensions(), ExtData()} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}

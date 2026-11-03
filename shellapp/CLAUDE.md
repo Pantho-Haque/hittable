@@ -291,6 +291,9 @@ internal/
 │   ├── store.go                  # in-memory Map[path]*DocumentModel + Delete
 │   ├── writequeue.go             # per-path debounced, generation-guarded disk writer
 │   └── document_test.go          # write-queue race, concurrency, thread-safety tests
+├── extensions/                   # Open VSX client, .vsix install/verify, index, trust, themes, snippets, language ids
+├── exthost/                      # Node extension host (js/host.js), JSON-RPC, webview server, UTF-16 columns
+├── noderuntime/                  # pinned Node.js download / HITTABLE_NODE
 └── (env.json is read and saved by ui/screens; requests run in hitfile.ExecuteAndCapture;
      the tree lives in ui/components/explorer. The old envfile, httpclient and
      internal/explorer packages were never wired in and were removed.)
@@ -454,11 +457,18 @@ send binding.
 | Markdown view         | `ctrl+t` cycles Text → Preview → Split; click `[ Text | Preview | Split ]` | .md file open |
 | Preview scroll        | `jk` `↑↓` `pgup/pgdown` `g/G`, wheel | Preview focused (tab ⇄ editor in split) |
 | Find file             | `ctrl+p`, `/` in explorer, click `Find` | Global (fuzzy, skips node_modules etc.) |
+| Extensions panel      | `alt+x` (`⌥x` sends `≈`), click `Extensions` in the navbar | Global. Left: search (`@installed` filters), list; ⏎ installs or opens the page, `tab` ⇄ page. Page: `jk` scroll, `1/2/3` `←/→` Details · Features · Changelog, `i` install, `u` uninstall, `e` enable/disable, `U` update; buttons click. `esc` clears the search, then closes |
+| Command palette       | `alt+p` (`⌥p` sends `π`), `ctrl+shift+p` where the terminal reports it | Global: hittable's extension commands and every command enabled extensions contribute |
+| Extensions: hover     | `alt+h` | Text editor (an extension's hover box at the cursor; any key closes it) |
+| Extensions: navigate  | `F12` definition · `shift+F12` references · `F8` next problem | Text editor |
+| Extensions: edit      | `F2` rename · `alt+.` quick fix · `alt+shift+f` (`⌥⇧f` sends `Ï`) format | Text editor |
+| Extensions: pickers   | type to filter, `⇥` checks rows of a multi-select list, `⏎` choose, `esc` cancel | Palette list (extension quick picks, input boxes, message buttons) |
 | Live grep             | `alt+f`, `tab` inside the palette | Global (ripgrep → git grep → walk) |
 | Git: commits          | `f` `/` `y` `J/K` | file↔repo history · search · hash · scroll diff |
 | Git: branches         | `⏎` `n` `d` `f` | checkout · new · delete · fetch |
 | Git: stashes          | `⏎` `s` `d`     | pop · stash · drop |
 | Git: blame            | `⏎` `b`         | go to line · toggle inline blame in editor |
+| Git: command output   | `!`             | full output of the last git command; opens by itself when one fails (a hook refusing a commit). `jk` scroll · `y` copy all · `esc` back |
 | Click                 | mouse left      | Everything: files, folders, tabs, toggle, method, URL cursor, editor cursor, response, body/headers label |
 | Scroll                | wheel           | Explorer, editor, response |
 | Select any text       | drag over it, then `ctrl+c` | Anywhere: explorer, response, preview, help, git lists; editors, the terminal panel and the git diff keep their own selections |
@@ -467,6 +477,142 @@ send binding.
 | Resize markdown split | drag the seam between editor and preview | Markdown split view |
 
 ## 10. Changelog
+
+### v3.5.4 — Git command output
+- A failed git command (a commit a pre-commit / commit-msg hook refused, a rejected
+  push, a pull that stops) opens its full output in the Git panel's detail pane:
+  `✖ commit failed (exit 1)`, the command (`git commit -m <message>`), a one-line hint
+  naming the hook, then every line it printed — stdout and stderr interleaved in the
+  order they came (`gitx.CmdError.Output`, collected through one locked buffer) —
+  wrapped to the pane, with error / warning / ok lines tinted. It scrolls, selects and
+  copies like a diff (`y` copies all of it); `esc` or a click in the list goes back,
+  `!` toggles it, and successful commands keep their output for `!` without opening.
+  The footer's one-line reason names the first reported error (`CommitFailure`).
+- A refused commit keeps its message: the next `c` reopens it as written.
+- The web app's ESLint ignores `shellapp/`: lint-staged linted the extension host's
+  CommonJS (`require()`) with the Next.js rules and failed every commit that touched it.
+
+### v3.5.3 — Sharp icons, smooth list scrolling
+- In kitty and Ghostty (`TERM_PROGRAM=ghostty`, `KITTY_WINDOW_ID`, `TERM=xterm-kitty`;
+  not under tmux/screen), icons go through the kitty graphics protocol
+  (`extpanel/kitty.go`): each (icon, size) is uploaded once as a PNG of at most 128 px
+  with a virtual placement in cells (`a=T,U=1,c,r,q=2` — `q=2` so the terminal never
+  answers into stdin), in 4 KB chunks, and drawn with Unicode placeholders (U+10EEEE plus
+  the row/column diacritics, foreground = the 24-bit image id). The upload is prefixed to
+  the panel's frame for a second after it is first needed, so a dropped frame cannot lose
+  it and the renderer's line diff keeps it from being written twice; a resize or
+  reopening the panel sends it again; quitting deletes the images. Half blocks remain the
+  fallback; `HITTABLE_IMAGES=blocks|kitty` overrides detection.
+- The list draws only the rows inside its window (a frame is ~1 ms with 40 entries,
+  `BenchmarkScrollFrame`), and a wheel notch moves one entry (3 lines) in the list, 3
+  lines on the page.
+
+### v3.5.2 — Icons, accordion, hover focus, the machine's Node
+- The panel draws each extension's real icon with half blocks (`extpanel/icon.go`): a
+  6×6-pixel picture per list entry and 12×12 on the page, box-filtered from the PNG,
+  composited over the row's background (fully transparent cells keep the terminal's).
+  Icons are fetched with at most four downloads at once, cached in
+  `~/.hittable/extdata/icons`, decoded once and rendered once per size and background;
+  the initials tile shows until one arrives, and for SVG icons.
+- The list is collapsible sections (`▾ INSTALLED  n`, `▾ POPULAR ON OPEN VSX  n`,
+  `▾ OPEN VSX  n`): ⏎ or a click on a header folds it, `←/→` fold and open. Entries are
+  three lines: name with ✓ / ⏸ and version; description; publisher, installs, rating.
+- The pane under the pointer takes the keyboard, rows highlight on hover, and the wheel
+  scrolls the pane it is over — the list by line without moving the selection (so no
+  page reloads while scrolling), the page two lines per notch.
+- The page has a Setup checklist from "downloaded · signature verified" through Node.js,
+  folder trust and the extension host to Active, each step done / in progress / waiting
+  on a button / failed with what to do. The host reports `ext/activating`,
+  `ext/activated` and `ext/failed` per extension for it; a Node install streams each
+  line of its output into the Node step.
+- The README tab runs through `CleanMarkdown` before the Markdown preview: badges and
+  images go, inline HTML (`<h2>`, `<a>`, `<b>`, `<br>`, lists, tables) becomes Markdown,
+  HTML-indented text loses the indentation that made it look like code, blank runs
+  collapse; fenced code is left alone.
+- `noderuntime` now uses the Node on the machine (`Find`: HITTABLE_NODE, PATH, nvm, fnm,
+  Volta, asdf, mise, Homebrew, the standard locations, then older hittable installs;
+  Node 20+, newest first, `--version` cached per binary and the answer for 5 s). With
+  none, `InstallGlobal` installs Node for the account: `brew install|upgrade node`,
+  `winget install OpenJS.NodeJS.LTS`, or the official build (SHA-256) in
+  `~/.local/lib/nodejs` with node/npm/npx/corepack linked into `~/.local/bin` (an
+  existing file there that is not its own link is left alone). No sudo. `Remove` only
+  deletes what it installed. The private `~/.hittable/node` download is gone.
+
+### v3.5.1 — Extensions panel
+- `ui/components/extpanel`: VS Code's Extensions view in the main pane (`alt+x`, a
+  navbar button). Left: a search box (debounced 300 ms; `@installed` filters what is
+  installed) over sections — Installed, Popular on Open VSX (the registry's most
+  installed, loaded once), or the results. Right: the selected extension's page — an
+  initials tile (a terminal cannot show its PNG icon), name, version, publisher with the
+  verified mark, installs, rating, licence, update date, then buttons (Install ·
+  Uninstall · Enable/Disable · Update to x · Set Color Theme) and one banner for what
+  stands between it and running (Trust this folder, Download Node.js with live
+  progress, what the terminal cannot show). Tabs: Details (README, glamour), Features
+  (commands, settings, languages, themes, snippets, keys, views, activation, built
+  from the manifest — local when installed, the registry's otherwise), Changelog.
+  Installed extensions show their local README at once.
+- Nothing blanks while loading: a search keeps the previous list under a spinner line,
+  a page keeps its cover while the registry and README load, and an install turns the
+  button into a spinner with its percentage. Background results arrive as
+  `extpanel.Msg`; the spinner runs while `Panel.Busy()`.
+- The palette has a loading state (`Items.Loading`): references, quick fixes, symbols,
+  rename and tree views show a spinner in the open palette until the answer replaces
+  it, instead of the palette closing and the list popping up later. Esc cancels; an
+  answer that arrives after that is dropped.
+- `extensions.Details` / `FetchText` / `FetchManifest` / `LocalDoc`, and
+  `Install("id@latest")` re-resolves an installed extension (the Update button).
+
+### v3.5 — VS Code extensions
+- Extensions install from Open VSX (`internal/extensions`): `Resolve` queries the
+  target-platform and universal builds, newest first, and takes the newest stable one
+  whose `engines.vscode` accepts `APIVersion` (pre-release only when nothing stable
+  fits). Downloads go through `llmhost.DownloadVerified` (resume, retry) against the
+  registry's SHA-256, then the `.sigzip`'s Ed25519 signature over the raw `.vsix` bytes
+  is checked with the publisher key the registry names. A refused install leaves
+  nothing behind; staging folders are `.tmp-*` and swept. Dependencies install first,
+  pack members best-effort; proposed APIs, Microsoft-licensed ids and a registry that
+  serves a different id are refused. `extensions.json` is written atomically under an
+  O_EXCL lock shared by every window and the CLI. Trust (`Trust`/`Trusted`) is per
+  folder, with symlinks resolved.
+- Themes, snippets and contributed languages work without Node: `ThemeChoice.ChromaStyle`
+  maps TextMate scopes to Chroma tokens (most specific prefix rule wins, includes
+  followed), `ExpandSnippet` resolves tabstops/placeholders/choices/variables, and
+  `LanguageID` puts contributed languages ahead of the built-in table.
+- Extensions with code run in `internal/exthost`: Node runs the embedded `js/host.js`,
+  which provides the `vscode` module (CommonJS via `Module._load`, ES modules via
+  `module.registerHooks` or `module.register`), a per-extension API (Proxy stubs log any
+  API the host lacks instead of throwing at import), activation events (implicit ones
+  from contributions included), configuration from `contributes.configuration` defaults
+  + `~/.hittable/settings.json` + `.vscode/settings.json`, documents with incremental
+  changes, diagnostics batched per tick, providers for completion/hover/definition/
+  references/formatting/code actions/rename/signature help/symbols, tree views, webviews,
+  mementos and secrets (a 0600 file). JSON-RPC is one object per line on stdin/stdout;
+  the extensions' own stdout and console are captured as log messages so they cannot
+  corrupt it. The host runs in its own process group and is killed with its children;
+  it exits when its stdin closes.
+- `internal/noderuntime` pins Node v24.22.2 with per-platform SHA-256 and sizes; it is
+  downloaded only on request (`hittable ext node install`, or the prompt after installing
+  an extension with code). `HITTABLE_NODE` overrides it (Node 20+). musl and glibc < 2.28
+  are detected before downloading; Rosetta gets the arm64 build.
+- UI (`ui/screens/ext*.go`): positions cross the RPC boundary in UTF-16 (`exthost.ToUTF16`
+  / `FromUTF16`). Every edit, open, save and disk reload is forwarded (`extChanged` is a
+  no-op when the text is unchanged, so it runs after every key). Host requests become
+  palette lists (`palette.ShowItems`, queued so two prompts never fight), workspace edits
+  go through the document store and the editor's undo, status items and progress fill the
+  right of the footer, diagnostics become editor `Mark`s (underline, tinted line number,
+  message in the status row). Extension completions merge into the existing popup:
+  cached per word start and re-asked only when the start moves, on ctrl+space, after a
+  trigger character, or every key when the server said the list is incomplete. Webview
+  panels open in the browser from `exthost.WebviewServer` (127.0.0.1, random token,
+  Host-header check, `localResourceRoots` enforced with symlinks resolved, CSP widened by
+  the bridge script's hash and a connect-src). The host restarts after a crash, stops
+  after three in a minute.
+- `hittable ext list|search|install|uninstall|enable|disable|trust|node`.
+- Tests: `internal/extensions` against a fake Open VSX (signature, tampering, versions,
+  platforms, dependencies, refusals, exec bits); `internal/exthost` with a fixture
+  extension and real Node; `HITTABLE_EXT_E2E=1` installs Red Hat YAML, Dracula and
+  Prettier from Open VSX and drives them; `ui/e2e` runs a `.vsix` through the real
+  terminal (status item, diagnostics, palette command, message box, completion, format).
 
 ### v3.4 — File uploads
 - A `.hit` body can send files, with the web app's format (`docs/file-uploads.md`):

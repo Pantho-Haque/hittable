@@ -29,7 +29,35 @@ type Mode int
 const (
 	ModeFiles Mode = iota
 	ModeGrep
+	// ModeItems picks from a caller's list (the command palette, extension
+	// quick picks) or, with Input set, takes typed text (an input box).
+	ModeItems
 )
+
+// Item is one row of a ModeItems list.
+type Item struct {
+	Label, Detail string
+	Picked        bool // pre-checked in a multi-select list
+}
+
+// Items configures ShowItems. Exactly one of OnPick / OnCancel runs.
+type Items struct {
+	Title       string
+	Placeholder string
+	Items       []Item
+	Value       string // initial query
+	Input       bool   // Enter accepts the typed text, even matching nothing
+	Password    bool   // mask what is typed
+	Multi       bool   // tab toggles rows; Enter returns every checked one
+	// Loading shows a spinner while the real list is fetched. The next
+	// ShowItems replaces it without calling its OnCancel, so only esc cancels.
+	Loading bool
+	// OnPick gets the original index of the chosen row (-1 when the typed
+	// text was accepted with no row), the typed text, and for Multi lists
+	// every checked index.
+	OnPick   func(index int, text string, picked []int)
+	OnCancel func()
+}
 
 // Result is one row: a file, optionally at a line.
 type Result struct {
@@ -67,6 +95,12 @@ type Palette struct {
 
 	OnOpen func(r Result) // called with the chosen result
 
+	items   *Items
+	checked map[int]bool
+
+	// Spinner is the current spinner frame, set by the screen each frame.
+	Spinner string
+
 	files     []string // relative paths, cached
 	filesAt   time.Time
 	seq       int
@@ -94,7 +128,81 @@ func (p *Palette) Show(mode Mode) {
 	}
 }
 
-func (p *Palette) Close() { p.Open, p.HoverRow = false, -1 }
+func (p *Palette) Close() {
+	p.Open, p.HoverRow = false, -1
+	if p.items != nil {
+		it := p.items
+		p.items = nil
+		if p.Mode == ModeItems {
+			p.Mode = ModeFiles
+		}
+		if it.OnCancel != nil {
+			it.OnCancel()
+		}
+	}
+}
+
+// ShowItems opens a list to pick from (or a text prompt with Input).
+func (p *Palette) ShowItems(cfg Items) {
+	if p.Open && p.items != nil {
+		if p.items.Loading {
+			p.items = nil // the list it was waiting for has arrived
+		} else {
+			p.Close() // the earlier list is cancelled, never left dangling
+		}
+	}
+	p.Open, p.Mode, p.items = true, ModeItems, &cfg
+	p.Query, p.Cursor = cfg.Value, 0
+	p.checked = map[int]bool{}
+	for i, it := range cfg.Items {
+		if it.Picked {
+			p.checked[i] = true
+		}
+	}
+	p.search()
+}
+
+// Loading reports whether a loading placeholder is showing.
+func (p *Palette) Loading() bool { return p.Open && p.items != nil && p.items.Loading }
+
+// ItemsOpen reports whether a ModeItems list is showing.
+func (p *Palette) ItemsOpen() bool { return p.Open && p.items != nil }
+
+// ItemsTitle is the open list's title.
+func (p *Palette) ItemsTitle() string {
+	if p.items == nil {
+		return ""
+	}
+	return p.items.Title
+}
+
+// pickItem closes the list and reports the choice.
+func (p *Palette) pickItem() {
+	it := p.items
+	idx := -1
+	if p.Cursor >= 0 && p.Cursor < len(p.Results) {
+		idx = p.Results[p.Cursor].Line - 1
+	}
+	if idx < 0 && !it.Input {
+		return
+	}
+	var picked []int
+	if it.Multi {
+		for i := range it.Items {
+			if p.checked[i] {
+				picked = append(picked, i)
+			}
+		}
+		if len(picked) == 0 && idx >= 0 {
+			picked = []int{idx}
+		}
+	}
+	p.items = nil
+	p.Open, p.HoverRow, p.Mode = false, -1, ModeFiles
+	if it.OnPick != nil {
+		it.OnPick(idx, p.Query, picked)
+	}
+}
 
 // indexFiles walks the root once per 30s (skipping vendor-ish folders).
 func (p *Palette) indexFiles() {
@@ -165,6 +273,26 @@ func fuzzyScore(s, q string) int {
 
 func (p *Palette) search() {
 	p.Cursor = 0
+	if p.Mode == ModeItems && p.items != nil {
+		// Line carries the 1-based original index, so filtering never
+		// loses which row was picked.
+		var out []Result
+		if !p.items.Input || len(p.items.Items) > 0 {
+			for i, it := range p.items.Items {
+				text := it.Label + " " + it.Detail
+				sc := fuzzyScore(text, p.Query)
+				if sc < 0 {
+					continue
+				}
+				out = append(out, Result{Rel: it.Label, Text: it.Detail, Line: i + 1, score: sc})
+			}
+			if p.Query != "" {
+				sort.SliceStable(out, func(i, j int) bool { return out[i].score > out[j].score })
+			}
+		}
+		p.Results = out
+		return
+	}
 	if p.Mode == ModeFiles {
 		var out []Result
 		for _, f := range p.files {
@@ -320,6 +448,16 @@ func (p *Palette) HandleKey(msg tea.KeyMsg) bool {
 	case "esc":
 		p.Close()
 	case "enter":
+		if p.items != nil && p.items.Loading {
+			return true
+		}
+		if p.items != nil {
+			if p.items.Input && p.Query != "" && (len(p.Results) == 0 || p.items.Items == nil) {
+				p.Cursor = -1 // typed text wins over a stray first row
+			}
+			p.pickItem()
+			return true
+		}
 		if p.Cursor >= 0 && p.Cursor < len(p.Results) && p.OnOpen != nil {
 			r := p.Results[p.Cursor]
 			p.Close()
@@ -341,6 +479,13 @@ func (p *Palette) HandleKey(msg tea.KeyMsg) bool {
 	case "pgdown":
 		p.Cursor = p.clampCursor(p.Cursor + p.listRows())
 	case "tab":
+		if p.items != nil {
+			if p.items.Multi && p.Cursor >= 0 && p.Cursor < len(p.Results) {
+				i := p.Results[p.Cursor].Line - 1
+				p.checked[i] = !p.checked[i]
+			}
+			return true
+		}
 		p.Mode = (p.Mode + 1) % 2
 		p.Show(p.Mode)
 	case "backspace":
@@ -407,6 +552,9 @@ func (p *Palette) scroll() int {
 // ---------- view ----------
 
 func (p *Palette) View(z *zone.Manager) string {
+	if p.items != nil {
+		return p.itemsView(z)
+	}
 	inner := p.Width - 2
 	title := "Find file"
 	prompt := "  "
@@ -483,4 +631,79 @@ func highlightMatch(s, q string) string {
 		}
 	}
 	return b.String()
+}
+
+func (p *Palette) itemsView(z *zone.Manager) string {
+	inner := p.Width - 2
+	it := p.items
+	q := p.Query
+	if it.Password {
+		q = strings.Repeat("•", len([]rune(q)))
+	}
+	head := theme.PromptStyle.Render("  " + q + "▏")
+	if p.Query == "" && it.Placeholder != "" {
+		head += theme.MutedStyle.Render(" " + it.Placeholder)
+	}
+	title := it.Title
+	if title == "" {
+		title = "Pick"
+	}
+	lines := []string{
+		ansi.Truncate(theme.TabActiveStyle.Render("["+title+"]")+"  "+head, inner, "…"),
+		"",
+	}
+	if it.Loading {
+		spin := p.Spinner
+		if spin == "" {
+			spin = "◌"
+		}
+		lines[0] = ansi.Truncate(theme.TabActiveStyle.Render("["+title+"]"), inner, "…")
+		lines = append(lines, " "+spin+" "+theme.MutedStyle.Render(strings.TrimSpace(it.Placeholder+" …")))
+		for len(lines) < p.listRows()+2 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, theme.MutedStyle.Render(" esc cancel"))
+		return theme.FocusedBorderStyle.Width(inner).Height(p.Height - 2).MaxHeight(p.Height).Render(strings.Join(lines, "\n"))
+	}
+	start := p.scroll()
+	for i := start; i < start+p.listRows(); i++ {
+		if i >= len(p.Results) {
+			lines = append(lines, "")
+			continue
+		}
+		r := p.Results[i]
+		mark := ""
+		if it.Multi {
+			mark = "[ ] "
+			if p.checked[r.Line-1] {
+				mark = "[x] "
+			}
+		}
+		row := " " + mark + highlightMatch(r.Rel, p.Query)
+		if r.Text != "" {
+			row += "  " + theme.MutedStyle.Render(r.Text)
+		}
+		row = ansi.Truncate(row, inner, "…")
+		if i == p.Cursor || i == p.HoverRow {
+			plain := ansi.Strip(row)
+			if w := lipgloss.Width(plain); w < inner {
+				plain += strings.Repeat(" ", inner-w)
+			}
+			st := theme.HoverStyle
+			if i == p.Cursor {
+				st = theme.CursorFocusedStyle
+			}
+			row = st.Render(plain)
+		}
+		lines = append(lines, z.Mark(fmt.Sprintf("pal_%d", i), row))
+	}
+	help := " ↑↓ move · ⏎ choose · esc cancel"
+	switch {
+	case it.Input && len(it.Items) == 0:
+		help = " type, then ⏎ · esc cancel"
+	case it.Multi:
+		help = " ↑↓ move · ⇥ check · ⏎ done · esc cancel"
+	}
+	lines = append(lines, theme.MutedStyle.Render(fmt.Sprintf(" %d", len(p.Results))+help))
+	return theme.FocusedBorderStyle.Width(inner).Height(p.Height - 2).MaxHeight(p.Height).Render(strings.Join(lines, "\n"))
 }

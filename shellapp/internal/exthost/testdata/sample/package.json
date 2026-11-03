@@ -1,0 +1,15 @@
+{
+  "name": "sample",
+  "publisher": "hittable-test",
+  "version": "1.0.0",
+  "engines": { "vscode": "^1.80.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:plaintext"],
+  "contributes": {
+    "commands": [
+      { "command": "sample.hello", "title": "Say Hello", "category": "Sample" },
+      { "command": "sample.panel", "title": "Open Panel", "category": "Sample" }
+    ],
+    "configuration": { "properties": { "sample.greeting": { "type": "string", "default": "Hello" } } }
+  }
+}

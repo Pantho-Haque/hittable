@@ -109,6 +109,7 @@ func (m *MainScreen) loadDoc(path string) (*document.DocumentModel, error) {
 }
 
 func (m *MainScreen) openFileRaw(path string) {
+	defer m.extOpenActive()
 	if m.ActiveFile == path {
 		m.GitOpen = m.GitOpen && m.Git.Section == gitpanel.SecBlame
 		if m.ViewMode == ViewText {
@@ -229,6 +230,7 @@ func (m *MainScreen) adoptDiskContent(doc *document.DocumentModel, content []byt
 			doc.HitContent = &h
 		}
 	}
+	m.extChanged(doc.Path, string(content))
 	if doc.Path != m.ActiveFile {
 		return // reopening it will show the new content
 	}

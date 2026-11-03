@@ -87,6 +87,17 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.ExtOpen {
+		if key == "ctrl+c" {
+			m.saveAndEnqueue()
+			return m, tea.Quit
+		}
+		cmd, closed := m.ExtPanel.HandleKey(msg)
+		if closed {
+			m.toggleExtensions()
+		}
+		return m, cmd
+	}
 	if m.GitOpen {
 		if key == "ctrl+c" {
 			if m.Git.HasSelection() {
@@ -156,6 +167,7 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.saveAndEnqueue()
 		m.WriteQueue.FlushNow()
 		m.StatusBar = "Saved"
+		m.extSaved(m.ActiveFile)
 		return m, nil
 	case "ctrl+r", "ctrl+enter":
 		if m.ActiveFile != "" && !m.inTextPrompt() {
@@ -196,6 +208,9 @@ func (m *MainScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m.handleShiftTab()
+		}
+		if m.extEditorKey(key) {
+			return m, nil
 		}
 		cmd := m.handleTextEditorKey(msg)
 		if m.isMarkdown() && m.MdMode == MdSplit {
@@ -506,6 +521,10 @@ func (m *MainScreen) handleBodyKey(msg tea.KeyMsg) tea.Cmd {
 func (m *MainScreen) handleTextEditorKey(msg tea.KeyMsg) tea.Cmd {
 	cmd := m.TextEd.Update(msg)
 	m.saveAndEnqueueDebounced()
+	m.extSyncActive()
+	if m.Ext != nil && m.Ext.host != nil {
+		m.extSendActive()
+	}
 	return cmd
 }
 
@@ -516,7 +535,7 @@ func (m *MainScreen) focusedEditor() *texteditor.TextEditor {
 	// terminal panel is handed to the editor and selection never happens.
 	// The Git panel, palette and help draw over the editor, so a drag while
 	// they are up belongs to them.
-	if m.TermFocused || m.ExplorerFocused || m.ActiveFile == "" || m.GitOpen || m.Palette.Open || m.ShowHelp {
+	if m.TermFocused || m.ExplorerFocused || m.ActiveFile == "" || m.GitOpen || m.ExtOpen || m.Palette.Open || m.ShowHelp {
 		return nil
 	}
 	switch m.Focus {
@@ -617,6 +636,14 @@ func (m *MainScreen) navKey(key string) bool {
 		m.toggleTerminal()
 	case "f1":
 		m.toggleHelp()
+	case "alt+x", "≈": // ⌥x on a macOS keyboard composes ≈
+		m.toggleExtensions()
+	case "alt+p", "ctrl+shift+p", "π": // ⌥p on a macOS keyboard composes π
+		if m.Palette.ItemsOpen() && m.Palette.ItemsTitle() == "Command Palette" {
+			m.Palette.Close()
+		} else {
+			m.openCommandPalette()
+		}
 	case "alt+b":
 		m.toggleExplorer()
 	default:
@@ -629,6 +656,7 @@ func (m *MainScreen) navKey(key string) bool {
 // navbar buttons behave as exclusive tabs: opening one closes the rest.
 func (m *MainScreen) closePanels() {
 	m.GitOpen = false
+	m.ExtOpen = false
 	m.ShowHelp = false
 	m.Palette.Close()
 	if m.Term.Open {

@@ -54,6 +54,7 @@ func (m *MainScreen) applyDelete(path string) {
 		m.ViewMode = ViewRunner
 	}
 	m.WriteQueue.Cancel(path)
+	m.extClosed(path)
 	m.Store.Delete(path)
 	m.TextEd.RemoveEditor(path)
 	if err := os.RemoveAll(path); err != nil {

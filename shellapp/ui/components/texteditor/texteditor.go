@@ -16,7 +16,6 @@ import (
 	"github.com/alecthomas/chroma"
 	"github.com/alecthomas/chroma/formatters"
 	"github.com/alecthomas/chroma/lexers"
-	"github.com/alecthomas/chroma/styles"
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -77,6 +76,7 @@ type buffer struct {
 	undo     []snapshot
 	redo     []snapshot
 	hlCache  map[string]string
+	hlGen    int // styleGen the cache was built with
 	findLast string
 
 	words      []string // identifiers for completion, rebuilt after an edit
@@ -127,6 +127,23 @@ type TextEditor struct {
 	// Wrap soft-wraps long lines at the pane width (prose files); off means
 	// horizontal scrolling.
 	Wrap bool
+
+	// Signature is a parameter hint shown in the status row while typing
+	// a call; enter, esc or leaving the line clears it.
+	Signature string
+
+	ext extState // extension features: diagnostics, completions, popups (ext.go)
+	// ExtComplete asks extensions for completions at a cursor; the answer
+	// comes back through DeliverExtCompletions. trigger is the character
+	// that was typed, or "" for a word or an explicit ctrl+space.
+	ExtComplete func(path string, row, col int, trigger string)
+	// ExtItems supplies synchronous extra suggestions (contributed snippets).
+	ExtItems func(path string) []ExtItem
+	// OnExtAccept runs after an extension suggestion is inserted, to apply
+	// its additional edits and command.
+	OnExtAccept func(path string, it ExtItem)
+	// OnTyped is told every character typed, for trigger characters.
+	OnTyped func(path string, r rune)
 }
 
 // vrow is one visual row: a segment [start,end) (rune indexes) of a line.
@@ -353,7 +370,9 @@ func (t *TextEditor) GetCursorRow() int { return t.TextArea.Line() }
 
 // PromptOpen reports whether find / go-to-line / the completion popup is
 // capturing keys. The screen checks this before treating esc as "close file".
-func (t *TextEditor) PromptOpen() bool { return t.prompt != promptNone || t.comp != nil }
+func (t *TextEditor) PromptOpen() bool {
+	return t.prompt != promptNone || t.comp != nil || t.ext.popup != nil || t.Signature != ""
+}
 
 // moveTo places the textarea cursor on (row, col) without soft-wrap effects.
 func moveTo(ta *textarea.Model, row, col int) {
@@ -603,6 +622,7 @@ func (t *TextEditor) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		b.scrollX += 6
 	case tea.MouseLeft:
 		t.comp = nil
+		t.ext.popup = nil
 		// msg.X / msg.Y are relative to the editor's top-left content cell.
 		row := b.scrollY + msg.Y
 		col := b.scrollX + msg.X - t.gutterWidth()
@@ -661,6 +681,11 @@ func (t *TextEditor) handleMouse(msg tea.MouseMsg) tea.Cmd {
 
 func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 	t.status = ""
+	t.ext.popup = nil
+	if msg.String() == "esc" && t.Signature != "" && t.comp == nil && t.prompt == promptNone {
+		t.Signature = ""
+		return nil
+	}
 	if t.prompt != promptNone {
 		t.handlePromptKey(msg)
 		return nil
@@ -787,6 +812,12 @@ func (t *TextEditor) handleKey(msg tea.KeyMsg) tea.Cmd {
 	}
 	t.followCursor()
 
+	if t.TextArea.Line() != before.row || msg.Type == tea.KeyEnter {
+		t.Signature = ""
+	}
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 && t.OnTyped != nil {
+		t.OnTyped(t.currentPath, msg.Runes[len(msg.Runes)-1])
+	}
 	// Suggestions track the word under the cursor: an open list refilters after
 	// every edit, and typing into a word opens one.
 	switch {
@@ -974,6 +1005,9 @@ func (t *TextEditor) highlight(line string) string {
 	if b.lexer == nil || strings.TrimSpace(line) == "" || len(line) > maxHighlightLine {
 		return line
 	}
+	if b.hlGen != styleGen {
+		b.hlCache, b.hlGen = map[string]string{}, styleGen
+	}
 	if hl, ok := b.hlCache[line]; ok {
 		return hl
 	}
@@ -982,7 +1016,7 @@ func (t *TextEditor) highlight(line string) string {
 		return line
 	}
 	var sb strings.Builder
-	if err := formatters.Get("terminal256").Format(&sb, styles.Get("dracula"), it); err != nil {
+	if err := formatters.Get("terminal256").Format(&sb, syntaxStyle, it); err != nil {
 		return line
 	}
 	hl := strings.ReplaceAll(sb.String(), "\n", "") // lexers with EnsureNL add one
@@ -1044,6 +1078,9 @@ func (t *TextEditor) View() string {
 				arrow = "▸"
 			}
 		}
+		if sev, ok := t.lineSeverity(i); ok {
+			numStyle = sevStyle(sev).UnsetUnderline()
+		}
 		num := theme.GutterStyle.Render(arrow) + numStyle.Render(fmt.Sprintf("%*d ", numW, i+1))
 		if !v.first {
 			num = strings.Repeat(" ", numW+2)
@@ -1086,6 +1123,7 @@ func (t *TextEditor) View() string {
 			sr := []rune(shown)
 			full = ansi.Cut(full, 0, sc) + st.Render(string(sr[sc:ec])) + ansi.Cut(full, ec, len(sr))
 		}
+		full = t.underlineMarks(i, raw, shown, full)
 		// Visible window of this segment in display columns (never past the
 		// segment end, so a wrapped row does not bleed into the next one).
 		segStart := displayCol(raw, v.start) + b.scrollX
@@ -1128,6 +1166,8 @@ func (t *TextEditor) View() string {
 	}
 	if t.comp != nil && curY >= 0 {
 		t.overlayCompletion(out, curX, curY)
+	} else if t.ext.popup != nil && curY >= 0 {
+		t.overlayPopup(out, curX, curY)
 	}
 
 	// Scrollbar column on the right.
@@ -1155,6 +1195,12 @@ func (t *TextEditor) View() string {
 		note := t.status
 		if note == "" {
 			note = t.Hint
+		}
+		if note == "" {
+			note = t.markNote(row, col)
+		}
+		if t.Signature != "" {
+			note = t.Signature
 		}
 		if note == "" && t.LineHint != nil {
 			note = t.LineHint(row)

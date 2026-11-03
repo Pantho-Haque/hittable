@@ -64,8 +64,13 @@ plain .hit files (shared with the Hittable web app), variables in hittable/env.j
   hittable model disable       stop the server, free the memory, keep the files
   hittable model delete        remove it from this machine, reclaim the disk
 
+  hittable ext search yaml     find VS Code extensions on Open VSX
+  hittable ext install redhat.vscode-yaml   install one (also: a .vsix file)
+  hittable ext list | uninstall | enable | disable | trust | node
+                               (or alt+p › Extensions inside the app)
+
   hittable update              update to the latest release (verified download)
-  hittable uninstall           remove hittable, its data and the model from this machine`,
+  hittable uninstall           remove hittable, its data, extensions and the model from this machine`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		return cobra.MaximumNArgs(1)(cmd, exportFormatArg(args))
 	},

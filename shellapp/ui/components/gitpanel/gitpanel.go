@@ -191,10 +191,15 @@ type Panel struct {
 	// Editing submode above. The editor opens pre-filled with the heuristic
 	// draft; a model streams over it when one is installed. draft survives
 	// esc so pressing c again restores what was typed.
-	Composing    bool
-	MsgEditor    *texteditor.TextEditor
-	draft        string
-	draftEdited  bool
+	Composing   bool
+	MsgEditor   *texteditor.TextEditor
+	draft       string
+	draftEdited bool
+	committing  string // the message of the commit in flight
+	// out is the last command's full output; ShowOutput puts it in the
+	// detail pane (opened by itself when a command fails, ! toggles it).
+	out          *cmdOutput
+	ShowOutput   bool
 	composeType  string
 	composeRules commitmsg.Rules
 	digest       *commitmsg.Digest
@@ -549,6 +554,9 @@ func (p *Panel) detailWidth() int {
 // being cut off at the border. Memoised, and recomputed on resize or a mode
 // flip, so a stale width can never survive a SetSize.
 func (p *Panel) detailLines() []string {
+	if p.ShowOutput && p.out != nil {
+		return p.outputLines()
+	}
 	w, half := p.detailWidth(), p.splitHalf()
 	hot := p.dragSplit || p.HoverSep == "split"
 	// The hovered hunk button is baked into the rows, so it is part of the key.
@@ -609,6 +617,9 @@ func (p *Panel) renderHunkBtns(row int) string {
 // hunkBtnAt names the hunk button at a right-pane column of a rendered row:
 // "stage", "undo" or "".
 func (p *Panel) hunkBtnAt(row, col int) string {
+	if p.ShowOutput {
+		return ""
+	}
 	dl := p.detailLines()
 	if p.hunkBtns == "" || row < 0 || row >= len(dl) {
 		return ""
@@ -1054,7 +1065,8 @@ func (p *Panel) changed() {
 
 func (p *Panel) run(label string, fn func() error) {
 	if err := fn(); err != nil {
-		p.Message = label + ": " + err.Error()
+		p.record(label, "", err)
+		p.Message = label + ": " + err.Error() + " · ! output"
 		return
 	}
 	p.Message = label + " ✓"
@@ -1106,6 +1118,13 @@ func (p *Panel) HandleKey(msg tea.KeyMsg) bool {
 	}
 	if p.Repo == nil {
 		return msg.String() != "esc"
+	}
+	if msg.String() == "!" {
+		p.toggleOutput()
+		return true
+	}
+	if p.ShowOutput && p.outputKey(msg) {
+		return true
 	}
 	if p.FocusDiff && p.handleDiffKey(msg) {
 		return true
@@ -1339,8 +1358,20 @@ func (p *Panel) async(label string, fn func() (string, error)) {
 // Done handles the result of an async operation.
 func (p *Panel) Done(msg DoneMsg) {
 	p.Busy = ""
+	if msg.Label == "commit" {
+		if msg.Err != nil && p.committing != "" {
+			// Keep what was written: the next c reopens it as it was.
+			p.draft, p.draftEdited = p.committing, true
+		}
+		p.committing = ""
+	}
+	p.record(msg.Label, msg.Out, msg.Err)
 	if msg.Err != nil {
 		p.Message = msg.Label + ": " + msg.Err.Error()
+		if msg.Label == "commit" {
+			p.Message = CommitFailure(msg.Err.Error())
+		}
+		p.Message += " · ! output"
 	} else {
 		last := strings.TrimSpace(msg.Out)
 		if i := strings.LastIndex(last, "\n"); i >= 0 {
@@ -1441,6 +1472,9 @@ func (p *Panel) HandleMouse(msg tea.MouseMsg) {
 	col := msg.X - p.rightX()
 	drow := p.detailScroll + msg.Y - p.detailTop()
 	editorTop := listTop // the editors draw their own border from the first body row
+	if p.ShowOutput && inLeft && msg.Type == tea.MouseLeft && msg.Action == tea.MouseActionPress {
+		p.closeOutput() // a click in the list is back to diffs
+	}
 
 	switch msg.Type {
 	case tea.MouseMotion:
@@ -2101,6 +2135,9 @@ func (p *Panel) SyncAction() {
 }
 
 func (p *Panel) hints() string {
+	if p.ShowOutput {
+		return "output · jk/wheel scroll · shift+↑↓ select · ctrl+c copy · y copy all · ! or esc back to the diff"
+	}
 	if p.FocusDiff {
 		if p.hunkBtns != "" {
 			return "jk move · shift+↑↓ select · s stage lines · u revert/unstage lines · e edit · ctrl+c copy · drag │ resize · tab/esc list"
@@ -2333,4 +2370,52 @@ func (p *Panel) blameLines(w int) []string {
 		out = append(out, ansi.Truncate(gutter+src, w, "…"))
 	}
 	return out
+}
+
+var ansiSeq = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
+
+// CommitFailure turns git's output for a refused commit into one line that
+// says why. A pre-commit or commit-msg hook (husky, lint-staged) prints pages
+// of output; the line that matters is the first reported error, with the
+// file it is in.
+func CommitFailure(out string) string {
+	lines := strings.Split(ansiSeq.ReplaceAllString(out, ""), "\n")
+	hook := strings.Contains(out, "husky") || strings.Contains(out, "lint-staged") || strings.Contains(out, "hook")
+	file := ""
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		switch {
+		case t == "":
+			continue
+		case strings.HasPrefix(t, "/") || strings.HasPrefix(t, "./"):
+			file = t // eslint prints the file, then its problems
+		case strings.Contains(t, " error ") && file != "":
+			f := file
+			if i := strings.LastIndex(f, "/"); i >= 0 {
+				f = f[i+1:]
+			}
+			return "commit blocked by the pre-commit hook: " + f + " " + strings.Join(strings.Fields(t), " ") + " · the message is kept, fix it and press c"
+		}
+	}
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if strings.Contains(t, "✖") || strings.Contains(t, "❌") || strings.HasPrefix(strings.ToLower(t), "error") {
+			prefix := "commit failed: "
+			if hook {
+				prefix = "commit blocked by a git hook: "
+			}
+			return prefix + strings.TrimLeft(t, "✖❌ ") + " · the message is kept, press c to retry"
+		}
+	}
+	first := ""
+	for _, l := range lines {
+		if t := strings.TrimSpace(l); t != "" {
+			first = t
+			break
+		}
+	}
+	if hook {
+		return "commit blocked by a git hook: " + first + " · the message is kept, press c to retry"
+	}
+	return "commit: " + first
 }

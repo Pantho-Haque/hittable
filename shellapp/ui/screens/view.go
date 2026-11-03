@@ -17,12 +17,15 @@ func (m *MainScreen) View() string {
 	// Components that mark their own zones render their own hover state.
 	m.Git.Hover, m.Palette.Hover, m.URLBar.Hover, m.Response.Hover = m.HoverZone, m.HoverZone, m.HoverZone, m.HoverZone
 	m.Git.Spinner = m.Spinner.View()
+	m.Palette.Spinner = m.Spinner.View()
 
 	explorerView := m.Explorer.View()
 
 	var mainView string
 	if m.Palette.Open {
 		mainView = m.Zones.Mark("palette", m.Palette.View(m.Zones))
+	} else if m.ExtOpen {
+		mainView = m.Zones.Mark("ext_panel", m.ExtPanel.View())
 	} else if m.GitOpen {
 		mainView = m.Zones.Mark("git_panel", m.Git.View(m.Zones))
 	} else if m.ShowHelp {
@@ -399,6 +402,19 @@ var helpSections = []struct {
 		{"ctrl+←/→  alt+←/→", "jump by word"},
 		{"tab  shift+tab", "indent 2 spaces · leave"},
 	}},
+	{"Extensions (alt+x)", []helpRow{
+		{"alt+x  ⌥x", "Extensions panel: search, install, manage, read"},
+		{"in the panel", "type to search · ↑↓ · ⏎ install · tab page · 1/2/3 tabs"},
+		{"i u e U", "(on the page) install · uninstall · enable/disable · update"},
+		{"alt+p  ⌥p", "command palette: extension commands, themes, settings"},
+		{"alt+h", "hover information at the cursor"},
+		{"F12  shift+F12", "go to definition · references"},
+		{"F2", "rename symbol"},
+		{"alt+.", "quick fixes and refactorings"},
+		{"alt+shift+f", "format document"},
+		{"F8", "next problem in the file"},
+		{"⇥ in a list", "check rows of a multi-select picker"},
+	}},
 	{"Explorer", []helpRow{
 		{"↑↓  j k", "move"},
 		{"⏎  l  h", "open · expand · collapse"},
@@ -436,6 +452,7 @@ var helpSections = []struct {
 		{"drag  ctrl+c", "select diff lines · copy"},
 		{"n d", "new / delete branch"},
 		{"b", "inline blame in the editor"},
+		{"!", "full output of the last git command (opens itself when one fails)"},
 		{"/", "search commits / filter files"},
 	}},
 	{"Runner", []helpRow{

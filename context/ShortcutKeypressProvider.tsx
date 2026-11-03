@@ -1,6 +1,12 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useEffect,
+} from "react";
 import useKeypress from "@/hooks/useKeypress";
 
 type Shortcuts = {
@@ -33,11 +39,11 @@ const defaultShortcuts: Shortcuts = {
 };
 
 const ShortcutContext = createContext<{
-  shortcuts: Shortcuts,
-  toggle: (key: keyof Shortcuts) => void
+  shortcuts: Shortcuts;
+  toggle: (key: keyof Shortcuts) => void;
 }>({
   shortcuts: defaultShortcuts,
-  toggle: () => { },
+  toggle: () => {},
 });
 
 export function ShortcutProvider({ children }: { children: ReactNode }) {
@@ -69,6 +75,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
 
 export function useShortcuts() {
   const ctx = useContext(ShortcutContext);
-  if (!ctx) throw new Error("useShortcuts must be used inside <ShortcutProvider>");
+  if (!ctx)
+    throw new Error("useShortcuts must be used inside <ShortcutProvider>");
   return ctx;
 }

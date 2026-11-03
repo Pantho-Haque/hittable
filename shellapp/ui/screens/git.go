@@ -215,15 +215,16 @@ func (m *MainScreen) renderTopBar() string {
 		}
 		return m.Zones.Mark(id, st.Render(label))
 	}
-	gitIcon, findIcon, termIcon, helpIcon := "", "", "", "?"
+	gitIcon, findIcon, termIcon, helpIcon, extIcon := "", "", "", "?", ""
 	if explorer.IconMode == "emoji" {
-		gitIcon, findIcon, termIcon = "⑂", "🔍", "▤"
+		gitIcon, findIcon, termIcon, extIcon = "⑂", "🔍", "▤", "⊞"
 	}
 
 	sidebar := btn("top_sidebar", "☰", !m.explorerHidden())
 	left := sidebar + sp(1) + theme.HitMarkStyle.Render(" H ") + sp(1) + theme.TopBarBrandStyle.Render("HITTABLE") +
 		theme.TopBarDimStyle.Render("  ›  ") + theme.TopBarTextStyle.Render(filepath.Base(m.RootDir)) + sp(4)
 	buttons := btn("top_git", gitIcon+" Git", m.GitOpen) + sp(1) +
+		btn("top_ext", extIcon+" Extensions", m.ExtOpen) + sp(1) +
 		btn("top_find", findIcon+" Find", m.Palette.Open) + sp(1) +
 		btn("top_term", termIcon+" Terminal", m.Term.Open) + sp(1) +
 		btn("top_help", helpIcon+" Help", m.ShowHelp)

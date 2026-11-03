@@ -34,7 +34,7 @@ func TestCompletionOpensOnTypingAndInsertsOnTab(t *testing.T) {
 	if !ed.CompletionOpen() {
 		t.Fatal("typing a 4-rune prefix should have opened the suggestion popup")
 	}
-	if got := ed.comp.items; len(got) == 0 || got[0] != "calculateTotal" {
+	if got := labels(ed.comp.items); len(got) == 0 || got[0] != "calculateTotal" {
 		t.Fatalf("expected calculateTotal first, got %v", got)
 	}
 
@@ -109,13 +109,13 @@ func TestCompletionNavigatesWithArrows(t *testing.T) {
 	if len(ed.comp.items) < 3 {
 		t.Fatalf("expected the three alpha identifiers, got %v", ed.comp.items)
 	}
-	first := ed.comp.items[ed.comp.idx]
+	first := ed.comp.items[ed.comp.idx].label
 	ed.Update(tea.KeyMsg{Type: tea.KeyDown})
-	if second := ed.comp.items[ed.comp.idx]; second == first {
+	if second := ed.comp.items[ed.comp.idx].label; second == first {
 		t.Fatal("down should move the highlight")
 	}
 	ed.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if back := ed.comp.items[ed.comp.idx]; back != first {
+	if back := ed.comp.items[ed.comp.idx].label; back != first {
 		t.Fatalf("up should return to %q, got %q", first, back)
 	}
 }
@@ -162,7 +162,7 @@ func TestCompletionRanksSchemaAboveBufferWords(t *testing.T) {
 	if !ed.CompletionOpen() {
 		t.Fatal("expected suggestions for the prefix 'met'")
 	}
-	items := ed.comp.items
+	items := labels(ed.comp.items)
 	if items[0] != "method" {
 		t.Fatalf("schema key should rank first, got %v", items)
 	}
@@ -191,7 +191,7 @@ func TestCompletionOffersGoKeywords(t *testing.T) {
 	if !ed.CompletionOpen() {
 		t.Fatal("keywords should be offered in an otherwise empty file")
 	}
-	if got := ed.comp.items[0]; got != "return" {
+	if got := ed.comp.items[0].label; got != "return" {
 		t.Fatalf("expected the go keyword return, got %q", got)
 	}
 }
@@ -253,4 +253,12 @@ func TestCompletionPopupStaysAlignedOverBlankRows(t *testing.T) {
 	if bottom != top {
 		t.Fatalf("popup bottom border at col %d, top at col %d: the box is not aligned", bottom, top)
 	}
+}
+
+func labels(items []item) []string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = it.label
+	}
+	return out
 }

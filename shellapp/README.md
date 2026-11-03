@@ -123,6 +123,28 @@ scripts, unsupported auth types and cookie jars are dropped and reported.
 `~/.local/bin`, `~/go/bin` and anywhere else on your `PATH`. Your project folders are left
 untouched.
 
+### `hittable ext`
+
+VS Code extensions from [Open VSX](https://open-vsx.org): language servers, formatters,
+themes, snippets and commands, in the terminal editor.
+
+| Command | What it does |
+| :--- | :--- |
+| `ext search <words>` | search Open VSX |
+| `ext install <id[@version] \| file.vsix>` | install, with dependencies (SHA-256 and signature checked) |
+| `ext list` | installed extensions |
+| `ext enable \| disable \| uninstall <id>` | manage them |
+| `ext trust [folder]` | allow extension code to run in a folder |
+| `ext node [status \| install \| remove]` | the Node.js extensions with code run in |
+
+The same actions, plus every extension command, are in the app's command palette (`alt+p`).
+Extensions with code run in the Node.js already on your machine (`PATH`, Homebrew, nvm,
+fnm, Volta, …; `HITTABLE_NODE` to pick one). When there is none, `ext node install` (or the
+button in the Extensions panel, `alt+x`) installs it for your account: Homebrew, winget,
+or the official build in `~/.local` — never with sudo. Webview panels open in the browser. Debuggers, notebooks and custom
+editors are not supported. Microsoft-licensed extensions are refused. The full page is
+`content/docs/shellapp-extensions.md`.
+
 ### `hittable model`
 
 | Command | What it does |
@@ -516,10 +538,9 @@ file "$(which hittable)"   # confirm the architecture
 
 ## What it does not do
 
-- **No AI code completion in the editor.** The suggestions are buffer identifiers, language
-  keywords and the `.hit` schema, computed locally. This is a decision, not a gap: an
-  editor that guesses at your request bodies is worse than one that completes what is
-  already in front of you.
+- **No AI code completion built in.** The editor's own suggestions are buffer identifiers,
+  language keywords and the `.hit` schema, computed locally; anything more comes from
+  extensions you install (`hittable ext`).
 - **The commit body never explains why.** It describes what changed, grounded in the staged
   diff. The reasoning is not in the diff and is not invented.
 - **No integrated terminal on native Windows.** It needs a PTY, which Windows does not
@@ -534,7 +555,8 @@ file "$(which hittable)"   # confirm the architecture
 
 - `cmd/hittable` — entry point, CLI commands
 - `internal/` — `.hit` schema, env interpolation, HTTP engine, document store, git wrapper,
-  collection import/export, commit-message drafting, model host
+  collection import/export, commit-message drafting, model host, VS Code extensions
+  (`extensions` installs them, `exthost` runs them in Node, `noderuntime` provides Node)
 - `ui/` — Bubble Tea UI: explorer, request editor, response viewer, code editor, markdown
   preview, find palette, integrated terminal, Git panel
 - `CLAUDE.md` — full spec, keybinding table and changelog

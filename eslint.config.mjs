@@ -10,6 +10,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The terminal app (Go) has its own toolchain; its JavaScript is the
+    // Node extension host and test extensions, not web code.
+    "shellapp/**",
   ]),
 ]);
 

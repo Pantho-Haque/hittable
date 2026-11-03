@@ -26,7 +26,7 @@ Edit a request in the browser, run it from the shell, commit the file, `git pull
 - **Want the file format?** [Project format](/docs/project-format) is the contract both apps follow: the `.hit` schema, `env.json`, the `<<KEY>>` templates.
 - **Living in the browser?** [Web app](/docs/web-app), [Browser extension](/docs/browser-extension), [Self-hosting](/docs/self-hosting).
 - **Moving from Postman or Insomnia?** [Import and export](/docs/import-export).
-- **Living in the terminal?** [Terminal app](/docs/shellapp), then the [CLI reference](/docs/shellapp-cli), the [keyboard reference](/docs/shellapp-keyboard), the [Git panel](/docs/shellapp-git), [commit messages with a local model](/docs/shellapp-ai), and the [editor, terminal and find](/docs/shellapp-editor-terminal).
+- **Living in the terminal?** [Terminal app](/docs/shellapp), then the [CLI reference](/docs/shellapp-cli), the [keyboard reference](/docs/shellapp-keyboard), the [Git panel](/docs/shellapp-git), [commit messages with a local model](/docs/shellapp-ai), the [editor, terminal and find](/docs/shellapp-editor-terminal), and [VS Code extensions](/docs/shellapp-extensions).
 - **Hacking on it?** [Development](/docs/development) covers the repository layout, running both apps, tests and commit conventions. The [FAQ](/docs/faq) collects the questions that come up.
 
 ## About these docs

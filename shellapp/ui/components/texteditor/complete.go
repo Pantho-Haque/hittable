@@ -26,7 +26,7 @@ const (
 // completion is the transient state of the suggestion popup. It hangs off the
 // editor rather than the buffer, so switching files dismisses it.
 type completion struct {
-	items  []string
+	items  []item
 	idx    int
 	scroll int
 	row    int    // line the prefix sits on
@@ -90,10 +90,23 @@ func (t *TextEditor) openCompletion(explicit bool) {
 		return
 	}
 
-	items := t.candidates(lines, p.row, prefix)
+	var items []item
+	items = append(items, t.extCandidates(p.row, from, prefix, explicit)...)
+	seen := map[string]bool{}
+	for _, it := range items {
+		seen[it.label] = true
+	}
+	for _, w := range t.candidates(lines, p.row, prefix) {
+		if !seen[w] {
+			items = append(items, item{label: w})
+		}
+	}
+	if len(items) > completeMaxItems {
+		items = items[:completeMaxItems]
+	}
 	if len(items) == 0 {
 		t.comp = nil
-		if explicit {
+		if explicit && t.ExtComplete == nil {
 			t.status = "no suggestions"
 		}
 		return
@@ -321,8 +334,13 @@ func (t *TextEditor) acceptCompletion() {
 		return
 	}
 
+	it := c.items[c.idx]
+	if it.ext != nil {
+		t.acceptExt(c, *it.ext, lines, r, col)
+		return
+	}
 	before := t.snap()
-	word := c.items[c.idx]
+	word := it.label
 	lines[c.row] = string(r[:c.from]) + word + string(r[col:])
 	t.TextArea.SetValue(strings.Join(lines, "\n"))
 	moveTo(&t.TextArea, c.row, c.from+len([]rune(word)))
@@ -343,8 +361,8 @@ func (t *TextEditor) overlayCompletion(out []string, curX, curY int) {
 	}
 
 	width := completeMinWidth
-	for _, item := range c.items {
-		if w := lipgloss.Width(item) + 2; w > width {
+	for _, it := range c.items {
+		if w := lipgloss.Width(it.label) + 2; w > width {
 			width = w
 		}
 	}
@@ -362,18 +380,25 @@ func (t *TextEditor) overlayCompletion(out []string, curX, curY int) {
 		if i == c.idx {
 			st = theme.ContextMenuItemHoverStyle
 		}
-		box = append(box, st.Width(width).Render(ansi.Truncate(c.items[i], width, "…")))
+		box = append(box, st.Width(width).Render(ansi.Truncate(c.items[i].row(width), width, "…")))
 	}
 	if len(c.items) > completeRows {
 		box = append(box, theme.MutedStyle.Render(
 			ansi.Truncate(" "+itoa(c.idx+1)+"/"+itoa(len(c.items)), width, "")))
 	}
 	rendered := strings.Split(theme.ContextMenuStyle.Render(strings.Join(box, "\n")), "\n")
-	boxW := lipgloss.Width(rendered[0])
-
 	// Align the box with the word, not the cursor, so the list sits under
 	// what it is completing.
-	x := curX - lipgloss.Width(c.prefix)
+	t.overlayBox(out, rendered, curX-lipgloss.Width(c.prefix), curY)
+}
+
+// overlayBox composites a rendered box over the rows, at column x on the row
+// below curY, flipped above it when there is no room below.
+func (t *TextEditor) overlayBox(out, rendered []string, x, curY int) {
+	if len(rendered) == 0 || len(out) == 0 {
+		return
+	}
+	boxW := lipgloss.Width(rendered[0])
 	if x+boxW > t.Width-1 {
 		x = t.Width - 1 - boxW
 	}

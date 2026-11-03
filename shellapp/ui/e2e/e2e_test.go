@@ -29,7 +29,12 @@ type harness struct {
 
 func start(t *testing.T, cols, rows int) (*harness, string) {
 	t.Helper()
-	tmp := t.TempDir()
+	return startAt(t, t.TempDir(), cols, rows)
+}
+
+// startAt is start on a root the test prepared first.
+func startAt(t *testing.T, tmp string, cols, rows int) (*harness, string) {
+	t.Helper()
 	hd := filepath.Join(tmp, "hittable")
 	os.MkdirAll(hd, 0o755)
 	os.WriteFile(filepath.Join(hd, "env.json"), []byte(`{}`), 0o644)

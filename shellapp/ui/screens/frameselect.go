@@ -46,6 +46,8 @@ func (m *MainScreen) anchorOwned() bool {
 		return true
 	case m.GitOpen:
 		return in("git_panel")
+	case m.ExtOpen:
+		return in("ext_panel")
 	case m.Palette.Open:
 		return in("palette")
 	case m.focusedEditor() != nil && in("editor"):
