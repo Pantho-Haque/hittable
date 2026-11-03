@@ -38,7 +38,11 @@ beforeEach(() => {
   gh.repos.mockResolvedValue(REPOS);
 });
 
-const options = () => screen.getAllByRole("option").map((o) => o.textContent ?? "");
+// The repository rows (the owner menu's <option>s are options too).
+const options = () =>
+  within(screen.getByRole("listbox", { name: "Repositories" }))
+    .getAllByRole("option")
+    .map((o) => o.textContent ?? "");
 
 describe("GitHubCard", () => {
   it("signed out: the sign-in pitch", async () => {
@@ -62,19 +66,20 @@ describe("GitHubCard", () => {
     expect(screen.getByRole("link", { name: /Grant access on GitHub/ })).toHaveAttribute("href", "https://github.com/settings/applications");
   });
 
-  it("search narrows the list; the owner chips filter", async () => {
+  it("search narrows the list; the owner menu filters", async () => {
     const user = userEvent.setup();
     render(<GitHubCard />);
     await screen.findByRole("listbox");
     await user.type(screen.getByRole("combobox", { name: "Search repositories" }), "web");
     expect(options()).toEqual([expect.stringContaining("octo/website")]);
-    await user.clear(screen.getByRole("combobox"));
-    await user.type(screen.getByRole("combobox"), "zzzz");
+    const search = screen.getByRole("combobox", { name: "Search repositories" });
+    await user.clear(search);
+    await user.type(search, "zzzz");
     expect(screen.getByText(/No repositories match/)).toBeInTheDocument();
-    await user.clear(screen.getByRole("combobox"));
+    await user.clear(search);
 
-    await user.click(screen.getByRole("button", { name: "acme" }));
-    expect(screen.getByRole("button", { name: "acme" })).toHaveAttribute("aria-pressed", "true");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Filter by owner" }), "acme");
+    expect(screen.getByRole("combobox", { name: "Filter by owner" })).toHaveValue("acme");
     expect(options()).toEqual([expect.stringContaining("acme/shared")]);
   });
 
@@ -93,11 +98,12 @@ describe("GitHubCard", () => {
     const user = userEvent.setup();
     render(<GitHubCard />);
     await screen.findByRole("listbox");
-    const input = screen.getByRole("combobox");
+    const input = screen.getByRole("combobox", { name: "Search repositories" });
     await user.click(input);
     await user.keyboard("{ArrowDown}");
-    expect(screen.getAllByRole("option")[1]).toHaveAttribute("aria-selected", "true");
-    expect(input).toHaveAttribute("aria-activedescendant", screen.getAllByRole("option")[1].id);
+    const rows = within(screen.getByRole("listbox", { name: "Repositories" })).getAllByRole("option");
+    expect(rows[1]).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", rows[1].id);
     await user.keyboard("{Enter}");
     expect(push).toHaveBeenCalledWith("/hittable/gh/octo/website");
   });

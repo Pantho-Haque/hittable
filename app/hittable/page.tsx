@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Archive, FolderOpen, RotateCcw } from "lucide-react";
+import { AlertCircle, Archive, FileText, FolderOpen, Layers, RotateCcw, Zap } from "lucide-react";
 import { useWorkspace } from "@/context/workspaceContext";
 import { loadDirectoryHandle } from "@/services/workspace/HandleStore";
 import WorkspaceConnecting from "@/components/workspace/WorkspaceConnecting";
@@ -91,34 +91,64 @@ function FolderCard() {
   };
 
   return (
-    <section aria-labelledby="folder-card-title" className="flex flex-col gap-4 rounded-xl border border-white/10 bg-(--surface-1) p-6">
-      <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-(--surface-2)">
-        <FolderOpen size={20} className="text-(--brand)" aria-hidden="true" />
+    <section aria-labelledby="folder-card-title" className="flex flex-col gap-4 rounded-xl border border-(--border) bg-(--surface-1) p-5">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-(--border) bg-(--surface-2)">
+          <FolderOpen size={18} className="text-(--brand)" aria-hidden="true" />
+        </div>
+        <div>
+          <h2 id="folder-card-title" className="text-sm font-semibold text-(--text)">A folder on this computer</h2>
+          <p className="text-xs text-(--muted)">No account needed</p>
+        </div>
       </div>
-      <div className="space-y-2">
-        <h2 id="folder-card-title" className="text-lg font-semibold text-white/90">A folder on this computer</h2>
-        <p className="text-sm leading-6 text-white/70">
-          Work in a project folder on disk. Every edit saves straight to your files; no account needed. A{" "}
-          <code className="rounded bg-white/5 px-1 py-0.5 text-white/80">hittable/</code> folder is added if it isn&apos;t there.
-        </p>
-      </div>
+      <p className="text-sm leading-6 text-white/70">
+        Edits save straight to your files. A <code className="rounded bg-white/5 px-1 py-0.5 text-white/80">hittable/</code>{" "}
+        folder is added if it isn&apos;t there.
+      </p>
       {supported ? (
-        <div className="mt-auto flex flex-wrap gap-2">
-          <button type="button" className={primary} onClick={open} disabled={busy} aria-busy={busy}>
+        <div className="flex flex-col gap-2">
+          <button type="button" className={`${primary} w-full`} onClick={open} disabled={busy} aria-busy={busy}>
             <FolderOpen size={16} aria-hidden="true" /> Open a local folder
           </button>
           {saved && (
-            <button type="button" className={secondary} onClick={reconnect} disabled={busy}>
-              <RotateCcw size={16} aria-hidden="true" /> Reconnect {saved}
+            <button type="button" className={`${secondary} w-full`} onClick={reconnect} disabled={busy} title="Open the last folder again">
+              <RotateCcw size={16} aria-hidden="true" /> <span className="truncate">Reconnect {saved}</span>
             </button>
           )}
         </div>
       ) : (
-        <p role="note" className="mt-auto rounded-lg border border-white/10 bg-(--surface-2) p-3 text-xs leading-5 text-white/70">
+        <p role="note" className="rounded-lg border border-(--border) bg-(--surface-2) p-3 text-xs leading-5 text-white/70">
           Opening a local folder needs Chrome or Edge on a computer (the File System Access API). In this browser, use a
           GitHub repository instead.
         </p>
       )}
+    </section>
+  );
+}
+
+const WORKSPACE = [
+  { icon: Zap, name: ".hit files", text: "One request each: method, URL, headers, body" },
+  { icon: Layers, name: "env.json", text: "Environments and <<KEY>> values" },
+  { icon: FileText, name: "Markdown", text: "Notes that live next to the requests" },
+];
+
+/** What a workspace holds: the same files in the browser, the terminal app and your editor. */
+function WorkspaceFacts() {
+  return (
+    <section aria-labelledby="facts-title" className="rounded-xl border border-(--border) p-5">
+      <h2 id="facts-title" className="text-[11px] font-semibold uppercase tracking-wide text-(--muted)">
+        Inside hittable/
+      </h2>
+      <ul className="mt-3 space-y-3">
+        {WORKSPACE.map(({ icon: Icon, name, text }) => (
+          <li key={name} className="flex items-start gap-3">
+            <Icon size={14} className="mt-0.5 shrink-0 text-(--muted)" aria-hidden="true" />
+            <span className="text-xs leading-5 text-(--muted)">
+              <span className="font-mono text-(--text)">{name}</span> · {text}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -132,12 +162,12 @@ export default function Launcher() {
   return (
     <div className="relative min-h-[calc(100dvh-44px)] w-full overflow-auto bg-(--surface-0)">
       {connectingStage && <WorkspaceConnecting stage={connectingStage} />}
-      <div className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-10 sm:py-16">
-        <header className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-white/95 sm:text-3xl">Open a workspace</h1>
-          <p className="max-w-xl text-sm leading-6 text-white/70">
-            Hittable keeps your requests as <code className="text-white/80">.hit</code> files next to your code. Pick where
-            they live.
+      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-10 sm:py-14">
+        <header className="space-y-2 border-b border-(--border) pb-6">
+          <h1 className="text-2xl font-semibold tracking-tight text-white/95">Open a workspace</h1>
+          <p className="max-w-xl text-sm leading-6 text-(--muted)">
+            Hittable keeps your requests as <code className="font-mono text-white/80">.hit</code> files next to your code.
+            Pick where they live.
           </p>
         </header>
 
@@ -152,9 +182,12 @@ export default function Launcher() {
 
         <MigrationBanner />
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <FolderCard />
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <GitHubCard />
+          <aside aria-label="Local folder" className="flex flex-col gap-4">
+            <FolderCard />
+            <WorkspaceFacts />
+          </aside>
         </div>
       </div>
     </div>
