@@ -118,6 +118,7 @@ type extState struct {
 	nodeLine   string            // the Node install's latest step
 	nodeErr    string            // why the last Node install failed
 	activation map[string]string // extension id -> "activating", "active", "failed: …"
+	installErr map[string]string // extension id -> why its last install failed
 	settings   exthost.Settings
 }
 
@@ -130,7 +131,7 @@ func (m *MainScreen) extInit() {
 		docs: map[string]*extDoc{}, status: map[string]extStatus{}, progress: map[string]string{},
 		outputs: map[string]*strings.Builder{}, diags: map[string][]extDiag{}, views: map[string]bool{},
 		webviews: map[string]string{}, contexts: map[string]any{}, snippets: map[string][]texteditor.ExtItem{},
-		activation: map[string]string{},
+		activation: map[string]string{}, installErr: map[string]string{},
 	}
 	m.extReloadContributions()
 	m.extApplyTheme()

@@ -66,10 +66,27 @@ func Install(ctx context.Context, spec string, p Progress) (Result, error) {
 	}
 	defer unlock()
 	gcStaging()
-	return install(ctx, spec, p, map[string]bool{})
+	return install(ctx, spec, p, map[string]bool{}, false)
 }
 
-func install(ctx context.Context, spec string, p Progress, seen map[string]bool) (Result, error) {
+// InstallAnyway is Install for an extension whose every build asks for a
+// newer VS Code than hittable reports: it takes the newest build anyway.
+// VS Code would refuse; here most such extensions work, and an API the
+// host lacks fails with a logged warning when it is called.
+func InstallAnyway(ctx context.Context, spec string, p Progress) (Result, error) {
+	if err := hithome.EnsureDirs(); err != nil {
+		return Result{}, err
+	}
+	unlock, err := lock()
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
+	gcStaging()
+	return install(ctx, spec, p, map[string]bool{}, true)
+}
+
+func install(ctx context.Context, spec string, p Progress, seen map[string]bool, anyEngine bool) (Result, error) {
 	var res Result
 	isFile := strings.HasSuffix(strings.ToLower(spec), ".vsix")
 
@@ -112,7 +129,7 @@ func install(ctx context.Context, spec string, p Progress, seen map[string]bool)
 			return res, nil
 		}
 		var err error
-		rel, err = Resolve(ctx, id, version)
+		rel, err = resolve(ctx, id, version, anyEngine)
 		if err != nil {
 			return res, err
 		}
@@ -158,7 +175,10 @@ func install(ctx context.Context, spec string, p Progress, seen map[string]bool)
 			id, strings.Join(m.APIProposals, ", "))
 	}
 	if eng := m.Engines["vscode"]; !EngineAllows(eng, APIVersion) {
-		return res, fmt.Errorf("%s %s needs VS Code %s; hittable provides the %s API", id, m.Version, eng, APIVersion)
+		if !anyEngine {
+			return res, fmt.Errorf("%w: %s %s needs VS Code %s; hittable provides %s", ErrEngine, id, m.Version, eng, APIVersion)
+		}
+		res.Warnings = append(res.Warnings, fmt.Sprintf("%s asks for VS Code %s (hittable provides %s); APIs it lacks are logged when used", id, eng, APIVersion))
 	}
 	if u := m.Unsupported(); len(u) > 0 {
 		res.Warnings = append(res.Warnings, id+" also contributes "+strings.Join(u, ", ")+", which the terminal app cannot show")
@@ -168,7 +188,7 @@ func install(ctx context.Context, spec string, p Progress, seen map[string]bool)
 	// Dependencies first: an extension activated before what it requires
 	// fails in extensions.getExtension(...).activate().
 	for _, dep := range m.Dependencies {
-		r, err := install(ctx, dep, p, seen)
+		r, err := install(ctx, dep, p, seen, anyEngine)
 		if err != nil {
 			return res, fmt.Errorf("%s needs %s: %w", id, dep, err)
 		}
@@ -178,7 +198,7 @@ func install(ctx context.Context, spec string, p Progress, seen map[string]bool)
 		res.Warnings = append(res.Warnings, r.Warnings...)
 	}
 	for _, dep := range m.Pack {
-		r, err := install(ctx, dep, p, seen)
+		r, err := install(ctx, dep, p, seen, anyEngine)
 		if err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("pack member %s skipped: %v", dep, err))
 			continue

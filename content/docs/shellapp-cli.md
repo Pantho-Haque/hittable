@@ -68,7 +68,7 @@ VS Code extensions from [Open VSX](https://open-vsx.org); the same actions are i
 | Command | What it does |
 | :--- | :--- |
 | `ext search <words>` | search Open VSX, most installed first; `✓` marks a verified publisher |
-| `ext install <id[@version] \| file.vsix>…` | install with dependencies. Checks the registry's SHA-256 and Ed25519 signature, picks the newest stable version whose `engines.vscode` accepts the API hittable provides and the build for this platform. `id@latest` updates an installed one. Microsoft-licensed extensions and ones that need proposed APIs are refused |
+| `ext install <id[@version] \| file.vsix>…` | install with dependencies. Checks the registry's SHA-256 and Ed25519 signature, picks the newest stable version whose `engines.vscode` accepts the API hittable provides and the build for this platform. `id@latest` updates an installed one. `--anyway` takes the newest build even when it asks for a newer VS Code than hittable reports. Microsoft-licensed extensions and ones that need proposed APIs are refused |
 | `ext list` | id, version, enabled or disabled, declarative or code, name |
 | `ext uninstall <id>…` | remove; refuses while another installed extension depends on it |
 | `ext enable <id>…`, `ext disable <id>…` | switch without uninstalling |

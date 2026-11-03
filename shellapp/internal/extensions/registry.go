@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,10 @@ import (
 // it is never queried. HITTABLE_EXT_REGISTRY points at another Open VSX
 // server (a company mirror, or a test server).
 const defaultRegistry = "https://open-vsx.org"
+
+// ErrEngine marks an extension that asks for a newer VS Code than hittable
+// reports; InstallAnyway installs it regardless.
+var ErrEngine = errors.New("needs a newer VS Code")
 
 // EnvRegistry names the registry override variable.
 const EnvRegistry = "HITTABLE_EXT_REGISTRY"
@@ -146,6 +151,12 @@ func Search(ctx context.Context, query string, size int) ([]Summary, error) {
 // falling back to the newest compatible pre-release when no stable one exists.
 // version, when set, pins an exact version instead.
 func Resolve(ctx context.Context, id, version string) (Release, error) {
+	return resolve(ctx, id, version, false)
+}
+
+// resolve is Resolve; anyEngine takes the newest build even when its
+// engines.vscode asks for a newer VS Code (InstallAnyway).
+func resolve(ctx context.Context, id, version string, anyEngine bool) (Release, error) {
 	here := TargetPlatform()
 	var all []apiExtension
 	for _, target := range []string{here, "universal"} {
@@ -180,7 +191,7 @@ func Resolve(ctx context.Context, id, version string) (Release, error) {
 		if !platformFits(e.TargetPlatform, here) {
 			continue
 		}
-		if !EngineAllows(e.Engines["vscode"], APIVersion) {
+		if !anyEngine && !EngineAllows(e.Engines["vscode"], APIVersion) {
 			if tooNew == "" {
 				tooNew = e.Version + " needs VS Code " + e.Engines["vscode"]
 			}
@@ -203,7 +214,7 @@ func Resolve(ctx context.Context, id, version string) (Release, error) {
 		case version != "":
 			return Release{}, fmt.Errorf("%s has no version %s for %s", id, version, here)
 		case tooNew != "":
-			return Release{}, fmt.Errorf("%s: every build needs a newer VS Code API than %s (latest: %s)", id, APIVersion, tooNew)
+			return Release{}, fmt.Errorf("%w: every build of %s needs a newer VS Code than %s (latest: %s)", ErrEngine, id, APIVersion, tooNew)
 		}
 		return Release{}, fmt.Errorf("%s publishes no build for %s", id, here)
 	}

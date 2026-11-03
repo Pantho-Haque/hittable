@@ -38,16 +38,19 @@ type Msg struct{ apply func(p *Panel) }
 // installing, the extension host and prompts, so the command palette and
 // the panel share one path.
 type Actions struct {
-	Install     func(spec string) // "id", or "id@latest" to update
-	Uninstall   func(id string)
-	SetEnabled  func(id string, on bool)
-	InstallNode func()
-	Trust       func()
-	SetTheme    func(extID string)
-	RestartHost func()
-	ShowLog     func()
-	ShowNodeLog func()
-	State       func() State
+	Install func(spec string) // "id", or "id@latest" to update
+	// InstallAnyway installs even when the extension asks for a newer VS
+	// Code than hittable reports.
+	InstallAnyway func(spec string)
+	Uninstall     func(id string)
+	SetEnabled    func(id string, on bool)
+	InstallNode   func()
+	Trust         func()
+	SetTheme      func(extID string)
+	RestartHost   func()
+	ShowLog       func()
+	ShowNodeLog   func()
+	State         func() State
 }
 
 // State is what the screen knows that the page shows.
@@ -69,6 +72,7 @@ type State struct {
 	Host       string            // "running", "starting", "stopped", "" (nothing needs it)
 	HostNote   string            // why it stopped
 	Activation map[string]string // id -> "activating", "active", "failed: …"
+	InstallErr map[string]string // id -> why its last install failed
 }
 
 type entry struct {
@@ -692,6 +696,10 @@ func (p *Panel) do(act string) {
 		if ok && !e.installed && a.Install != nil && st.Installing == "" {
 			a.Install(e.id)
 		}
+	case "anyway":
+		if ok && !e.installed && a.InstallAnyway != nil && st.Installing == "" {
+			a.InstallAnyway(e.id)
+		}
 	case "uninstall":
 		if ok && e.installed && a.Uninstall != nil {
 			a.Uninstall(e.id)
@@ -1174,10 +1182,32 @@ func (p *Panel) viewPage(x0, w int) string {
 			steps = p.setupLines(e, ie, installed, installingThis, st, x0, inner, func() int { return 1 + len(out) }, true)
 		}
 		out = append(out, steps...)
+	case st.InstallErr[e.id] != "":
+		// Why the last Install failed, where the user is looking, with the
+		// way forward as buttons.
+		msg := st.InstallErr[e.id]
+		out = append(out, "")
+		for _, l := range wrap("✖ Install failed: "+msg, inner-2, 3) {
+			out = append(out, " "+errStyle.Render(l))
+		}
+		bb := buttonsAt(x0 + 2)
+		row := []string{bb("Try again", "install", false)}
+		if strings.Contains(msg, "needs a newer VS Code") || strings.Contains(msg, "needs VS Code") {
+			row = append([]string{bb("Install anyway", "anyway", true)}, row...)
+			out = append(out, " "+strings.Join(row, " "))
+			out = append(out, " "+theme.MutedStyle.Render(ansi.Truncate("VS Code would refuse it; here APIs hittable lacks are logged when used, the rest works.", inner-2, "…")))
+		} else {
+			out = append(out, " "+strings.Join(row, " "))
+		}
 	case pg.err != "":
 		out = append(out, "", " "+errStyle.Render("✖ "+pg.err))
 	case d != nil && d.Engine != "" && !extensions.EngineAllows(d.Engine, extensions.APIVersion):
-		out = append(out, "", " "+theme.MutedStyle.Render("ℹ Its latest version needs VS Code "+d.Engine+"; the newest compatible one installs instead"))
+		out = append(out, "")
+		for _, l := range wrap(fmt.Sprintf("ℹ Its latest version asks for VS Code %s; hittable provides %s. Install picks the newest version that fits, if any; Install anyway takes the latest.", d.Engine, extensions.APIVersion), inner-2, 2) {
+			out = append(out, " "+theme.MutedStyle.Render(l))
+		}
+		bb := buttonsAt(x0 + 2)
+		out = append(out, " "+bb("Install anyway", "anyway", false))
 	default:
 		out = append(out, "", " "+theme.MutedStyle.Render("⏎ or Install · checked against Open VSX's SHA-256 and signature"))
 	}

@@ -466,3 +466,29 @@ func TestButtonsAreNeverCutOff(t *testing.T) {
 		}
 	}
 }
+
+func TestFailedInstallShowsWhyAndInstallAnyway(t *testing.T) {
+	fakeOpenVSX(t, nil)
+	p, ch := newPanel(t)
+	var anyway string
+	p.Actions.InstallAnyway = func(spec string) { anyway = spec }
+	p.Open()
+	drain(t, p, ch, func() bool { return len(p.list) == 2 })
+	id := p.sel
+	p.Actions.State = func() State {
+		return State{Spinner: "⠋", Progress: -1, InstallErr: map[string]string{
+			id: "needs a newer VS Code: every build of " + id + " needs a newer VS Code than 1.144.0 (latest: 3.1.8 needs VS Code ^1.150.0)"}}
+	}
+	v := plain(p.View())
+	if !strings.Contains(v, "Install failed") || !strings.Contains(v, "Install anyway") || !strings.Contains(v, "Try again") {
+		t.Fatalf("the failure is not on the page:\n%s", v)
+	}
+	for _, h := range p.hits {
+		if h.act == "anyway" {
+			p.HandleMouse(tea.MouseMsg{X: h.x0 + 1, Y: h.y0, Type: tea.MouseLeft, Action: tea.MouseActionPress})
+		}
+	}
+	if anyway != id {
+		t.Errorf("Install anyway clicked: %q", anyway)
+	}
+}

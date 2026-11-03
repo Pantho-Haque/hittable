@@ -329,24 +329,48 @@ func (m *MainScreen) cmdInstallVSIX() tea.Cmd {
 // extInstall installs in the background with progress in the footer, then
 // offers Node.js if the extension has code and Node is missing, and
 // restarts the host so the extension loads.
-func (m *MainScreen) extInstall(spec string) tea.Cmd {
+func (m *MainScreen) extInstall(spec string) tea.Cmd { return m.extInstallWith(spec, false) }
+
+// specID is the extension id an install spec names ("" for a .vsix path).
+func specID(spec string) string {
+	if strings.HasSuffix(strings.ToLower(spec), ".vsix") {
+		return ""
+	}
+	id, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(spec)), "@")
+	return id
+}
+
+// extInstallWith installs spec; anyway takes the newest build even when it
+// asks for a newer VS Code than hittable reports.
+func (m *MainScreen) extInstallWith(spec string, anyway bool) tea.Cmd {
 	if m.Ext.installing != "" {
 		m.extNote("warning", "An install is already running.")
 		return nil
 	}
+	id := specID(spec)
+	delete(m.Ext.installErr, id)
 	m.Ext.installing = "⬇ " + filepath.Base(spec)
 	m.Ext.installPct = -1
+	install := extensions.Install
+	if anyway {
+		install = extensions.InstallAnyway
+	}
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
 		last := time.Time{}
-		res, err := extensions.Install(ctx, spec, func(label string, done, total int64) {
+		res, err := install(ctx, spec, func(label string, done, total int64) {
 			if time.Since(last) > 150*time.Millisecond {
 				last = time.Now()
 				send(extProgressMsg{label: label, done: done, total: total})
 			}
 		})
-		return extDoneMsg{fn: func(m *MainScreen) { m.extInstalled(res, err) }}
+		return extDoneMsg{fn: func(m *MainScreen) {
+			if err != nil && id != "" {
+				m.Ext.installErr[id] = err.Error()
+			}
+			m.extInstalled(res, err)
+		}}
 	}
 }
 

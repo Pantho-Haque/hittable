@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -301,7 +302,7 @@ func TestInstallRefuses(t *testing.T) {
 		"acme.good":                "failed signature verification",
 		"acme.prop":                "proposed VS Code APIs",
 		"acme.swap":                "refusing it",
-		"acme.new":                 "needs a newer VS Code API",
+		"acme.new":                 "needs a newer VS Code",
 		"acme.missing":             "is not on",
 		"ms-python.vscode-pylance": "licensed by Microsoft",
 		"not an id":                "is not an extension id",
@@ -410,5 +411,21 @@ func TestStaleLockIsTakenOver(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("a lock left by a dead process blocked the install")
+	}
+}
+
+func TestInstallAnywayTakesANewerEngine(t *testing.T) {
+	t.Setenv("HITTABLE_HOME", t.TempDir())
+	vs := vsixBytes(t, map[string]string{"package.json": manifest("acme", "future", "2.0.0", "^9.0.0", "")}, nil)
+	fakeRegistry(t, []fakeVersion{{id: "acme.future", version: "2.0.0", engine: "^9.0.0", platform: "universal", vsix: vs}})
+	if _, err := Install(context.Background(), "acme.future", nil); !errors.Is(err, ErrEngine) {
+		t.Fatalf("Install: %v, want ErrEngine", err)
+	}
+	res, err := InstallAnyway(context.Background(), "acme.future", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Installed.Version != "2.0.0" || len(res.Warnings) == 0 || !strings.Contains(res.Warnings[0], "asks for VS Code ^9.0.0") {
+		t.Errorf("installed %+v, warnings %v", res.Installed, res.Warnings)
 	}
 }

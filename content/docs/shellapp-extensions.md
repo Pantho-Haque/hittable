@@ -52,9 +52,16 @@ C# Dev Kit) are refused even from a `.vsix` file, because their licences only al
 Microsoft's VS Code.
 
 Every download is checked against the registry's SHA-256 and its Ed25519 signature. The
-installer picks the newest stable version whose `engines.vscode` range accepts the API the
-app provides, and the build for your platform when an extension ships per-platform builds
-(rust-analyzer does). Dependencies and extension packs are installed with it.
+installer picks the newest stable version whose `engines.vscode` range accepts the VS Code
+version hittable reports (it tracks the current VS Code release), and the build for your
+platform when an extension ships per-platform builds (rust-analyzer does). Dependencies and
+extension packs are installed with it.
+
+If every build asks for a newer VS Code than that, the extension's page says so and offers
+**Install anyway** (`hittable ext install --anyway <id>`): VS Code would refuse, but here
+most such extensions work, and any API hittable lacks is named in the log when it is
+called. A failed install always shows its reason on the extension's page, with **Try
+again**.
 
 ## Node.js
 

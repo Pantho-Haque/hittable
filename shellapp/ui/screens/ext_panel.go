@@ -12,7 +12,8 @@ import (
 
 func extpanelActions(m *MainScreen) extpanel.Actions {
 	return extpanel.Actions{
-		Install: func(spec string) { m.pendingCmd = m.extInstall(spec) },
+		Install:       func(spec string) { m.pendingCmd = m.extInstall(spec) },
+		InstallAnyway: func(spec string) { m.pendingCmd = m.extInstallWith(spec, true) },
 		Uninstall: func(id string) {
 			if err := extensions.Uninstall(id); err != nil {
 				m.extNote("error", err.Error())
@@ -66,7 +67,7 @@ func extpanelActions(m *MainScreen) extpanel.Actions {
 			}
 			st := extpanel.State{
 				Installing: x.installing, Progress: pct, Spinner: m.Spinner.View(),
-				Trusted: extensions.Trusted(m.RootDir), Activation: x.activation,
+				Trusted: extensions.Trusted(m.RootDir), Activation: x.activation, InstallErr: x.installErr,
 				NodeBusy: strings.Contains(x.installing, "Node.js"), NodeLine: x.nodeLine, NodeErr: x.nodeErr,
 			}
 			if f, err := noderuntime.Find(); err == nil {

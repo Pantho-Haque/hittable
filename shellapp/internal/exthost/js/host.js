@@ -2180,7 +2180,7 @@ try {
 
 handlers['initialize'] = async (p) => {
   S.root = p.root || '';
-  S.apiVersion = p.apiVersion || '1.105.0';
+  S.apiVersion = p.apiVersion || '1.144.0';
   S.webviewBase = p.webviewBase || '';
   S.extData = p.extData || path.join(os.homedir(), '.hittable', 'extdata');
   S.machineId = p.machineId || crypto.createHash('sha256').update(os.hostname()).digest('hex');

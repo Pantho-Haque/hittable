@@ -478,6 +478,17 @@ send binding.
 
 ## 10. Changelog
 
+### v3.5.5 — Current VS Code API, Install anyway
+- `extensions.APIVersion` was 1.105.0, a year behind VS Code (1.144), so extensions
+  whose every build needs a newer engine (Thunder Client: `^1.107.0`) could not be
+  installed at all. It now tracks the current VS Code release, as other VS
+  Code-compatible editors do; engines.vscode is the newest API an extension may use,
+  and the host logs any API it lacks when called.
+- `extensions.InstallAnyway` / `hittable ext install --anyway` / the page's
+  **Install anyway** button take the newest build regardless (`ErrEngine` marks the
+  refusal). A failed install's reason shows on the extension's page with
+  **Try again**, instead of only in the footer.
+
 ### v3.5.4 — Git command output
 - A failed git command (a commit a pre-commit / commit-msg hook refused, a rejected
   push, a pull that stops) opens its full output in the Git panel's detail pane:

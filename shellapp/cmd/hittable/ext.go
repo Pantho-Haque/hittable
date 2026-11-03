@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -92,9 +93,16 @@ var extInstallCmd = &cobra.Command{
 		needNode := false
 		for _, spec := range args {
 			bar := newProgressBar()
-			res, err := extensions.Install(ctx, spec, bar.update)
+			install := extensions.Install
+			if flagAnyway {
+				install = extensions.InstallAnyway
+			}
+			res, err := install(ctx, spec, bar.update)
 			bar.done()
 			if err != nil {
+				if errors.Is(err, extensions.ErrEngine) {
+					return fmt.Errorf("%s: %w\n(--anyway installs the newest build regardless; APIs hittable lacks are logged when used)", spec, err)
+				}
 				return fmt.Errorf("%s: %w", spec, err)
 			}
 			e := res.Installed
@@ -264,7 +272,10 @@ into ~/.local/bin. It never uses sudo.`,
 	},
 }
 
+var flagAnyway bool
+
 func init() {
+	extInstallCmd.Flags().BoolVar(&flagAnyway, "anyway", false, "install the newest build even if it asks for a newer VS Code than hittable reports")
 	extCmd.AddCommand(extListCmd, extSearchCmd, extInstallCmd, extUninstallCmd, enableCmd(true), enableCmd(false), extTrustCmd, extNodeCmd)
 	rootCmd.AddCommand(extCmd)
 }

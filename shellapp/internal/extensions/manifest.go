@@ -13,10 +13,13 @@ import (
 	"strings"
 )
 
-// APIVersion is the VS Code API version the extension host implements. An
-// extension whose engines.vscode range excludes it is not installed (an
-// older compatible version is picked from the registry instead).
-const APIVersion = "1.105.0"
+// APIVersion is the VS Code version hittable reports to extensions
+// (vscode.version) and checks engines.vscode against. It tracks the current
+// VS Code release, as other VS Code-compatible editors do: engines.vscode is
+// the newest API an extension *may* use, and an API the host lacks fails
+// with a logged warning rather than at install. Bump it with VS Code
+// (https://update.code.visualstudio.com/api/releases/stable).
+const APIVersion = "1.144.0"
 
 // Manifest is the subset of an extension's package.json the app reads.
 type Manifest struct {
